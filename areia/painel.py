@@ -5,6 +5,7 @@ Escuta em todas as interfaces, mas só responde à própria máquina e à rede T
 """
 import ipaddress
 import os
+import re
 import tempfile
 import threading
 import time
@@ -76,7 +77,10 @@ def foto():
             with tempfile.TemporaryDirectory() as tmp:
                 origem = os.path.join(tmp, "foto" + ext)
                 arq.save(origem)
-                img = areia.guarda(origem, time.strftime("celular-%Y-%m-%d-%H%M%S") + ext)
+                # do Willbert ("grave o meu rosto") vem como willbert-<nome>.jpg; do celular, sem nome
+                base = re.sub(r"[^A-Za-z0-9_-]+", "-", os.path.splitext(arq.filename)[0])[:40]
+                prefixo = base if base.startswith("willbert-") else "celular"
+                img = areia.guarda(origem, time.strftime(f"{prefixo}-%Y-%m-%d-%H%M%S") + ext)
         else:
             img = areia.foto_da_camera()
         areia.mostra(img, modo="rosto")

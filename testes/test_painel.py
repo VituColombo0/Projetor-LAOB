@@ -49,6 +49,16 @@ class Painel(Ambiente):
         self.assertEqual(r.status_code, 200)
         r.close()
 
+    def test_foto_do_willbert(self):
+        ok, jpg = cv2.imencode(".jpg", np.full((200, 150, 3), 90, np.uint8))
+        r = self.c.post("/foto", environ_base={"REMOTE_ADDR": "127.0.0.1"},
+                        data={"foto": (io.BytesIO(jpg.tobytes()), "willbert-Victor.jpg")},
+                        content_type="multipart/form-data")
+        self.assertEqual(r.status_code, 200, r.get_json())
+        nomes = os.listdir(self.PASTA)
+        self.assertTrue(nomes[0].startswith("willbert-Victor-") and nomes[0].endswith(".jpg"), nomes)
+        self.assertEqual(self.rodando(), "rosto")
+
     def test_modos(self):
         self.assertEqual(self.post("/modo", json={"modo": "xyz"}).status_code, 400)
         r = self.post("/modo", json={"modo": "rosto"})
