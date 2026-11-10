@@ -1,0 +1,29 @@
+CORES DO RELEVO (TEMAS)
+=======================
+
+Troca as cores da topografia na hora. O tema escolhido continua valendo
+quando o computador for ligado de novo.
+
+
+COMO USAR
+---------
+1. Abra o Terminal: aperte Ctrl + Alt + T
+2. Digite um destes comandos e aperte Enter:
+
+    areia-tema classico     o de sempre (água, verde, amarelo, marrom)
+    areia-tema vulcao       lava brilhando no alto dos morros
+    areia-tema inverno      lagos gelados, floresta e neve nos picos
+    areia-tema marte        tons de ferrugem, como Marte
+    areia-tema deserto      dunas e oásis
+    areia-tema oceano       tudo vira mar; os picos viram ilhas com praia
+    areia-tema arco-iris    uma cor forte para cada altura
+    areia-tema mapa         papel claro com as linhas de altura
+
+  Para ver a lista e qual está em uso:
+    areia-tema
+
+
+DICAS
+-----
+- Pode digitar com ou sem acento: areia-tema vulcão também funciona.
+- Pelo celular: http://100.114.194.28:8090 (botões "Cores do relevo").

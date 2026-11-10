@@ -1,0 +1,41 @@
+TOPOGRAFIA - O RELEVO COLORIDO NA AREIA
+=======================================
+
+É o que aparece sozinho quando o computador liga: as cores mostram a altura
+da areia (azul = água, verde e amarelo = baixo, marrom e vermelho = alto).
+
+
+COMO USAR OS COMANDOS
+---------------------
+1. Abra o Terminal: aperte Ctrl + Alt + T
+2. Digite o comando e aperte Enter
+
+
+VOLTAR PARA A TOPOGRAFIA (de qualquer outra coisa)
+--------------------------------------------------
+    areia-topografia
+
+  Ou dê dois cliques em "Abrir a topografia", aqui nesta pasta.
+
+
+SE A AREIA NÃO ABRIR
+--------------------
+1. Confira: o projetor está ligado? O Kinect (a câmera em cima da caixa)
+   está na tomada e no USB? (a luz verde do Kinect acende)
+2. Rode:    areia-topografia
+3. A imagem abriu no monitor e não no projetor? Ligue o projetor e
+   rode de novo:    areia-topografia
+4. Ainda não? Reinicie o computador com o projetor e o Kinect ligados.
+
+  Se aparecer "comando não encontrado", use o caminho completo:
+    ~/SARndbox-rosto/areia-topografia
+
+
+OUTRAS COISAS PARA FAZER NA AREIA
+---------------------------------
+  Fotos na areia ............ pasta "2 - Fotos na areia"
+  Cores do relevo ........... pasta "3 - Cores do relevo"
+  Caça ao tesouro ........... pasta "4 - Caça ao tesouro"
+  Peixes e carrinhos ........ pasta "5 - Peixes e carrinhos"
+
+  Pelo celular (com o Tailscale ligado): http://100.114.194.28:8090

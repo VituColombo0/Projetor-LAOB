@@ -25,7 +25,7 @@ for f in BoxLayout.txt ProjectorMatrix.dat HeightColorMap.cpt SARndbox.cfg; do
 done
 
 echo "[2/8] modo Foto: patches e compilação"
-cp "$REPO"/sarndbox/{FaceImage.h,FaceImage.cpp,patch_surface.py,patch_sandbox.py,projetor.cfg} "$DEST/"
+cp "$REPO"/sarndbox/{FaceImage.h,FaceImage.cpp,Extras.h,Extras.cpp,patch_surface.py,patch_sandbox.py,projetor.cfg} "$DEST/"
 ( cd "$DEST" && python3 patch_surface.py >/dev/null && python3 patch_sandbox.py >/dev/null )
 if ! make -C "$DEST" INSTALLDIR="$DEST" > "$DEST/compilacao.log" 2>&1 \
    || ! [ "$DEST/bin/SARndbox" -nt "$DEST/FaceImage.cpp" ]; then
@@ -34,8 +34,10 @@ fi
 [ $SO_COMPILAR = 1 ] && { echo "compilado em $DEST/bin/SARndbox"; exit 0; }
 
 echo "[3/8] programas da pasta areia/"
-cp "$REPO"/areia/{areia.py,areia_foto.py,areia_tema.py,rosto.py,painel.py,sandbox.sh,areia-foto,areia-tema,areia-topografia} "$DEST/"
-chmod +x "$DEST"/{sandbox.sh,areia-foto,areia-tema,areia-topografia}
+cp "$REPO"/areia/{areia.py,areia_foto.py,areia_tema.py,areia_brincar.py,rosto.py,painel.py,sandbox.sh} "$DEST/"
+COMANDOS=(areia-foto areia-tema areia-topografia areia-tesouro areia-animais)
+for c in "${COMANDOS[@]}"; do cp "$REPO/areia/$c" "$DEST/"; chmod +x "$DEST/$c"; done
+chmod +x "$DEST/sandbox.sh"
 mkdir -p "$DEST/temas" && cp "$REPO"/areia/temas/*.cpt "$DEST/temas/"   # o tema escolhido (temas/atual.cpt) fica
 rm -f "$DEST/Sandbox.cpp.antes-area"  # sobra de versões antigas
 
@@ -50,22 +52,30 @@ baixa face_detection_yunet_2023mar.onnx \
   https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
 baixa u2net_human_seg.onnx https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net_human_seg.onnx
 
-echo "[6/8] comandos areia-foto, areia-tema e areia-topografia"
+echo "[6/8] comandos: ${COMANDOS[*]}"
 mkdir -p "$HOME/.local/bin" "$DEST/fotos"
-ln -sf "$DEST/areia-foto" "$HOME/.local/bin/areia-foto"
-ln -sf "$DEST/areia-topografia" "$HOME/.local/bin/areia-topografia"
-ln -sf "$DEST/areia-tema" "$HOME/.local/bin/areia-tema"
+for c in "${COMANDOS[@]}"; do ln -sf "$DEST/$c" "$HOME/.local/bin/$c"; done
 
-echo "[7/8] Área de Trabalho: pasta Areia, ajuda e atalho"
+echo "[7/8] Área de Trabalho: uma pasta para cada coisa, com o manual dentro"
 MESA=$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop"); [ "$MESA" = "$HOME" ] && MESA=$HOME/Desktop
-mkdir -p "$MESA/Areia"
-cp "$REPO/area-de-trabalho/COMO-USAR.txt" "$MESA/Areia/COMO USAR.txt"
-cp "$REPO/area-de-trabalho/SE-A-AREIA-NAO-ABRIR.txt" "$MESA/SE A AREIA NÃO ABRIR.txt"
-sed "s#/home/laob#$HOME#g" "$REPO/area-de-trabalho/abrir-a-areia.desktop" > "$MESA/Abrir a areia.desktop"
-chmod +x "$MESA/Abrir a areia.desktop"
-gio set "$MESA/Abrir a areia.desktop" metadata::trusted true 2>/dev/null || true
+AD=$REPO/area-de-trabalho
+FOTOS_DIR="$MESA/2 - Fotos na areia"
+# versões antigas: a pasta "Areia" vira a pasta das fotos; a ajuda e o atalho soltos vão para a pasta 1
+if [ -d "$MESA/Areia" ] && [ ! -e "$FOTOS_DIR" ]; then mv "$MESA/Areia" "$FOTOS_DIR"; fi
+rm -f "$FOTOS_DIR/COMO USAR.txt.old" "$MESA/SE A AREIA NÃO ABRIR.txt" "$MESA/Abrir a areia.desktop"
+for par in "1 - Topografia (ligar e consertar):1-topografia.txt" "2 - Fotos na areia:2-fotos.txt" \
+           "3 - Cores do relevo:3-cores.txt" "4 - Caça ao tesouro:4-tesouro.txt" "5 - Peixes e carrinhos:5-animais.txt"; do
+  pasta=${par%%:*}; manual=${par##*:}
+  mkdir -p "$MESA/$pasta"
+  cp "$AD/$manual" "$MESA/$pasta/COMO USAR.txt"
+done
+LANC="$MESA/1 - Topografia (ligar e consertar)/Abrir a topografia.desktop"
+sed "s#/home/laob#$HOME#g" "$AD/abrir-a-areia.desktop" > "$LANC"
+chmod +x "$LANC"
+gio set "$LANC" metadata::trusted true 2>/dev/null || true
 B=$HOME/.config/gtk-3.0/bookmarks; mkdir -p "$(dirname "$B")"
-grep -q "file://$MESA/Areia " "$B" 2>/dev/null || echo "file://$MESA/Areia Areia" >> "$B"
+grep -v "file://$MESA/Areia " "$B" 2>/dev/null | grep -v "Fotos%20na%20areia" > "$B.tmp"; mv "$B.tmp" "$B"
+echo "file://${FOTOS_DIR// /%20} Fotos na areia" >> "$B"
 
 echo "[8/8] topografia ao ligar e painel do celular"
 A=$HOME/.config/autostart/SARndbox.desktop
@@ -82,4 +92,4 @@ systemctl --user daemon-reload
 systemctl --user enable --now sandbox-painel >/dev/null 2>&1 && systemctl --user restart sandbox-painel || true
 
 echo
-echo "Pronto. Topografia: areia-topografia   Foto: areia-foto   Ajuda: $MESA/Areia/COMO USAR.txt"
+echo "Pronto. Manuais na Área de Trabalho (pastas 1 a 5). Teste completo: bash testes/integracao.sh"

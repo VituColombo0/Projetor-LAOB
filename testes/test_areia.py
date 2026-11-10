@@ -185,6 +185,57 @@ class Temas(Ambiente):
         self.assertIn("marte      Marte   <- atual", out)
 
 
+class Brincadeiras(Ambiente):
+    def test_tesouro_sobe_a_versao_com_foto(self):
+        self.assertEqual(self.areia.tesouro(), 3.0)
+        self.assertEqual(self.rodando(), "rosto")
+        self.assertEqual(self.comandos()[-1], "cmd tesouro 3")
+        self.assertEqual(self.areia.tesouro("Difícil"), 5.0)
+        self.assertEqual(self.areia.tesouro("2,5"), 2.5)
+        for ruim in ("xyz", "50"):
+            with self.assertRaises(self.areia.Erro):
+                self.areia.tesouro(ruim)
+
+    def test_situacao_pelo_registro(self):
+        self.assertEqual(self.areia.tesouro_situacao(), "nenhum")
+        self.areia.tesouro()
+        log = os.path.join(self.D, "sandbox.log")
+        escreve(log, "Tesouro: escondendo a 3 cm\nRan out of time\nTesouro escondido em x 1 y 2\n")
+        self.assertEqual(self.areia.tesouro_situacao(), "escondido")
+        escreve(log, "Tesouro escondido em x 1 y 2\nTesouro encontrado!\n")
+        self.assertEqual(self.areia.tesouro_situacao(), "achado")
+        escreve(log, "Tesouro encontrado!\nTesouro desligado\n")
+        self.assertEqual(self.areia.tesouro_situacao(), "nenhum")
+
+    def test_animais(self):
+        self.assertEqual(self.areia.animais("Peixes"), ("peixes", 10))
+        self.assertEqual(self.comandos()[-1], "cmd animais peixes 10")
+        self.assertEqual(self.areia.animais("carrinhos", "5"), ("carros", 5))
+        self.assertEqual(self.areia.animais("todos"), ("todos", 14))
+        for t, n in (("gatos", None), ("peixes", "99")):
+            with self.assertRaises(self.areia.Erro):
+                self.areia.animais(t, n)
+        self.areia.animais_fim()
+        self.assertEqual(self.comandos()[-1], "cmd animais nada")
+
+    def test_comandos_de_terminal(self):
+        import importlib
+        import areia_brincar
+        ab = importlib.reload(areia_brincar)
+        saida = io.StringIO()
+        with redirect_stdout(saida):
+            ab.tesouro(["facil"])
+            ab.tesouro(["achou"])
+            ab.animais(["carros", "3"])
+            ab.animais(["parar"])
+            ab.tesouro(["parar"])
+        out = saida.getvalue()
+        self.assertIn("Tesouro escondido a 2 cm", out)
+        self.assertIn("3 carrinhos na areia!", out)
+        self.assertIn("Animais removidos.", out)
+        self.assertEqual(self.comandos()[-1], "cmd tesouroFim")
+
+
 class Comando(Ambiente):
     """areia-foto (areia_foto.main) sem terminal interativo."""
 

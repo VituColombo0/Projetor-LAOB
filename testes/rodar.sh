@@ -10,9 +10,9 @@ echo "== sintaxe dos scripts"
 for f in "$R"/instalar.sh "$R"/areia/sandbox.sh "$R"/areia/areia-topografia "$R"/testes/*.sh; do
   bash -n "$f" || { echo "  ERRO em $f"; falhas=1; }
 done
-sh -n "$R/areia/areia-foto" && sh -n "$R/areia/areia-tema" || falhas=1
+for w in areia-foto areia-tema areia-tesouro areia-animais; do sh -n "$R/areia/$w" || falhas=1; done
 if command -v shellcheck >/dev/null; then
-  shellcheck -S warning "$R"/instalar.sh "$R"/areia/sandbox.sh "$R"/areia/areia-topografia "$R"/areia/areia-foto "$R"/areia/areia-tema || falhas=1
+  shellcheck -S warning "$R"/instalar.sh "$R"/areia/sandbox.sh "$R"/areia/areia-topografia "$R"/areia/areia-foto "$R"/areia/areia-tema "$R"/areia/areia-tesouro "$R"/areia/areia-animais || falhas=1
 else
   echo "  (shellcheck não instalado: só a sintaxe)"
 fi

@@ -77,6 +77,16 @@ class Painel(Ambiente):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(self.get("/estado").get_json()["tema"], "oceano")
 
+    def test_brincadeiras(self):
+        self.assertEqual(self.post("/brincar", json={"acao": "xyz"}).status_code, 400)
+        r = self.post("/brincar", json={"acao": "tesouro"})
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertEqual(self.comandos()[-1], "cmd tesouro 3")
+        self.assertEqual(self.post("/brincar", json={"acao": "peixes"}).status_code, 200)
+        self.assertEqual(self.post("/brincar", json={"acao": "parar"}).status_code, 200)
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-2:], ["cmd tesouroFim", "cmd animais nada"])
+        self.assertIn(self.get("/estado").get_json()["tesouro"], ("nenhum", "escondido"))
+
     def test_ajustes(self):
         self.areia.mostra(self.poe("a.jpg"))
         self.assertEqual(self.post("/ajuste", json={"zoom": "abc"}).status_code, 400)

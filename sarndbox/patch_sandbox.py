@@ -3,6 +3,8 @@
    rostoAjuste <ampliação/cm> <deslocamento/cm> <mistura 0-1> <sombra>
    esculpir <rosto.dem>                                    relevo-alvo: vermelho/azul = tirar/pôr areia
    relevo                                                  volta à topografia normal
+   tesouro [profundidade cm] / tesouroFim                  caça ao tesouro (baú embaixo da areia)
+   animais peixes|carros|todos|nada [quantidade]           peixes no lago e carrinhos nos vales
 """
 import sys
 
@@ -24,6 +26,16 @@ if "FaceImage" not in h:
 	void setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem); // Troca entre relevo, rosto e esculpir
 	float measureSandHeight(void) const; // Altura mediana da areia (cm acima do plano base)
 """)
+    # Extras (Projetor-LAOB): tesouro, peixes e carrinhos
+    h = rep(h, '#include "Types.h"\n', '#include "Types.h"\n#include "Extras.h"\n')
+    h = rep(h, "\tdouble faceRefTime; // Última medição da altura média da areia\n", """\tdouble faceRefTime; // Última medição da altura média da areia
+	Extras extras; // Tesouro, lago, peixes e carrinhos sobre o relevo
+	double extrasMapaTempo,extrasUltimoPasso; // Última atualização do mapa e do movimento
+	float tesouroPedido; // Profundidade do tesouro pedido antes de haver mapa (<0 = nenhum)
+""")
+    h = rep(h, "\tfloat measureSandHeight(void) const; // Altura mediana da areia (cm acima do plano base)\n",
+            "\tfloat measureSandHeight(void) const; // Altura mediana da areia (cm acima do plano base)\n"
+            "\tvoid atualizaExtras(void); // Mapa de alturas, movimento e tesouro (a cada quadro)\n")
     open("Sandbox.h", "w").write(h)
 
 c = open("Sandbox.cpp").read()
@@ -229,10 +241,116 @@ void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
 
 void Sandbox::toggleDEM(DEM* dem)
 """)
+    # --- Extras (Projetor-LAOB)
+    c = rep(c, "\t faceImage(0),faceDem(0),faceRefTime(0.0)",
+            "\t faceImage(0),faceDem(0),faceRefTime(0.0),\n\t extrasMapaTempo(0.0),extrasUltimoPasso(0.0),tesouroPedido(-1.0f)")
+    c = rep(c, """<<" cm"<<std::endl;
+			break;
+			}
+""", """<<" cm"<<std::endl;
+			break;
+			}
+	extras.setArea(faceBoxMin,faceBoxMax,OGTransform(boxTransform));
+""")
+    c = rep(c, """				else if(isToken(tokens[0],"relevo"))""", """				else if(isToken(tokens[0],"tesouro"))
+					{
+					tesouroPedido=tokens.size()>=2?float(atof(tokens[1].c_str())):3.0f;
+					if(tesouroPedido<1.0f)
+						tesouroPedido=3.0f;
+					extras.tesouro=true; // liga o shader já; o lugar é sorteado com o mapa pronto
+					extras.achado=false;
+					extras.tz=-1000.0f;
+					setFaceMode(0,0);
+					std::cout<<"Tesouro: escondendo a "<<tesouroPedido<<" cm"<<std::endl;
+					}
+				else if(isToken(tokens[0],"tesouroFim"))
+					{
+					extras.tesouro=false;
+					tesouroPedido=-1.0f;
+					std::cout<<"Tesouro desligado"<<std::endl;
+					}
+				else if(isToken(tokens[0],"animais"))
+					{
+					int m=-1;
+					if(tokens.size()>=2)
+						m=isToken(tokens[1],"peixes")?Extras::PEIXES:isToken(tokens[1],"carros")?Extras::CARROS:
+						  isToken(tokens[1],"todos")?Extras::TODOS:isToken(tokens[1],"nada")?Extras::NADA:-1;
+					if(m<0)
+						std::cerr<<"uso: animais peixes|carros|todos|nada [quantidade]"<<std::endl;
+					else
+						{
+						int n=tokens.size()>=3?atoi(tokens[2].c_str()):(m==Extras::TODOS?14:10);
+						if(m!=Extras::NADA)
+							setFaceMode(0,0);
+						extras.povoa(m,n);
+						std::cout<<"Animais: "<<tokens[1]<<" ("<<n<<")"<<std::endl;
+						}
+					}
+				else if(isToken(tokens[0],"relevo"))""")
+    c = rep(c, """	/* Update all surface renderers: */
+	for(std::vector<RenderSettings>::iterator rsIt=renderSettings.begin();rsIt!=renderSettings.end();++rsIt)
+		rsIt->surfaceRenderer->setAnimationTime(Vrui::getApplicationTime());
+""", """	/* Tesouro, lago, peixes e carrinhos: */
+	atualizaExtras();
+	
+	/* Update all surface renderers: */
+	for(std::vector<RenderSettings>::iterator rsIt=renderSettings.begin();rsIt!=renderSettings.end();++rsIt)
+		{
+		rsIt->surfaceRenderer->setAnimationTime(Vrui::getApplicationTime());
+		if(rsIt->fixProjectorView)
+			rsIt->surfaceRenderer->setExtras(extras.ativo()&&faceImage==0?&extras:0);
+		}
+""")
+    c = rep(c, "void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)\n", """void Sandbox::atualizaExtras(void)
+	{
+	double agora=Vrui::getApplicationTime();
+	float dt=extrasUltimoPasso>0.0?float(agora-extrasUltimoPasso):0.0f;
+	extrasUltimoPasso=agora;
+	if(!extras.ativo())
+		return;
+	
+	/* Mapa de alturas da área iluminada, 2x por segundo: */
+	if(agora-extrasMapaTempo>0.5)
+		{
+		extrasMapaTempo=agora;
+		const Kinect::FrameBuffer& fb=filteredFrames.getLockedValue();
+		const float* d=fb.getData<float>();
+		if(d!=0)
+			{
+			int w=fb.getSize(0),h=fb.getSize(1);
+			PTransform full=PTransform(OGTransform(boxTransform));
+			full*=depthImageRenderer->getDepthProjection();
+			extras.comecaMapa();
+			for(int y=0;y<h;y+=3)
+				for(int x=0;x<w;x+=3)
+					{
+					float z=d[y*w+x];
+					if(!std::isfinite(z)||z<=0.0f||z>=2047.0f)
+						continue;
+					Point p=full.transform(Point(Scalar(x)+Scalar(0.5),Scalar(y)+Scalar(0.5),Scalar(z)));
+					extras.amostra(float(p[0]),float(p[1]),float(p[2]));
+					}
+			extras.fechaMapa();
+			if(tesouroPedido>0.0f&&extras.novoTesouro(tesouroPedido))
+				{
+				std::cout<<"Tesouro escondido em x "<<extras.tx<<" y "<<extras.ty<<" (cavar até "<<extras.tz<<" cm)"<<std::endl;
+				tesouroPedido=-1.0f;
+				}
+			if(extras.confereTesouro())
+				std::cout<<"Tesouro encontrado!"<<std::endl;
+			}
+		}
+	
+	/* Movimento dos peixes e carrinhos: */
+	extras.passo(dt);
+	}
+
+void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
+""")
     open("Sandbox.cpp", "w").write(c)
 
 m = open("makefile").read()
 if "FaceImage.cpp" not in m:
-    m = rep(m, "                   DEM.cpp \\\n", "                   DEM.cpp \\\n                   FaceImage.cpp \\\n")
+    m = rep(m, "                   DEM.cpp \\\n", "                   DEM.cpp \\\n                   FaceImage.cpp \\\n                   Extras.cpp \\\n")
     open("makefile", "w").write(m)
 print("Sandbox ok")

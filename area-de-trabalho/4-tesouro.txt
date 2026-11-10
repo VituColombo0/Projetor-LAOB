@@ -1,0 +1,35 @@
+CAÇA AO TESOURO
+===============
+
+Um baú de tesouro fica escondido embaixo da areia, num lugar sorteado.
+Cavem para achar! Quando estiverem perto, a areia começa a brilhar
+dourado. Quando cavarem fundo o bastante, o baú aparece brilhando.
+
+
+COMO USAR
+---------
+1. Abra o Terminal: aperte Ctrl + Alt + T
+2. Digite o comando e aperte Enter:
+
+    areia-tesouro           esconde um tesouro (3 cm embaixo da areia)
+
+  Outras opções:
+    areia-tesouro facil     mais raso (2 cm), bom para crianças
+    areia-tesouro dificil   mais fundo (5 cm)
+    areia-tesouro achou     diz se já acharam
+    areia-tesouro parar     tira o tesouro
+
+  Para esconder outro, é só rodar  areia-tesouro  de novo.
+
+
+DICAS
+-----
+- Antes de começar, alise a areia e deixe uns morrinhos: o tesouro
+  costuma ficar onde tem mais areia.
+- Dá para jogar junto com os peixes e carrinhos (pasta 5).
+- Pelo celular: http://100.114.194.28:8090 (botão "Caça ao tesouro").
+
+
+VOLTAR PARA A TOPOGRAFIA
+------------------------
+    areia-topografia

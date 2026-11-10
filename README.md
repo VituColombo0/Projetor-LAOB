@@ -21,9 +21,13 @@ Coloque as imagens em **Área de Trabalho > Areia** e, no terminal:
     areia-foto girar      # se aparecer de lado para quem olha a caixa
     areia-topografia      # volta ao relevo
     areia-tema vulcao     # cores do relevo: classico, vulcao, inverno, marte, deserto, oceano, arco-iris, mapa
+    areia-tesouro         # caça ao tesouro (facil|normal|dificil, achou, parar)
+    areia-animais todos   # peixes no lago e carrinhos nos vales (peixes|carros|todos [n], parar)
 
-Guia para o laboratório: [`COMO-USAR.txt`](COMO-USAR.txt) e [`SE-A-AREIA-NAO-ABRIR.txt`](SE-A-AREIA-NAO-ABRIR.txt)
-(os dois ficam também na Área de Trabalho do lab2).
+Na Área de Trabalho do lab2 há uma pasta para cada coisa, cada uma com o seu `COMO USAR.txt`
+(os textos estão em [`area-de-trabalho/`](area-de-trabalho)): 1 - Topografia (ligar e consertar),
+2 - Fotos na areia (é também onde se colocam as fotos), 3 - Cores do relevo, 4 - Caça ao tesouro,
+5 - Peixes e carrinhos. A pasta 6 - Willbert vem do repositório do Willbert.
 
 ## Instalar
 
@@ -52,11 +56,26 @@ No PC tudo fica numa pasta só, `~/SARndbox-rosto` (cópia do SARndbox + os arqu
 
 ## Testes
 
-    bash testes/rodar.sh       # 34 testes: imagem, área iluminada, relevo, pasta, cache, comando,
+    bash testes/rodar.sh       # 46 testes: imagem, área iluminada, relevo, pasta, cache, comando,
                                # painel (com projetor falso) + sintaxe/shellcheck dos scripts
     bash testes/integracao.sh  # no lab2, depois do instalar.sh: compila, confere tudo instalado,
                                # o painel (aceita Tailscale, recusa a rede local) e o projetor de verdade
                                # (~1 min), terminando na topografia
+
+## Caça ao tesouro, peixes e carrinhos
+
+`sarndbox/Extras.h/.cpp`: um mapa de alturas grosseiro da área iluminada (1,5 cm por célula,
+2x por segundo) e a simulação na CPU; o desenho é feito no shader da superfície (uniforms com as
+posições). Comandos no cano da versão com Foto: `tesouro [cm]`, `tesouroFim`,
+`animais peixes|carros|todos|nada [n]`.
+- **Tesouro:** lugar sorteado onde há areia acima da média; aparece onde cavarem abaixo de
+  (altura - profundidade); brilha dourado a menos de 2,5 cm; "Tesouro encontrado!" vai para o
+  `sandbox.log` (`areia-tesouro achou` lê de lá).
+- **Lago e peixes:** tudo 1,5 cm abaixo da mediana da areia vira água; os peixes só nadam ali e
+  desviam das margens (cavar um buraco cria um lago).
+- **Carrinhos:** escolhem a direção mais baixa (o vale), sem rampa íngreme, sem lago e sem sair da área.
+- **Willbert:** "Willbert, grave o meu rosto" manda a foto da pessoa para `POST /foto` do painel
+  (só aceita a própria máquina), que tira o fundo e projeta.
 
 ## Temas de cor do relevo
 

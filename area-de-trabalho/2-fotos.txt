@@ -1,0 +1,52 @@
+FOTOS NA AREIA
+==============
+
+Projeta uma foto na areia. Se tiver rosto, ele recorta a pessoa e tira o
+fundo. Mexendo na areia, a foto se deforma.
+
+
+PASSO 1 - COLOQUE AS FOTOS NESTA PASTA
+--------------------------------------
+Arraste as fotos para esta pasta ("2 - Fotos na areia").
+Funciona com .jpg, .png, .webp e .bmp
+(foto do iPhone em HEIC: converta para .jpg antes)
+
+
+PASSO 2 - ABRA O TERMINAL
+-------------------------
+Aperte Ctrl + Alt + T
+
+
+PASSO 3 - DIGITE O COMANDO E APERTE ENTER
+-----------------------------------------
+    areia-foto
+
+  Ele mostra a lista das fotos com números. Digite o número e Enter.
+  (Só Enter = repete a última foto.)
+
+  Atalhos:
+    areia-foto 2            mostra direto a foto número 2
+    areia-foto victor       mostra a foto que tem "victor" no nome
+
+
+AJUSTES
+-------
+    areia-foto girar        a foto apareceu de lado? gira 90 graus
+    areia-foto espelhar     a foto apareceu invertida? espelha
+    areia-foto esculpir     mostra onde pôr areia (vermelho) e tirar (azul)
+                            para formar a imagem em relevo
+
+
+PELO WILLBERT
+-------------
+Com o Willbert ligado, fale perto da câmera:
+    "Willbert, grave o meu rosto"
+Ele tira sua foto e em uns 15 segundos você aparece na areia.
+
+
+VOLTAR PARA A TOPOGRAFIA
+------------------------
+    areia-topografia
+
+
+A primeira vez que uma foto aparece leva uns 5 segundos; depois, 1 segundo.

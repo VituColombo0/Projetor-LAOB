@@ -1,0 +1,4 @@
+#!/bin/sh
+# Brincadeira na caixa de areia (veja "areia-animais ajuda"). Só biblioteca padrão.
+D=$(dirname "$(readlink -f "$0")")
+exec python3 "$D/areia_brincar.py" animais "$@"

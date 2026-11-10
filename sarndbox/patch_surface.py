@@ -9,9 +9,16 @@ def rep(s, old, new, count=1):
 h = open("SurfaceRenderer.h").read()
 if "FaceImage" not in h:
     h = rep(h, "class DEM;\n", "class DEM;\nclass FaceImage;\n")
-    h = rep(h, "GLint heightMapShaderUniforms[16];", "GLint heightMapShaderUniforms[24];")
+    h = rep(h, "GLint heightMapShaderUniforms[16];", "GLint heightMapShaderUniforms[32];")
     h = rep(h, "\tGLfloat demDistScale; // Maximum deviation", "\tFaceImage* faceImage; // Foto projetada na areia (modo Rosto); 0 = desligado\n\tGLfloat demDistScale; // Maximum deviation")
     h = rep(h, "\tvoid setDemDistScale(", "\tvoid setFaceImage(FaceImage* newFaceImage); // Liga/desliga o modo Rosto\n\tvoid setDemDistScale(")
+    h = rep(h, "class FaceImage;\n", "class FaceImage;\nclass Extras;\n")
+    h = rep(h, "\tFaceImage* faceImage; // Foto projetada na areia (modo Rosto); 0 = desligado\n",
+            "\tFaceImage* faceImage; // Foto projetada na areia (modo Rosto); 0 = desligado\n"
+            "\tconst Extras* extras; // Tesouro, lago, peixes e carrinhos (Projetor-LAOB); 0 = desligado\n")
+    h = rep(h, "\tvoid setFaceImage(FaceImage* newFaceImage); // Liga/desliga o modo Rosto\n",
+            "\tvoid setFaceImage(FaceImage* newFaceImage); // Liga/desliga o modo Rosto\n"
+            "\tvoid setExtras(const Extras* newExtras); // Liga/desliga tesouro e animais\n")
     open("SurfaceRenderer.h", "w").write(h)
 
 c = open("SurfaceRenderer.cpp").read()
@@ -122,5 +129,67 @@ if "FaceImage" not in c:
 	}
 
 void SurfaceRenderer::setDemDistScale(""")
+    # --- Extras (Projetor-LAOB): lago, tesouro, peixes e carrinhos desenhados sobre o relevo
+    c = rep(c, '#include "FaceImage.h"\n', '#include "FaceImage.h"\n#include "Extras.h"\n')
+    c = rep(c, "\t dem(0),faceImage(0),demDistScale(1.0f),", "\t dem(0),faceImage(0),extras(0),demDistScale(1.0f),")
+    c = rep(c, """					vertexMain+="\\
+						faceTexCoord=(faceTransform*vertexCc).xyz;\\n\\
+						\\n";
+					}
+""", """					vertexMain+="\\
+						faceTexCoord=(faceTransform*vertexCc).xyz;\\n\\
+						\\n";
+					}
+				if(extras!=0)
+					{
+					vertexUniforms+=Extras::glslVertexUniforms;
+					vertexMain+=Extras::glslVertexMain;
+					}
+""")
+    c = rep(c, """							faceOut=vec4(faceColor.rgb*faceShade,1.0);\\n\\
+							}\\n\\
+						\\n";
+					}
+""", """							faceOut=vec4(faceColor.rgb*faceShade,1.0);\\n\\
+							}\\n\\
+						\\n";
+					}
+				if(extras!=0)
+					{
+					fragmentUniforms+=Extras::glslFragmentUniforms;
+					fragmentMain+=Extras::glslFragmentMain;
+					}
+""")
+    c = rep(c, """				*(ulPtr++)=glGetUniformLocationARB(result,"faceReference");
+				}
+""", """				*(ulPtr++)=glGetUniformLocationARB(result,"faceReference");
+				}
+			if(extras!=0)
+				for(int k=0;k<4;++k)
+					*(ulPtr++)=glGetUniformLocationARB(result,Extras::nomesUniforms[k]);
+""")
+    c = rep(c, """			faceImage->uploadUniforms(tl,pl,rl);
+			}
+""", """			faceImage->uploadUniforms(tl,pl,rl);
+			}
+		if(extras!=0)
+			{
+			GLint el[4];
+			for(int k=0;k<4;++k)
+				el[k]=*(ulPtr++);
+			extras->uploadUniforms(el);
+			}
+""")
+    c = rep(c, "void SurfaceRenderer::setFaceImage(FaceImage* newFaceImage)", """void SurfaceRenderer::setExtras(const Extras* newExtras)
+	{
+	/* Ligar/desligar o tesouro ou os animais muda o shader: */
+	if(newExtras!=extras)
+		{
+		extras=newExtras;
+		++surfaceSettingsVersion;
+		}
+	}
+
+void SurfaceRenderer::setFaceImage(FaceImage* newFaceImage)""")
     open("SurfaceRenderer.cpp", "w").write(c)
 print("SurfaceRenderer ok")

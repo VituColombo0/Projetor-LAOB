@@ -1,0 +1,37 @@
+PEIXES E CARRINHOS
+==================
+
+Peixes coloridos nadam nos lagos e desviam dos morros. Carrinhos andam
+pelos vales. Mexendo na areia, eles mudam o caminho.
+
+
+COMO USAR
+---------
+1. Abra o Terminal: aperte Ctrl + Alt + T
+2. Digite o comando e aperte Enter:
+
+    areia-animais peixes    peixes nadando
+    areia-animais carros    carrinhos andando
+    areia-animais todos     peixes e carrinhos juntos
+    areia-animais parar     tira os animais
+
+  Quer mais ou menos? Coloque o número no final (de 1 a 24):
+    areia-animais peixes 20
+
+
+COMO FAZER UM LAGO PARA OS PEIXES
+---------------------------------
+Cave um buraco na areia: a parte funda vira um lago azul e os peixes
+aparecem nadando nele. Quanto maior o buraco, maior o lago.
+Os carrinhos gostam dos vales (as partes baixas entre os morros).
+
+
+DICAS
+-----
+- Dá para jogar junto com a caça ao tesouro (pasta 4).
+- Pelo celular: http://100.114.194.28:8090 (botões "Peixes", "Carrinhos").
+
+
+VOLTAR PARA A TOPOGRAFIA
+------------------------
+    areia-topografia

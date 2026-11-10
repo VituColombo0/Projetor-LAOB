@@ -26,6 +26,9 @@ FUNDOS = ("", "--com-fundo", "--sem-fundo")
 AJUSTE = {"zoom": 0.03, "desloc": 0.0, "mistura": 0.0, "sombra": 1.0}
 PADRAO = {"modo": "original", "giro": 0, "espelho": False, "imagem": None, "fundo": "", "ajuste": AJUSTE}
 MANTER_NO_CACHE = 40
+PASTA_FOTOS = "2 - Fotos na areia"  # na Área de Trabalho (antes se chamava "Areia")
+DIFICULDADE = {"facil": 2.0, "normal": 3.0, "dificil": 5.0}  # cm de areia em cima do tesouro
+ANIMAIS = ("peixes", "carros", "todos")
 TEMAS = os.path.join(D, "temas")
 TEMA_ATUAL = os.path.join(TEMAS, "atual.cpt")
 NOMES_TEMAS = {"classico": "Clássico", "vulcao": "Vulcão", "inverno": "Inverno", "marte": "Marte",
@@ -39,7 +42,7 @@ class Erro(Exception):
 # ---------- pasta Areia ----------
 
 def pasta():
-    """A pasta Areia, na Área de Trabalho (criada se não existir)."""
+    """A pasta das fotos, na Área de Trabalho (criada se não existir)."""
     p = os.environ.get("AREIA_PASTA")
     if not p:
         try:
@@ -48,7 +51,7 @@ def pasta():
         except (OSError, subprocess.SubprocessError):
             mesa = ""
         casa = os.path.expanduser("~")
-        p = os.path.join(mesa if mesa and mesa != casa else os.path.join(casa, "Desktop"), "Areia")
+        p = os.path.join(mesa if mesa and mesa != casa else os.path.join(casa, "Desktop"), PASTA_FOTOS)
     os.makedirs(p, exist_ok=True)
     return p
 
@@ -323,6 +326,71 @@ def escolhe_tema(nome):
     e["tema"] = t
     salva(e)
     return t
+
+
+# ---------- brincadeiras: caça ao tesouro, peixes e carrinhos ----------
+
+def _brincadeira(comando):
+    """Brincadeiras rodam na versão com Foto (sobre o relevo colorido); sobe ela se precisar."""
+    if qual() != "rosto":
+        rc, _ = _sandbox("rosto")
+        if rc != 0:
+            raise Erro("a caixa de areia não abriu o modo brincadeira; a topografia voltou")
+    _comando(comando)
+    e = estado()
+    e["modo"] = "relevo"
+    salva(e)
+
+
+def tesouro(dificuldade="normal"):
+    """Esconde um tesouro num lugar sorteado, embaixo da areia. Devolve a profundidade (cm)."""
+    d = _chave_tema(str(dificuldade))
+    prof = DIFICULDADE.get(d)
+    if prof is None:
+        try:
+            prof = float(d.replace(",", "."))
+        except ValueError:
+            raise Erro("dificuldade: facil, normal ou dificil (ou a profundidade em cm)")
+    if not 1.0 <= prof <= 10.0:
+        raise Erro("a profundidade tem que ser entre 1 e 10 cm")
+    _brincadeira(f"tesouro {prof:g}")
+    return prof
+
+
+def tesouro_situacao():
+    """escondido, achado ou nenhum (lido do registro do programa da areia)."""
+    if qual() != "rosto":
+        return "nenhum"
+    try:
+        with open(os.path.join(D, "sandbox.log"), errors="replace") as f:
+            linhas = [l for l in f if l.startswith(("Tesouro", "Modo Rosto:"))]
+    except OSError:
+        return "nenhum"
+    if not linhas or linhas[-1].startswith(("Tesouro desligado", "Modo Rosto:")):
+        return "nenhum"
+    return "achado" if linhas[-1].startswith("Tesouro encontrado") else "escondido"
+
+
+def tesouro_fim():
+    if qual() == "rosto":
+        _comando("tesouroFim")
+
+
+def animais(tipo, quantidade=None):
+    t = _chave_tema(str(tipo))
+    t = {"peixe": "peixes", "carro": "carros", "carrinhos": "carros", "carrinho": "carros", "tudo": "todos"}.get(t, t)
+    if t not in ANIMAIS:
+        raise Erro("escolha: peixes, carros ou todos")
+    n = int(quantidade) if quantidade else (14 if t == "todos" else 10)
+    if not 1 <= n <= 24:
+        raise Erro("quantidade: de 1 a 24")
+    _brincadeira(f"animais {t} {n}")
+    return t, n
+
+
+def animais_fim():
+    if qual() == "rosto":
+        _comando("animais nada")
 
 
 def marca_topografia():

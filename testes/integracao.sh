@@ -20,11 +20,15 @@ trap 'cp -p "$TMP/estado.json" "$D/estado.json" 2>/dev/null; rm -rf "$TMP"' EXIT
 echo "== instalação"
 confere "compila do zero a partir do repositório" "bash '$R/instalar.sh' --compilar '$TMP/build' >/dev/null 2>&1"
 confere "binário instalado é o mesmo que o repositório gera" "cmp -s <(strings '$TMP/build/bin/SARndbox' | grep -c faceOut) <(strings '$D/bin/SARndbox' | grep -c faceOut)"
-confere "comandos no PATH" "command -v areia-foto >/dev/null && command -v areia-topografia >/dev/null"
+confere "comandos no PATH" "for c in areia-foto areia-topografia areia-tema areia-tesouro areia-animais; do command -v \$c >/dev/null || exit 1; done"
 confere "ao ligar abre a topografia" "grep -q '^Exec=.*areia-topografia' '$HOME/.config/autostart/SARndbox.desktop'"
 confere "modelos presentes" "[ -s '$D/modelos/u2net_human_seg.onnx' ] && [ -s '$D/modelos/face_detection_yunet_2023mar.onnx' ]"
 MESA=$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")
-confere "Área de Trabalho: pasta Areia, ajuda e atalho" "[ -f '$MESA/Areia/COMO USAR.txt' ] && [ -f '$MESA/SE A AREIA NÃO ABRIR.txt' ] && [ -x '$MESA/Abrir a areia.desktop' ]"
+for pasta in "1 - Topografia (ligar e consertar)" "2 - Fotos na areia" "3 - Cores do relevo" "4 - Caça ao tesouro" "5 - Peixes e carrinhos"; do
+  confere "Área de Trabalho: '$pasta' com o manual" "[ -s \"$MESA/$pasta/COMO USAR.txt\" ]"
+done
+confere "atalho 'Abrir a topografia'" "[ -x \"$MESA/1 - Topografia (ligar e consertar)/Abrir a topografia.desktop\" ]"
+confere "sem sobras da organização antiga" "[ ! -e '$MESA/Areia' ] && [ ! -e '$MESA/SE A AREIA NÃO ABRIR.txt' ]"
 
 echo "== painel do celular"
 confere "serviço ativo" "systemctl --user is-active -q sandbox-painel"
@@ -54,6 +58,15 @@ if [ "$N" -gt 0 ]; then
 else
   echo "(pasta Areia vazia: pulei o modo foto)"
 fi
+confere "caça ao tesouro esconde o baú" "areia-tesouro facil >/dev/null && sleep 2 && grep -q 'Tesouro escondido' '$D/sandbox.log'"
+confere "tesouro: situação" "areia-tesouro achou | grep -qiE 'escondido|acharam'"
+confere "peixes e carrinhos" "areia-animais todos 12 >/dev/null && grep -q 'Animais: todos (12)' '$D/sandbox.log'"
+sleep 3
+DISPLAY=:0 XAUTHORITY=/run/user/$(id -u)/gdm/Xauthority ffmpeg -loglevel error -y -f x11grab \
+  -video_size 1024x768 -i :0.0+1280,0 -frames:v 1 /tmp/integracao-brincadeiras.png 2>/dev/null \
+  && ok "print das brincadeiras em /tmp/integracao-brincadeiras.png"
+confere "sem erro de shader" "! grep -qiE 'shader.*(error|erro)|GLSL|compile error' '$D/sandbox.log'"
+confere "parar brincadeiras" "areia-animais parar >/dev/null && areia-tesouro parar >/dev/null"
 confere "volta à topografia" "areia-topografia >/dev/null && [ \"\$('$D/sandbox.sh' estado)\" = original ] && no_projetor"
 
 [ $falhas = 0 ] && echo "TUDO OK" || { echo "HÁ FALHAS"; exit 1; }
