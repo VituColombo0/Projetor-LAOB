@@ -1,0 +1,4 @@
+#!/bin/sh
+# Modo FOTO da caixa de areia (veja "areia-foto ajuda"). Roda com o Python próprio da pasta.
+D=$(dirname "$(readlink -f "$0")")
+exec "$D/venv/bin/python" "$D/areia_foto.py" "$@"

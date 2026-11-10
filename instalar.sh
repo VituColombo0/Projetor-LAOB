@@ -25,18 +25,18 @@ for f in BoxLayout.txt ProjectorMatrix.dat HeightColorMap.cpt SARndbox.cfg; do
 done
 
 echo "[2/8] modo Foto: patches e compilação"
-cp "$REPO"/{FaceImage.h,FaceImage.cpp,patch_surface.py,patch_sandbox.py,rosto.py,projetor.cfg} "$DEST/"
-( cd "$DEST" && python3 patch_surface.py && python3 patch_sandbox.py >/dev/null \
-  && make INSTALLDIR="$DEST" 2>&1 | grep -E "error|Error" || true )
-[ -x "$DEST/bin/SARndbox" ] && [ "$DEST/bin/SARndbox" -nt "$DEST/FaceImage.cpp" ] || { echo "a compilação falhou"; exit 1; }
+cp "$REPO"/sarndbox/{FaceImage.h,FaceImage.cpp,patch_surface.py,patch_sandbox.py,projetor.cfg} "$DEST/"
+( cd "$DEST" && python3 patch_surface.py >/dev/null && python3 patch_sandbox.py >/dev/null )
+if ! make -C "$DEST" INSTALLDIR="$DEST" > "$DEST/compilacao.log" 2>&1 \
+   || ! [ "$DEST/bin/SARndbox" -nt "$DEST/FaceImage.cpp" ]; then
+  echo "a compilação falhou; veja $DEST/compilacao.log"; exit 1
+fi
 [ $SO_COMPILAR = 1 ] && { echo "compilado em $DEST/bin/SARndbox"; exit 0; }
 
-echo "[3/8] scripts (caminhos ajustados para $HOME)"
-U=$(id -u)
-for f in sandbox.sh areia-foto areia-topografia painel.py; do
-  sed -e "s#/home/laob#$HOME#g" -e "s#/run/user/1000#/run/user/$U#g" "$REPO/$f" > "$DEST/$f"
-done
+echo "[3/8] programas da pasta areia/"
+cp "$REPO"/areia/{areia.py,areia_foto.py,rosto.py,painel.py,sandbox.sh,areia-foto,areia-topografia} "$DEST/"
 chmod +x "$DEST"/{sandbox.sh,areia-foto,areia-topografia}
+rm -f "$DEST/Sandbox.cpp.antes-area"  # sobra de versões antigas
 
 echo "[4/8] Python próprio (venv) com OpenCV e Flask"
 [ -x "$DEST/venv/bin/python" ] || python3 -m venv "$DEST/venv"
@@ -57,9 +57,9 @@ ln -sf "$DEST/areia-topografia" "$HOME/.local/bin/areia-topografia"
 echo "[7/8] Área de Trabalho: pasta Areia, ajuda e atalho"
 MESA=$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop"); [ "$MESA" = "$HOME" ] && MESA=$HOME/Desktop
 mkdir -p "$MESA/Areia"
-cp "$REPO/COMO-USAR.txt" "$MESA/Areia/COMO USAR.txt"
-cp "$REPO/SE-A-AREIA-NAO-ABRIR.txt" "$MESA/SE A AREIA NÃO ABRIR.txt"
-sed "s#/home/laob#$HOME#g" "$REPO/abrir-a-areia.desktop" > "$MESA/Abrir a areia.desktop"
+cp "$REPO/area-de-trabalho/COMO-USAR.txt" "$MESA/Areia/COMO USAR.txt"
+cp "$REPO/area-de-trabalho/SE-A-AREIA-NAO-ABRIR.txt" "$MESA/SE A AREIA NÃO ABRIR.txt"
+sed "s#/home/laob#$HOME#g" "$REPO/area-de-trabalho/abrir-a-areia.desktop" > "$MESA/Abrir a areia.desktop"
 chmod +x "$MESA/Abrir a areia.desktop"
 gio set "$MESA/Abrir a areia.desktop" metadata::trusted true 2>/dev/null || true
 B=$HOME/.config/gtk-3.0/bookmarks; mkdir -p "$(dirname "$B")"
@@ -75,7 +75,7 @@ else
   printf '[Desktop Entry]\nType=Application\nName=SANDBOX\nExec=%s/areia-topografia\nX-GNOME-Autostart-enabled=true\n' "$DEST" > "$A"
 fi
 mkdir -p "$HOME/.config/systemd/user"
-sed "s#/home/laob#$HOME#g" "$REPO/sandbox-painel.service" > "$HOME/.config/systemd/user/sandbox-painel.service"
+cp "$REPO/sistema/sandbox-painel.service" "$HOME/.config/systemd/user/"
 systemctl --user daemon-reload
 systemctl --user enable --now sandbox-painel >/dev/null 2>&1 && systemctl --user restart sandbox-painel || true
 

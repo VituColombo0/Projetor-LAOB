@@ -19,17 +19,12 @@ import sys
 import cv2
 import numpy as np
 
-AQUI = os.path.dirname(os.path.abspath(__file__))
+AQUI = os.path.dirname(os.path.realpath(__file__))
 FOTOS = os.path.join(AQUI, "fotos")
-def _local(*opcoes):
-    """Primeiro caminho que existe (o da pasta do SARndbox-rosto vem antes)."""
-    return next((c for c in opcoes if os.path.exists(c)), opcoes[0])
-
-
-# a mesma calibração que o binário da cópia usa (etc/ da cópia)
-BOX = _local(os.path.join(AQUI, "etc", "SARndbox-2.8", "BoxLayout.txt"), "/root/etc/SARndbox-2.8/BoxLayout.txt")
-YUNET = _local(os.path.join(AQUI, "modelos", "face_detection_yunet_2023mar.onnx"),
-               "/opt/visao/models/face_detection_yunet_2023mar.onnx")
+# a mesma calibração que o binário da cópia usa (etc/ da pasta); AREIA_CALIB troca (testes)
+CALIB = os.environ.get("AREIA_CALIB") or os.path.join(AQUI, "etc", "SARndbox-2.8")
+BOX = os.path.join(CALIB, "BoxLayout.txt")
+YUNET = os.path.join(AQUI, "modelos", "face_detection_yunet_2023mar.onnx")
 LADO_MAX = 1024  # imagem inteira (sem rosto): maior lado
 U2NET = os.path.join(AQUI, "modelos", "u2net_human_seg.onnx")
 SAIDA_W, SAIDA_H = 600, 800

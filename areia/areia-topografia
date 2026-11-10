@@ -1,29 +1,26 @@
 #!/bin/bash
 # Volta a caixa de areia para a TOPOGRAFIA (o SARndbox original). É também o que roda ao ligar o PC
 # (~/.config/autostart/SARndbox.desktop): espera o Kinect aparecer e tenta de novo se não abrir.
+# Não depende do venv: a topografia abre mesmo que a parte de fotos esteja quebrada.
 set -uo pipefail
-D=/home/laob/SARndbox-rosto
+D=$(dirname "$(readlink -f "$0")")
 LOG=$D/inicio.log
 registra() { echo "$(date '+%F %T') $*" >> "$LOG"; }
-[ -f "$LOG" ] && [ "$(wc -l < "$LOG")" -gt 500 ] && tail -n 200 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+if [ -f "$LOG" ] && [ "$(wc -l < "$LOG")" -gt 500 ]; then
+  tail -n 200 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+fi
 
 # Kinect (Xbox NUI Camera 045e:02ae): ao ligar o PC ele pode demorar alguns segundos
 for _ in $(seq 1 30); do
   lsusb -d 045e:02ae >/dev/null 2>&1 && break
   sleep 1
 done
-lsusb -d 045e:02ae >/dev/null 2>&1 || { registra "Kinect não encontrado (USB)"; echo "Kinect não encontrado: confira o cabo USB e a fonte do Kinect"; }
+if ! lsusb -d 045e:02ae >/dev/null 2>&1; then
+  registra "Kinect não encontrado (USB)"
+  echo "Kinect não encontrado: confira o cabo USB e a fonte do Kinect"
+fi
 
-python3 - <<'PY'
-import json, os
-p = "/home/laob/SARndbox-rosto/estado.json"
-try:
-    e = json.load(open(p))
-except (OSError, ValueError):
-    e = {}
-e["modo"] = "original"
-json.dump(e, open(p + ".tmp", "w")); os.replace(p + ".tmp", p)
-PY
+python3 "$D/areia.py" marca-topografia 2>/dev/null || registra "não consegui anotar o estado"
 
 for tentativa in 1 2 3; do
   "$D/sandbox.sh" original >/dev/null 2>&1

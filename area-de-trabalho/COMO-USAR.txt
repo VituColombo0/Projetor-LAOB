@@ -37,6 +37,7 @@ A primeira vez que uma imagem é usada leva uns 5 segundos; depois, cerca de 1 s
 ----------
   areia-foto girar       gira a imagem 90 graus (repita até ficar de pé para quem olha a caixa)
   areia-foto espelhar    espelha a imagem (se o texto aparecer invertido)
+  areia-foto esculpir    mostra onde pôr areia (vermelho) e onde tirar (azul) para formar a imagem
   areia-foto lista       só mostra a lista de imagens
   areia-foto pasta       abre esta pasta
   areia-foto ajuda       mostra todos os comandos

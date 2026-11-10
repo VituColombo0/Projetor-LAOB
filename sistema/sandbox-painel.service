@@ -1,0 +1,13 @@
+[Unit]
+Description=Painel do celular para a caixa de areia (Projetor-LAOB)
+After=graphical-session.target
+
+[Service]
+ExecStart=%h/SARndbox-rosto/venv/bin/python %h/SARndbox-rosto/painel.py
+WorkingDirectory=%h/SARndbox-rosto
+Restart=always
+RestartSec=10
+Nice=5
+
+[Install]
+WantedBy=default.target
