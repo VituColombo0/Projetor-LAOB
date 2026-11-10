@@ -32,7 +32,8 @@ SAIDA_W, SAIDA_H = 600, 800
 
 def caixa_cm():
     """Extensão da caixa de areia (cm) no espaço da caixa, igual ao SARndbox."""
-    linhas = [l.strip() for l in open(BOX) if l.strip()]
+    with open(BOX) as f:
+        linhas = [l.strip() for l in f if l.strip()]
     nums = [float(x) for x in linhas[0].replace("(", " ").replace(")", " ").replace(",", " ").split()]
     n = np.array(nums[:3]); n /= np.linalg.norm(n); off = nums[3]
     cs = []
@@ -47,7 +48,8 @@ def caixa_cm():
     # só a parte que o projetor ilumina (igual ao Sandbox.cpp): cantos da imagem até o plano base
     pm = os.path.join(os.path.dirname(BOX), "ProjectorMatrix.dat")
     if os.path.exists(pm):
-        inv = np.linalg.inv(np.array(struct.unpack("<16d", open(pm, "rb").read()[:128])).reshape(4, 4))
+        with open(pm, "rb") as f:
+            inv = np.linalg.inv(np.array(struct.unpack("<16d", f.read()[:128])).reshape(4, 4))
         pts = []
         for nx, ny in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
             p0, p1 = (inv @ np.array([nx, ny, z, 1.0]) for z in (-1.0, 1.0))

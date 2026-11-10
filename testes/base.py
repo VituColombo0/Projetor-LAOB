@@ -26,6 +26,7 @@ case "$1" in
   estado) cat "$F/qual" 2>/dev/null || echo nenhum ;;
   original|rosto) echo "$1" > "$F/qual"; echo "$1" ;;
   cmd) [ "$(cat "$F/qual" 2>/dev/null)" = rosto ] || { echo "a versão com Foto não está rodando"; exit 1; } ;;
+  tema) [ -f "$2" ] || exit 1; echo tema ;;
 esac
 """
 
@@ -61,6 +62,7 @@ class Ambiente(unittest.TestCase):
         with open(py, "w") as f:
             f.write(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')
         os.chmod(py, 0o755)
+        shutil.copytree(os.path.join(AREIA_SRC, "temas"), os.path.join(self.D, "temas"))
         sb = os.path.join(self.FALSO, "sandbox.sh")
         with open(sb, "w") as f:
             f.write(SANDBOX_FALSO)

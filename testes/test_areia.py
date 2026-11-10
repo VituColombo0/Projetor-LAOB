@@ -137,6 +137,54 @@ class Projetor(Ambiente):
         self.assertEqual(self.comandos()[-1], "cmd rostoAjuste 0.07 0.0 0.0 1.0")
 
 
+class Temas(Ambiente):
+    def test_arquivos_de_cor_validos(self):
+        for t in self.areia.temas():
+            with open(os.path.join(self.areia.TEMAS, t + ".cpt")) as f:
+                linhas = [l.split() for l in f if l.strip()]
+            alturas = [float(l[0]) for l in linhas]
+            self.assertTrue(all(len(l) == 4 for l in linhas), t)
+            self.assertEqual(alturas, sorted(alturas), t)
+            self.assertTrue(all(0 <= int(v) <= 255 for l in linhas for v in l[1:]), t)
+            self.assertLessEqual(alturas[0], 0, t)       # cobre a água (abaixo do plano base)
+            self.assertGreaterEqual(alturas[-1], 15, t)  # e os morros mais altos
+
+    def test_lista_e_padrao(self):
+        self.assertEqual(self.areia.temas()[:2], ["classico", "vulcao"])
+        self.assertEqual(len(self.areia.temas()), 8)
+        self.assertEqual(self.areia.tema_atual(), "classico")
+
+    def test_escolhe_com_acento_e_abreviado(self):
+        self.assertEqual(self.areia.escolhe_tema("Vulcão"), "vulcao")
+        self.assertEqual(os.readlink(self.areia.TEMA_ATUAL), "vulcao.cpt")
+        self.assertTrue(self.comandos()[-1].startswith("tema ") and self.comandos()[-1].endswith("vulcao.cpt"))
+        self.assertEqual(self.areia.escolhe_tema("arco iris"), "arco-iris")
+        self.assertEqual(self.areia.escolhe_tema("inv"), "inverno")
+        self.assertEqual(self.areia.tema_atual(), "inverno")
+        self.assertEqual(self.areia.estado()["tema"], "inverno")
+
+    def test_tema_inexistente(self):
+        with self.assertRaisesRegex(self.areia.Erro, "não existe"):
+            self.areia.escolhe_tema("xadrez")
+        with self.assertRaisesRegex(self.areia.Erro, "não existe"):
+            self.areia.escolhe_tema("")              # vazio não escolhe nenhum
+        self.assertEqual(self.areia.tema_atual(), "classico")
+
+    def test_comando(self):
+        import importlib
+        import areia_tema
+        areia_tema = importlib.reload(areia_tema)
+        saida = io.StringIO()
+        with redirect_stdout(saida):
+            areia_tema.main([])
+            areia_tema.main(["marte"])
+            areia_tema.main(["lista"])
+        out = saida.getvalue()
+        self.assertIn("vulcao", out)
+        self.assertIn("Tema Marte no projetor.", out)
+        self.assertIn("marte      Marte   <- atual", out)
+
+
 class Comando(Ambiente):
     """areia-foto (areia_foto.main) sem terminal interativo."""
 

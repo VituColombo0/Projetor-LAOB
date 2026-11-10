@@ -47,7 +47,15 @@ A primeira vez que uma imagem é usada leva uns 5 segundos; depois, cerca de 1 s
   areia-foto 2 --sem-fundo    tira o fundo mesmo sem rosto na imagem
 
 
-4. VOLTAR PARA A TOPOGRAFIA
+4. CORES DO RELEVO (TEMAS)
+-------------------------
+  areia-tema             mostra os temas e qual está em uso
+  areia-tema vulcao      troca na hora (vale também nas próximas vezes que ligar)
+
+  Temas: classico, vulcao, inverno, marte, deserto, oceano, arco-iris, mapa
+
+
+5. VOLTAR PARA A TOPOGRAFIA
 ---------------------------
   areia-topografia
 

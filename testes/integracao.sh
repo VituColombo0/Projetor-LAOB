@@ -37,6 +37,9 @@ TS=$(tailscale ip -4 2>/dev/null | head -1)
 echo "== projetor"
 confere "topografia abre" "areia-topografia >/dev/null && [ \"\$('$D/sandbox.sh' estado)\" = original ]"
 confere "topografia no projetor, tela cheia" "no_projetor"
+TEMA0=$(readlink "$D/temas/atual.cpt" 2>/dev/null | sed 's/\.cpt$//'); TEMA0=${TEMA0:-classico}
+confere "topografia aceita troca de cores (cano de comandos)" "pgrep -af '^$HOME/SARndbox-2.8/bin/SARndbox' | grep -q -- ' -cp '"
+confere "troca de tema na hora (< 2 s)" "s=\$(date +%s); areia-tema vulcao >/dev/null && areia-tema '$TEMA0' >/dev/null && [ \$((\$(date +%s) - s)) -lt 2 ]"
 N=$(areia-foto lista | grep -cE '^ +[0-9]+  ')
 if [ "$N" -gt 0 ]; then
   confere "modo foto abre com a imagem 1" "areia-foto 1 >/dev/null && [ \"\$('$D/sandbox.sh' estado)\" = rosto ]"

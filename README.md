@@ -20,6 +20,7 @@ Coloque as imagens em **Área de Trabalho > Areia** e, no terminal:
     areia-foto 2          # ou direto pelo número / parte do nome
     areia-foto girar      # se aparecer de lado para quem olha a caixa
     areia-topografia      # volta ao relevo
+    areia-tema vulcao     # cores do relevo: classico, vulcao, inverno, marte, deserto, oceano, arco-iris, mapa
 
 Guia para o laboratório: [`COMO-USAR.txt`](COMO-USAR.txt) e [`SE-A-AREIA-NAO-ABRIR.txt`](SE-A-AREIA-NAO-ABRIR.txt)
 (os dois ficam também na Área de Trabalho do lab2).
@@ -56,6 +57,14 @@ No PC tudo fica numa pasta só, `~/SARndbox-rosto` (cópia do SARndbox + os arqu
     bash testes/integracao.sh  # no lab2, depois do instalar.sh: compila, confere tudo instalado,
                                # o painel (aceita Tailscale, recusa a rede local) e o projetor de verdade
                                # (~1 min), terminando na topografia
+
+## Temas de cor do relevo
+
+`areia/temas/*.cpt` (altura em cm acima do plano base -> cor RGB; abaixo de 0 é água). O tema
+escolhido é o link `temas/atual.cpt`: a topografia (o SARndbox original, sem mudanças) abre com
+`-uhm temas/atual.cpt -cp topografia.fifo`, e `areia-tema` troca na hora pelo comando `colorMap`
+do próprio SARndbox (~0,1 s, sem fechar o programa). Vale também no modo Relevo da versão com Foto.
+Os pontos foram ajustados à areia do lab2 (morros de ~8–10 cm): lava e ilhas aparecem nos picos.
 
 ## Painel do celular
 `painel.py` (serviço de usuário `sandbox-painel`) em http://100.114.194.28:8090: escuta em todas as

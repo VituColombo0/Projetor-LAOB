@@ -1,0 +1,4 @@
+#!/bin/sh
+# Cores do relevo (veja "areia-tema ajuda"). Só biblioteca padrão: funciona até sem o venv.
+D=$(dirname "$(readlink -f "$0")")
+exec python3 "$D/areia_tema.py" "$@"

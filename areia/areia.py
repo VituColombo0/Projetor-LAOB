@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import time
+import unicodedata
 
 D = os.environ.get("AREIA_DIR") or os.path.dirname(os.path.realpath(__file__))
 FOTOS = os.path.join(D, "fotos")
@@ -25,6 +26,10 @@ FUNDOS = ("", "--com-fundo", "--sem-fundo")
 AJUSTE = {"zoom": 0.03, "desloc": 0.0, "mistura": 0.0, "sombra": 1.0}
 PADRAO = {"modo": "original", "giro": 0, "espelho": False, "imagem": None, "fundo": "", "ajuste": AJUSTE}
 MANTER_NO_CACHE = 40
+TEMAS = os.path.join(D, "temas")
+TEMA_ATUAL = os.path.join(TEMAS, "atual.cpt")
+NOMES_TEMAS = {"classico": "Clássico", "vulcao": "Vulcão", "inverno": "Inverno", "marte": "Marte",
+               "deserto": "Deserto", "oceano": "Oceano", "arco-iris": "Arco-íris", "mapa": "Mapa de papel"}
 
 
 class Erro(Exception):
@@ -272,6 +277,52 @@ def foto_da_camera():
     if r.returncode != 0 or not os.path.isfile(origem):
         raise Erro("não consegui a foto da câmera (o Willbert está configurado?)")
     return guarda(origem, time.strftime("camera-%Y-%m-%d-%H%M%S.jpg"))
+
+
+# ---------- temas de cor do relevo ----------
+
+def temas():
+    """Temas disponíveis (arquivos .cpt da pasta temas/), na ordem de NOMES_TEMAS."""
+    try:
+        achados = {f[:-4] for f in os.listdir(TEMAS) if f.endswith(".cpt") and f != "atual.cpt"}
+    except OSError:
+        achados = set()
+    return [t for t in NOMES_TEMAS if t in achados] + sorted(achados - set(NOMES_TEMAS))
+
+
+def tema_atual():
+    try:
+        return os.path.basename(os.readlink(TEMA_ATUAL))[:-4]
+    except OSError:
+        return "classico"
+
+
+def _chave_tema(nome):
+    t = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode().lower().strip()
+    return "-".join(t.replace("_", " ").replace("-", " ").split())
+
+
+def escolhe_tema(nome):
+    """Troca as cores do relevo (na hora, no que estiver no projetor) e guarda para as próximas aberturas."""
+    t = _chave_tema(nome)
+    disponiveis = temas()
+    if t not in disponiveis:
+        achados = [x for x in disponiveis if x.startswith(t)] if t else []
+        if len(achados) != 1:
+            raise Erro(f'tema "{nome}" não existe; temas: {", ".join(disponiveis)}')
+        t = achados[0]
+    tmp = TEMA_ATUAL + ".tmp"
+    if os.path.lexists(tmp):
+        os.remove(tmp)
+    os.symlink(t + ".cpt", tmp)
+    os.replace(tmp, TEMA_ATUAL)
+    rc, out = _sandbox("tema", os.path.join(TEMAS, t + ".cpt"), timeout=30)
+    if rc != 0:
+        raise Erro("não consegui trocar as cores agora (" + out + "); valem na próxima abertura")
+    e = estado()
+    e["tema"] = t
+    salva(e)
+    return t
 
 
 def marca_topografia():

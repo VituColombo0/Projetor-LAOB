@@ -34,8 +34,9 @@ fi
 [ $SO_COMPILAR = 1 ] && { echo "compilado em $DEST/bin/SARndbox"; exit 0; }
 
 echo "[3/8] programas da pasta areia/"
-cp "$REPO"/areia/{areia.py,areia_foto.py,rosto.py,painel.py,sandbox.sh,areia-foto,areia-topografia} "$DEST/"
-chmod +x "$DEST"/{sandbox.sh,areia-foto,areia-topografia}
+cp "$REPO"/areia/{areia.py,areia_foto.py,areia_tema.py,rosto.py,painel.py,sandbox.sh,areia-foto,areia-tema,areia-topografia} "$DEST/"
+chmod +x "$DEST"/{sandbox.sh,areia-foto,areia-tema,areia-topografia}
+mkdir -p "$DEST/temas" && cp "$REPO"/areia/temas/*.cpt "$DEST/temas/"   # o tema escolhido (temas/atual.cpt) fica
 rm -f "$DEST/Sandbox.cpp.antes-area"  # sobra de versões antigas
 
 echo "[4/8] Python próprio (venv) com OpenCV e Flask"
@@ -49,10 +50,11 @@ baixa face_detection_yunet_2023mar.onnx \
   https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
 baixa u2net_human_seg.onnx https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net_human_seg.onnx
 
-echo "[6/8] comandos areia-foto e areia-topografia"
+echo "[6/8] comandos areia-foto, areia-tema e areia-topografia"
 mkdir -p "$HOME/.local/bin" "$DEST/fotos"
 ln -sf "$DEST/areia-foto" "$HOME/.local/bin/areia-foto"
 ln -sf "$DEST/areia-topografia" "$HOME/.local/bin/areia-topografia"
+ln -sf "$DEST/areia-tema" "$HOME/.local/bin/areia-tema"
 
 echo "[7/8] Área de Trabalho: pasta Areia, ajuda e atalho"
 MESA=$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop"); [ "$MESA" = "$HOME" ] && MESA=$HOME/Desktop

@@ -53,6 +53,8 @@ def ver_estado():
     e["sandbox"] = areia.qual()
     e["tem_foto"] = os.path.exists(os.path.join(areia.FOTOS, "rosto.png"))
     e["imagem"] = os.path.basename(e["imagem"]) if e.get("imagem") else None
+    e["tema"] = areia.tema_atual()
+    e["temas"] = [[t, areia.NOMES_TEMAS.get(t, t)] for t in areia.temas()]
     return jsonify(e)
 
 
@@ -92,6 +94,14 @@ def modo():
         e["modo"] = m
         areia.aplica(e)
         return {"rosto": "modo Foto", "original": "topografia"}.get(m, m)
+    return resposta(faz)
+
+
+@app.post("/tema")
+def tema():
+    def faz():
+        t = areia.escolhe_tema((request.get_json(silent=True) or {}).get("tema") or "")
+        return f"cores: {areia.NOMES_TEMAS.get(t, t)}"
     return resposta(faz)
 
 
@@ -152,6 +162,7 @@ input[type=range]{width:100%}
  <p class="small">Foto: a imagem se deforma com a areia. Esculpir: vermelho = falta areia, azul = sobra.</p>
  <div class="row"><button data-m="original">Topografia</button></div>
 </div>
+<div class="card"><div class="small">Cores do relevo</div><div class="row" id="temas"></div></div>
 <div class="card"><div class="small">Posição da foto na areia</div><div class="row">
  <button id="girar">Girar 90°</button><button id="esp">Espelhar</button></div></div>
 <div class="card"><div class="small">Deformação pela areia: <span id="vz"></span></div>
@@ -174,6 +185,9 @@ async function carrega(){E=await (await fetch('/estado')).json();
  for(const k of ['zoom','sombra','mistura'])$('#'+k).value=E.ajuste[k];
  $('#vz').textContent=Math.round(E.ajuste.zoom*1000)/10+'%/cm';$('#vs').textContent=E.ajuste.sombra;
  $('#vm').textContent=Math.round(E.ajuste.mistura*100)+'%';
+ const T=$('#temas');if(!T.children.length)for(const [t,n] of E.temas){const b=document.createElement('button');
+  b.textContent=n;b.dataset.t=t;b.onclick=()=>post('/tema',{tema:t});T.appendChild(b)}
+ T.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.t===E.tema));
  if(E.tem_foto){$('#prev').hidden=false;$('#prev').src='/previa.png?'+Date.now()}}
 function envia(inp){inp.onchange=()=>{if(!inp.files[0])return;const f=new FormData();f.append('foto',inp.files[0]);post('/foto',f,true);inp.value=''}}
 envia($('#selfie'));envia($('#galeria'));

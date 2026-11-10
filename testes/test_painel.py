@@ -58,6 +58,15 @@ class Painel(Ambiente):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(self.rodando(), "original")
 
+    def test_temas(self):
+        j = self.get("/estado").get_json()
+        self.assertEqual(j["tema"], "classico")
+        self.assertIn(["vulcao", "Vulcão"], j["temas"])
+        self.assertEqual(self.post("/tema", json={"tema": "nada"}).status_code, 400)
+        r = self.post("/tema", json={"tema": "oceano"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.get("/estado").get_json()["tema"], "oceano")
+
     def test_ajustes(self):
         self.areia.mostra(self.poe("a.jpg"))
         self.assertEqual(self.post("/ajuste", json={"zoom": "abc"}).status_code, 400)
