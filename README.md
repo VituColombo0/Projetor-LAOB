@@ -1,12 +1,41 @@
-# SARndbox com modo Rosto (lab2)
+# Projetor-LAOB
 
-Cópia do AR Sandbox 2.8 (`~/SARndbox-rosto` no lab2) com dois modos novos. O original
-(`~/SARndbox-2.8`) não é alterado e continua sendo o que abre no login.
+Imagens projetadas na caixa de areia do laboratório (AR Sandbox / SARndbox 2.8, Kinect v1 e
+projetor), rodando no **lab2**. Ao ligar o PC abre a **topografia** de sempre; por comando no
+terminal, a caixa passa a mostrar uma **foto** que se deforma conforme mexem na areia.
 
-- **Rosto**: a foto é projetada sobre a areia; onde a areia está alta a foto amplia (efeito
-  lente) e o relevo faz sombra, então o rosto se deforma enquanto mexem na areia.
-- **Esculpir**: o rosto vira um relevo-alvo; o SARndbox pinta onde falta areia (vermelho) e
-  onde sobra (azul) para formar o rosto.
+- **Topografia**: o SARndbox original, sem nenhuma mudança (`~/SARndbox-2.8`).
+- **Foto**: uma cópia (`~/SARndbox-rosto`) com um modo novo: a imagem é projetada sobre a areia,
+  amplia onde a areia está alta (efeito lente) e ganha a sombra do relevo. Foto com rosto sai
+  recortada, sem fundo (preto = projetor apagado).
+- **Esculpir**: o rosto vira um relevo-alvo; o projetor pinta onde falta areia (vermelho) e onde
+  sobra (azul).
+- Tudo roda localmente no PC (Python próprio e modelos na pasta); só a instalação baixa coisas.
+
+## Uso rápido
+
+Coloque as imagens em **Área de Trabalho > Areia** e, no terminal:
+
+    areia-foto            # lista as imagens e pergunta o número
+    areia-foto 2          # ou direto pelo número / parte do nome
+    areia-foto girar      # se aparecer de lado para quem olha a caixa
+    areia-topografia      # volta ao relevo
+
+Guia para o laboratório: [`COMO-USAR.txt`](COMO-USAR.txt) e [`SE-A-AREIA-NAO-ABRIR.txt`](SE-A-AREIA-NAO-ABRIR.txt)
+(os dois ficam também na Área de Trabalho do lab2).
+
+## Instalar
+
+Num PC com o SARndbox 2.8 já compilado em `~/SARndbox-2.8` e calibrado (Ubuntu, sem sudo):
+
+    git clone https://github.com/VituColombo0/Projetor-LAOB.git && cd Projetor-LAOB
+    bash instalar.sh
+
+O `instalar.sh` copia o SARndbox para `~/SARndbox-rosto`, aplica os patches e compila, cria o
+Python próprio (`requirements.txt`), baixa os modelos, instala os comandos em `~/.local/bin`,
+cria a pasta Areia, a ajuda e o atalho na Área de Trabalho, troca o autostart para abrir a
+topografia no projetor e liga o painel do celular. Pode rodar de novo para atualizar.
+`bash instalar.sh --compilar /tmp/teste` só testa a compilação.
 
 ## Arquivos
 - `FaceImage.h/.cpp`: a foto como textura e a matriz câmera -> foto (giro, espelho, proporção).
@@ -14,22 +43,18 @@ Cópia do AR Sandbox 2.8 (`~/SARndbox-rosto` no lab2) com dois modos novos. O or
   comandos `rosto`, `rostoAjuste`, `esculpir`, `relevo` no cano de controle `-cp`).
 - `rosto.py`: recorta o rosto (YuNet em `modelos/`), tira o fundo, reforça o contraste e gera `rosto.dem`.
 - `sandbox.sh`: troca entre o original e esta versão (volta ao original se ela falhar).
-
-## Montar no lab2
-    cp -a ~/SARndbox-2.8 ~/SARndbox-rosto && cd ~/SARndbox-rosto
-    cp /root/etc/SARndbox-2.8/* etc/SARndbox-2.8/
-    cp <este diretório>/{FaceImage.h,FaceImage.cpp,patch_*.py,rosto.py,sandbox.sh,projetor.cfg} .
-    python3 patch_surface.py && python3 patch_sandbox.py
-    make INSTALLDIR=$HOME/SARndbox-rosto
+- `areia-foto`, `areia-topografia`: os comandos do dia a dia (pasta Areia, menu, cache).
+- `projetor.cfg`: abre a janela em tela cheia no projetor (HDMI-0) via `-mergeConfig`.
+- `painel.py`, `sandbox-painel.service`: painel web para o celular.
+- `instalar.sh`, `requirements.txt`: instalação.
+- `COMO-USAR.txt`, `SE-A-AREIA-NAO-ABRIR.txt`, `abrir-a-areia.desktop`: o que vai para a Área de Trabalho.
 
 ## Painel do celular
 `painel.py` (serviço de usuário `sandbox-painel`) em http://100.114.194.28:8090 (só Tailscale e
 127.0.0.1): tirar selfie, escolher foto ou usar a câmera do laboratório, trocar de modo,
 girar/espelhar e ajustar deformação, sombra e mistura com as cores de relevo.
 
-    cp sandbox-painel.service ~/.config/systemd/user/ && systemctl --user enable --now sandbox-painel
-
-## Usar
+## Comandos internos (sandbox.sh)
     ./sandbox.sh rosto
     venv/bin/python rosto.py foto.jpg
     ./sandbox.sh cmd "rosto /home/laob/SARndbox-rosto/fotos/rosto.png 0 0"
@@ -81,3 +106,9 @@ girar/espelhar e ajustar deformação, sombra e mistura com as cores de relevo.
 - Na Área de Trabalho: `SE A AREIA NÃO ABRIR.txt` (cópia de `SE-A-AREIA-NAO-ABRIR.txt`) e o atalho
   `Abrir a areia.desktop` (de `abrir-a-areia.desktop`; precisa de `chmod +x` e
   `gio set <arquivo> metadata::trusted true` para abrir com dois cliques).
+
+## Licença
+
+O SARndbox é de Oliver Kreylos (UC Davis), sob GPL-2.0; os patches e o modo Foto deste repositório
+seguem a mesma licença. Os modelos baixados pelo instalador têm licenças próprias: YuNet
+(OpenCV Zoo, MIT) e U²-Net de pessoas (projeto rembg / U²-Net, Apache-2.0).
