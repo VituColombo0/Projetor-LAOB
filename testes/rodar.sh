@@ -7,7 +7,7 @@ PY=${1:-$HOME/SARndbox-rosto/venv/bin/python}
 [ -x "$PY" ] || PY=python3
 falhas=0
 echo "== sintaxe dos scripts"
-for f in "$R"/instalar.sh "$R"/areia/sandbox.sh "$R"/areia/areia-topografia "$R"/testes/*.sh; do
+for f in "$R"/instalar.sh "$R"/areia/sandbox.sh "$R"/areia/areia-topografia "$R"/areia/areia-vigia "$R"/testes/*.sh; do
   bash -n "$f" || { echo "  ERRO em $f"; falhas=1; }
 done
 for w in areia-foto areia-tema areia-tesouro areia-animais areia-fossil areia-labirinto; do sh -n "$R/areia/$w" || falhas=1; done

@@ -27,6 +27,10 @@ SE A AREIA NÃO ABRIR
    rode de novo:    areia-topografia
 4. Ainda não? Reinicie o computador com o projetor e o Kinect ligados.
 
+  Se a areia fechar sozinha (o programa travou ou caiu), ela abre de novo
+  sozinha em até 2 minutos. Para usar o computador para outra coisa sem a
+  areia reabrir:   areia-vigia pausa      (para voltar:  areia-vigia liga)
+
   Se aparecer "comando não encontrado", use o caminho completo:
     ~/SARndbox-rosto/areia-topografia
 
@@ -39,5 +43,6 @@ OUTRAS COISAS PARA FAZER NA AREIA
   Peixes e carrinhos ........ pasta "5 - Peixes e carrinhos"
   Willbert .................. pasta "6 - Willbert"
   Fósseis de dinossauro ..... pasta "7 - Fósseis de dinossauro"
+  Labirinto de água ......... pasta "8 - Labirinto de água"
 
   Pelo celular (com o Tailscale ligado): http://100.114.194.28:8090

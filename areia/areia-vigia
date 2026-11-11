@@ -1,0 +1,26 @@
+#!/bin/bash
+# Vigia da caixa de areia: se o programa da areia fechou sozinho (travou, caiu), abre a
+# topografia de novo. Roda a cada 2 minutos pelo serviço de usuário areia-vigia.timer.
+#   areia-vigia           confere agora (o que o timer faz)
+#   areia-vigia pausa     o vigia para de reabrir (ex.: para usar o PC para outra coisa)
+#   areia-vigia liga      volta a vigiar
+#   areia-vigia estado    diz se está vigiando
+set -uo pipefail
+D=$(dirname "$(readlink -f "$0")")
+PAUSA=$D/sem-vigia
+LOG=$D/inicio.log
+case "${1:-}" in
+  pausa) touch "$PAUSA"; echo "Vigia pausado: a areia não reabre sozinha. Para voltar: areia-vigia liga"; exit 0 ;;
+  liga) rm -f "$PAUSA"; echo "Vigia ligado: se a areia fechar, ela abre de novo em até 2 minutos."; exit 0 ;;
+  estado) [ -e "$PAUSA" ] && echo "pausado" || echo "vigiando"; exit 0 ;;
+  "") ;;
+  *) echo "uso: areia-vigia [pausa|liga|estado]"; exit 2 ;;
+esac
+[ -e "$PAUSA" ] && exit 0
+[ "$("$D/sandbox.sh" estado)" = nenhum ] || exit 0
+# pode ser uma troca em andamento (o sandbox.sh fecha um e abre o outro): confere de novo
+sleep 20
+[ "$("$D/sandbox.sh" estado)" = nenhum ] || exit 0
+pgrep -u "$(id -u)" -f "areia-topografia|sandbox.sh (rosto|original|topografia)" >/dev/null && exit 0
+echo "$(date '+%F %T') vigia: a areia estava fechada; abrindo a topografia" >> "$LOG"
+exec "$D/areia-topografia"

@@ -20,7 +20,7 @@ trap 'cp -p "$TMP/estado.json" "$D/estado.json" 2>/dev/null; rm -rf "$TMP"' EXIT
 echo "== instalação"
 confere "compila do zero a partir do repositório" "bash '$R/instalar.sh' --compilar '$TMP/build' >/dev/null 2>&1"
 confere "binário instalado é o mesmo que o repositório gera" "cmp -s <(strings '$TMP/build/bin/SARndbox' | grep -c faceOut) <(strings '$D/bin/SARndbox' | grep -c faceOut)"
-confere "comandos no PATH" "for c in areia-foto areia-topografia areia-tema areia-tesouro areia-animais areia-fossil areia-labirinto; do command -v \$c >/dev/null || exit 1; done"
+confere "comandos no PATH" "for c in areia-foto areia-topografia areia-tema areia-tesouro areia-animais areia-fossil areia-labirinto areia-vigia; do command -v \$c >/dev/null || exit 1; done"
 confere "ao ligar abre a topografia" "grep -q '^Exec=.*areia-topografia' '$HOME/.config/autostart/SARndbox.desktop'"
 confere "modelos presentes" "[ -s '$D/modelos/u2net_human_seg.onnx' ] && [ -s '$D/modelos/face_detection_yunet_2023mar.onnx' ]"
 MESA=$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")
@@ -35,6 +35,7 @@ confere "sem sobras da organização antiga" "[ ! -e '$MESA/Areia' ] && [ ! -e '
 
 echo "== painel do celular"
 confere "serviço ativo" "systemctl --user is-active -q sandbox-painel"
+confere "vigia da areia agendado" "systemctl --user is-active -q areia-vigia.timer && [ \"\$(areia-vigia estado)\" = vigiando ]"
 confere "responde na própria máquina" "curl -sf -m 5 http://127.0.0.1:8090/estado | grep -q '\"sandbox\"'"
 LAN=$(ip -4 -o addr show scope global | awk '!/tailscale/ {sub(/\/.*/,"",$4); print $4; exit}')
 confere "recusa a rede local ($LAN)" "[ \"\$(curl -s -o /dev/null -w '%{http_code}' -m 5 http://$LAN:8090/estado)\" = 403 ]"
@@ -81,6 +82,7 @@ for t in vulcao inverno marte deserto oceano arco-iris mapa classico; do
   confere "efeito do tema $t" "areia-tema $t >/dev/null && sleep 0.5 && [ \"\$(grep '^Efeito: ' '$D/sandbox.log' | tail -n 1)\" = 'Efeito: $t' ]"
 done
 confere "sem erro de shader com os efeitos" "! grep -qiE 'shader.*(error|erro)|GLSL|compile error' '$D/sandbox.log'"
+confere "vigia não mexe com a areia aberta" "timeout 5 areia-vigia && [ \"\$('$D/sandbox.sh' estado)\" = rosto ]"
 confere "reserva: o SARndbox original abre" "'$D/sandbox.sh' original >/dev/null && [ \"\$('$D/sandbox.sh' estado)\" = original ] && no_projetor"
 confere "volta à topografia" "areia-topografia >/dev/null && [ \"\$('$D/sandbox.sh' estado)\" = rosto ] && no_projetor"
 areia-tema "$TEMA0" >/dev/null

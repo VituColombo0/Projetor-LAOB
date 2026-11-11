@@ -1,0 +1,10 @@
+[Unit]
+Description=Confere a caixa de areia a cada 2 minutos (Projetor-LAOB)
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=2min
+AccuracySec=15s
+
+[Install]
+WantedBy=timers.target

@@ -37,7 +37,7 @@ fi
 
 echo "[3/8] programas da pasta areia/"
 cp "$REPO"/areia/{areia.py,areia_foto.py,areia_tema.py,areia_brincar.py,rosto.py,painel.py,sandbox.sh} "$DEST/"
-COMANDOS=(areia-foto areia-tema areia-topografia areia-tesouro areia-animais areia-fossil areia-labirinto)
+COMANDOS=(areia-foto areia-tema areia-topografia areia-tesouro areia-animais areia-fossil areia-labirinto areia-vigia)
 for c in "${COMANDOS[@]}"; do cp "$REPO/areia/$c" "$DEST/"; chmod +x "$DEST/$c"; done
 cp "$REPO"/areia/gui-*.sh "$DEST/" && chmod +x "$DEST"/gui-*.sh   # janelas dos atalhos
 rm -f "$DEST"/*.bak "$DEST/patch_brincar.py" "$DEST/gui-willbert-estado.sh"   # sobras de edições manuais
@@ -86,7 +86,7 @@ B=$HOME/.config/gtk-3.0/bookmarks; mkdir -p "$(dirname "$B")"
 grep -v "file://$MESA/Areia " "$B" 2>/dev/null | grep -v "Fotos%20na%20areia" > "$B.tmp"; mv "$B.tmp" "$B"
 echo "file://${FOTOS_DIR// /%20} Fotos na areia" >> "$B"
 
-echo "[8/8] topografia ao ligar e painel do celular"
+echo "[8/8] topografia ao ligar, painel do celular e vigia"
 A=$HOME/.config/autostart/SARndbox.desktop
 mkdir -p "$(dirname "$A")"
 if [ -f "$A" ]; then
@@ -99,6 +99,10 @@ mkdir -p "$HOME/.config/systemd/user"
 cp "$REPO/sistema/sandbox-painel.service" "$HOME/.config/systemd/user/"
 systemctl --user daemon-reload
 systemctl --user enable --now sandbox-painel >/dev/null 2>&1 && systemctl --user restart sandbox-painel || true
+# vigia: se a areia fechar sozinha, reabre a topografia (areia-vigia pausa / liga)
+cp "$REPO/sistema/areia-vigia.service" "$REPO/sistema/areia-vigia.timer" "$HOME/.config/systemd/user/"
+systemctl --user daemon-reload
+systemctl --user enable --now areia-vigia.timer >/dev/null 2>&1 || true
 
 echo
 echo "Pronto. Manuais na Área de Trabalho (uma pasta para cada coisa). Teste completo: bash testes/integracao.sh"

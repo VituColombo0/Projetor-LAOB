@@ -1,0 +1,8 @@
+[Unit]
+Description=Vigia da caixa de areia: reabre a topografia se o programa fechar (Projetor-LAOB)
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/SARndbox-rosto/areia-vigia
+Nice=5
