@@ -3,7 +3,8 @@
    rostoAjuste <ampliação/cm> <deslocamento/cm> <mistura 0-1> <sombra>
    esculpir <rosto.dem>                                    relevo-alvo: vermelho/azul = tirar/pôr areia
    relevo                                                  volta à topografia normal
-   tesouro [profundidade cm] / tesouroFim                  caça ao tesouro (baú embaixo da areia)
+   tesouro [profundidade cm] [segundos] / tesouroFim       caça ao tesouro; achado, some e reaparece
+                                                           em outro lugar depois dos segundos (20)
    animais peixes|carros|todos|nada [quantidade]           peixes no lago e carrinhos nos vales
 """
 import sys
@@ -257,6 +258,8 @@ void Sandbox::toggleDEM(DEM* dem)
 					tesouroPedido=tokens.size()>=2?float(atof(tokens[1].c_str())):3.0f;
 					if(tesouroPedido<1.0f)
 						tesouroPedido=3.0f;
+					extras.reaparece=tokens.size()>=3?float(atof(tokens[2].c_str())):20.0f;
+					extras.quantosAchados=0;
 					extras.tesouro=true; // liga o shader já; o lugar é sorteado com o mapa pronto
 					extras.achado=false;
 					extras.tz=-1000.0f;
@@ -337,7 +340,10 @@ void Sandbox::toggleDEM(DEM* dem)
 				tesouroPedido=-1.0f;
 				}
 			if(extras.confereTesouro())
-				std::cout<<"Tesouro encontrado!"<<std::endl;
+				std::cout<<"Tesouro encontrado! ("<<extras.quantosAchados<<" achados)"<<std::endl;
+			/* Achado: depois de um tempo ele some e é escondido de novo em outro lugar: */
+			if(extras.horaDeReesconder()&&extras.novoTesouro(extras.profundidade))
+				std::cout<<"Tesouro escondido em x "<<extras.tx<<" y "<<extras.ty<<" (cavar até "<<extras.tz<<" cm; novo)"<<std::endl;
 			}
 		}
 	

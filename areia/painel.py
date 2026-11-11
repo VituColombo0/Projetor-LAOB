@@ -55,6 +55,7 @@ def ver_estado():
     e["tem_foto"] = os.path.exists(os.path.join(areia.FOTOS, "rosto.png"))
     e["imagem"] = os.path.basename(e["imagem"]) if e.get("imagem") else None
     e["tesouro"] = areia.tesouro_situacao()
+    e["tesouros_achados"] = areia.tesouro_achados()
     e["tema"] = areia.tema_atual()
     e["temas"] = [[t, areia.NOMES_TEMAS.get(t, t)] for t in areia.temas()]
     return jsonify(e)

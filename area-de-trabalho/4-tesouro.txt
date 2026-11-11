@@ -4,6 +4,8 @@ CAÇA AO TESOURO
 Um baú de tesouro fica escondido embaixo da areia, num lugar sorteado.
 Cavem para achar! Quando estiverem perto, a areia começa a brilhar
 dourado. Quando cavarem fundo o bastante, o baú aparece brilhando.
+Uns 20 segundos depois ele some e se esconde de novo em OUTRO lugar:
+é só continuar procurando!
 
 
 COMO USAR
@@ -16,10 +18,10 @@ COMO USAR
   Outras opções:
     areia-tesouro facil     mais raso (2 cm), bom para crianças
     areia-tesouro dificil   mais fundo (5 cm)
-    areia-tesouro achou     diz se já acharam
+    areia-tesouro achou     diz se está escondido e quantos já acharam
     areia-tesouro parar     tira o tesouro
 
-  Para esconder outro, é só rodar  areia-tesouro  de novo.
+  Para recomeçar a contagem, rode  areia-tesouro  de novo.
 
 
 DICAS

@@ -1,6 +1,7 @@
 """Brincadeiras na caixa de areia (comandos areia-tesouro e areia-animais).
 
-  areia-tesouro              esconde um tesouro (normal: 3 cm embaixo da areia)
+  areia-tesouro              esconde um tesouro (normal: 3 cm embaixo da areia); achado, ele
+                             some depois de 20 s e reaparece em outro lugar
   areia-tesouro facil        mais raso (2 cm) · areia-tesouro dificil: mais fundo (5 cm)
   areia-tesouro achou        diz se já acharam
   areia-tesouro parar        tira o tesouro
@@ -22,16 +23,19 @@ def tesouro(args):
     if pedido in ("ajuda", "-h", "--help"):
         print(__doc__.strip())
     elif pedido in ("achou", "achou?", "status", "estado"):
-        print({"achado": "Acharam o tesouro! Para esconder outro: areia-tesouro",
-               "escondido": "O tesouro ainda está escondido. Cavem mais!",
-               "nenhum": "Não há tesouro escondido agora. Para esconder: areia-tesouro"}[areia.tesouro_situacao()])
+        n = areia.tesouro_achados()
+        placar = f" Tesouros achados até agora: {n}." if n else ""
+        print({"achado": "Acharam o tesouro! Em uns 20 segundos ele some e reaparece em outro lugar.",
+               "escondido": "O tesouro está escondido. Cavem para achar!",
+               "nenhum": "Não há tesouro escondido agora. Para esconder: areia-tesouro"}[areia.tesouro_situacao()] + placar)
     elif pedido in ("parar", "tirar", "fim"):
         areia.tesouro_fim()
         print("Tesouro removido.")
     else:
         print("Escondendo o tesouro... (se a caixa estava na topografia, leva uns 10 s)")
         prof = areia.tesouro(pedido)
-        print(f"Tesouro escondido a {prof:g} cm embaixo da areia! Quando chegarem perto, a areia brilha dourado.")
+        print(f"Tesouro escondido a {prof:g} cm embaixo da areia! Quando chegarem perto, a areia brilha dourado.\n"
+              "Depois de achado, ele some em 20 segundos e aparece de novo em outro lugar.")
     return 0
 
 

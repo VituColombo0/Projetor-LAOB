@@ -38,6 +38,9 @@ class Extras
 	bool tesouro,achado;
 	float tx,ty,traio,tz; // posição (cm), raio (cm), altura que precisa ser alcançada cavando (cm)
 	double quandoAchou;
+	float profundidade; // cm de areia em cima do tesouro (vale também para os próximos)
+	float reaparece; // segundos depois de achado até esconder outro em outro lugar (0 = não reaparece)
+	int quantosAchados; // tesouros achados desde o último "tesouro"
 
 	/* Animais e objetos: */
 	int modo;
@@ -66,6 +69,7 @@ class Extras
 	/* Caça ao tesouro: */
 	bool novoTesouro(float profundidade); // false se ainda não há mapa
 	bool confereTesouro(void); // true no instante em que foi achado
+	bool horaDeReesconder(void) const; // achado há mais de "reaparece" segundos
 
 	/* Animais e objetos: */
 	void povoa(int novoModo,int quantidade);

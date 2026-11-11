@@ -371,6 +371,17 @@ def tesouro_situacao():
     return "achado" if linhas[-1].startswith("Tesouro encontrado") else "escondido"
 
 
+def tesouro_achados():
+    """Quantos tesouros acharam desde que a caça começou (cada um reaparece em outro lugar)."""
+    try:
+        with open(os.path.join(D, "sandbox.log"), errors="replace") as f:
+            linhas = [l for l in f if l.startswith(("Tesouro", "Modo Rosto:"))]
+    except OSError:
+        return 0
+    inicio = max((i for i, l in enumerate(linhas) if l.startswith("Tesouro: escondendo")), default=-1)
+    return sum(1 for l in linhas[inicio + 1:] if l.startswith("Tesouro encontrado"))
+
+
 def tesouro_fim():
     if qual() == "rosto":
         _comando("tesouroFim")

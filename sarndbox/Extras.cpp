@@ -17,6 +17,7 @@ const float PI=3.14159265f;
 Extras::Extras(void)
 	:celula(1.5f),gw(0),gh(0),mapaOk(false),referencia(0.0f),
 	 tesouro(false),achado(false),tx(0),ty(0),traio(5.0f),tz(0),quandoAchou(0.0),
+	 profundidade(3.0f),reaparece(20.0f),quantosAchados(0),
 	 modo(NADA),quantos(0),nivelAgua(SEM),semente(12345u),tempo(0.0)
 	{
 	bmin[0]=bmin[1]=-10.0f;
@@ -122,19 +123,23 @@ bool Extras::sorteiaPonto(bool queAgua,float& x,float& y)
 
 /* ---------------------------------------------------------------- tesouro */
 
-bool Extras::novoTesouro(float profundidade)
+bool Extras::novoTesouro(float novaProfundidade)
 	{
 	if(!mapaOk)
 		return false;
-	/* De preferência num lugar com areia acima da média (dá para cavar), longe da borda: */
+	profundidade=novaProfundidade;
+	/* De preferência num lugar com areia acima da média (dá para cavar), longe da borda e,
+	   quando é um tesouro novo depois de achar outro, longe de onde estava (mínimo 15 cm): */
 	float x=0,y=0;
-	bool ok=false;
-	for(int t=0;t<600&&!ok;++t)
+	bool ok=false,tinhaOutro=tesouro&&achado;
+	float vx=tx,vy=ty;
+	for(int t=0;t<800&&!ok;++t)
 		{
 		x=bmin[0]+6.0f+aleatorio()*(bmax[0]-bmin[0]-12.0f);
 		y=bmin[1]+6.0f+aleatorio()*(bmax[1]-bmin[1]-12.0f);
 		float h=altura(x,y);
-		ok=h>SEM+1.0f&&(h>=referencia||t>400);
+		bool longe=!tinhaOutro||t>600||(x-vx)*(x-vx)+(y-vy)*(y-vy)>=15.0f*15.0f;
+		ok=h>SEM+1.0f&&longe&&(h>=referencia||t>400);
 		}
 	if(!ok)
 		return false;
@@ -161,10 +166,16 @@ bool Extras::confereTesouro(void)
 					{
 					achado=true;
 					quandoAchou=tempo;
+					++quantosAchados;
 					return true;
 					}
 				}
 	return false;
+	}
+
+bool Extras::horaDeReesconder(void) const
+	{
+	return tesouro&&achado&&reaparece>0.0f&&tempo-quandoAchou>=reaparece;
 	}
 
 /* ------------------------------------------------------ peixes e carrinhos */

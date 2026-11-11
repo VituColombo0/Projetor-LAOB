@@ -207,6 +207,18 @@ class Brincadeiras(Ambiente):
         escreve(log, "Tesouro encontrado!\nTesouro desligado\n")
         self.assertEqual(self.areia.tesouro_situacao(), "nenhum")
 
+    def test_reaparece_e_conta(self):
+        self.areia.tesouro()
+        log = os.path.join(self.D, "sandbox.log")
+        escreve(log, "Tesouro encontrado! (1 achados)\nTesouro: escondendo a 3 cm\nTesouro escondido em x 1 y 2\n"
+                     "Tesouro encontrado! (1 achados)\nTesouro escondido em x 9 y 9 (cavar até 2 cm; novo)\n"
+                     "Tesouro encontrado! (2 achados)\n")
+        self.assertEqual(self.areia.tesouro_achados(), 2)   # só depois do último "escondendo"
+        self.assertEqual(self.areia.tesouro_situacao(), "achado")
+        escreve(log, "Tesouro: escondendo a 3 cm\nTesouro encontrado! (1 achados)\nTesouro escondido em x 9 y 9 (novo)\n")
+        self.assertEqual(self.areia.tesouro_situacao(), "escondido")
+        self.assertEqual(self.areia.tesouro_achados(), 1)
+
     def test_animais(self):
         self.assertEqual(self.areia.animais("Peixes"), ("peixes", 10))
         self.assertEqual(self.comandos()[-1], "cmd animais peixes 10")
