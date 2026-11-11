@@ -101,8 +101,10 @@ posições). Comandos no cano da versão com Foto: `tesouro [cm]`, `tesouroFim`,
 - **Fluidez:** a versão com Foto roda com a grade de água em 320x240 (`-wts 320 240`; o padrão
   640x480 não dava conta na GTX 750 Ti e escrevia "Ran out of time" no log a cada quadro). O log
   mostra a cada 30 s uma linha `Desempenho: N quadros/s; água atrasada em X de Y passos`.
-- **Willbert:** "Willbert, grave o meu rosto" manda a foto da pessoa para `POST /foto` do painel
-  (só aceita a própria máquina), que tira o fundo e projeta.
+- **Willbert:** o gesto das duas mãos ao lado do rosto (antes, "Willbert, grave o meu rosto") manda
+  a foto tratada para `POST /foto` do painel (só aceita a própria máquina): PNG já recortado (o Willbert
+  usa o fundo vazio da cena), que o `rosto.py` usa como alfa. As fotos `willbert-*` além das 30 mais
+  novas vão para a subpasta "antigas do Willbert" (`areia.arquiva_willbert`).
 
 ## Temas de cor do relevo
 

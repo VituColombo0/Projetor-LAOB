@@ -85,6 +85,8 @@ def foto():
                 base = re.sub(r"[^A-Za-z0-9_-]+", "-", os.path.splitext(arq.filename)[0])[:40]
                 prefixo = base if base.startswith("willbert-") else "celular"
                 img = areia.guarda(origem, time.strftime(f"{prefixo}-%Y-%m-%d-%H%M%S") + ext)
+                if prefixo.startswith("willbert-"):
+                    areia.arquiva_willbert()   # o menu de fotos não enche com as fotos do gesto
         else:
             img = areia.foto_da_camera()
         areia.mostra(img, modo="rosto")

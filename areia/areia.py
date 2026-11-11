@@ -110,6 +110,30 @@ def guarda(caminho, nome=None):
     return destino
 
 
+FOTOS_WILLBERT_NO_MENU = 30
+PASTA_ANTIGAS_WILLBERT = "antigas do Willbert"
+
+
+def arquiva_willbert(manter=FOTOS_WILLBERT_NO_MENU):
+    """Cada gesto deixa uma foto willbert-* na pasta das fotos; as mais antigas que as `manter`
+    últimas vão para a subpasta "antigas do Willbert" (continuam guardadas, só saem do menu).
+    Devolve quantas foram movidas."""
+    p = pasta()
+    fotos = sorted((c for c in imagens() if os.path.basename(c).startswith("willbert-")),
+                   key=os.path.getmtime, reverse=True)
+    velhas = fotos[manter:]
+    if not velhas:
+        return 0
+    destino = os.path.join(p, PASTA_ANTIGAS_WILLBERT)
+    os.makedirs(destino, exist_ok=True)
+    for c in velhas:
+        try:
+            os.replace(c, os.path.join(destino, os.path.basename(c)))
+        except OSError:
+            pass
+    return len(velhas)
+
+
 def _mesmo_conteudo(a, b):
     return os.path.getsize(a) == os.path.getsize(b) and _hash_arquivo(a) == _hash_arquivo(b)
 

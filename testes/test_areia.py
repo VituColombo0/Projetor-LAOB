@@ -45,6 +45,21 @@ class Pasta(Ambiente):
             self.areia.acha(p)
 
 
+class FotosDoWillbert(Ambiente):
+    def test_antigas_saem_do_menu_mas_ficam_guardadas(self):
+        import time as _t
+        for i in range(5):
+            c = self.poe(f"willbert-Lucas-{i}.png")
+            os.utime(c, (1000 + i, 1000 + i))
+        self.poe("minha-foto.jpg")
+        self.assertEqual(self.areia.arquiva_willbert(manter=2), 3)
+        nomes = [os.path.basename(c) for c in self.areia.imagens()]
+        self.assertEqual(sorted(nomes), ["minha-foto.jpg", "willbert-Lucas-3.png", "willbert-Lucas-4.png"])
+        guardadas = os.listdir(os.path.join(self.PASTA, self.areia.PASTA_ANTIGAS_WILLBERT))
+        self.assertEqual(sorted(guardadas), ["willbert-Lucas-0.png", "willbert-Lucas-1.png", "willbert-Lucas-2.png"])
+        self.assertEqual(self.areia.arquiva_willbert(manter=2), 0)
+
+
 class Estado(Ambiente):
     def test_padrao_e_arquivo_estragado(self):
         self.assertEqual(self.areia.estado()["modo"], "original")
