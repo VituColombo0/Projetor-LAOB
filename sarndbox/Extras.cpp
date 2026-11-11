@@ -17,7 +17,7 @@ const float PI=3.14159265f;
 
 Extras::Extras(void)
 	:celula(1.5f),gw(0),gh(0),mapaOk(false),referencia(0.0f),
-	 tesouro(false),achado(false),tx(0),ty(0),traio(5.0f),tz(0),quandoAchou(0.0),
+	 tesouro(false),achado(false),tipoTesouro(1),tx(0),ty(0),traio(5.0f),tz(0),quandoAchou(0.0),
 	 profundidade(3.0f),reaparece(20.0f),quantosAchados(0),
 	 modo(NADA),quantos(0),nivelAgua(SEM),semente(12345u),tempo(0.0),efeito(SEM_EFEITO)
 	{
@@ -146,7 +146,7 @@ bool Extras::novoTesouro(float novaProfundidade)
 		return false;
 	tx=x;
 	ty=y;
-	traio=5.0f;
+	traio=(tipoTesouro>=2)?8.5f:5.0f;
 	tz=altura(x,y)-profundidade;
 	tesouro=true;
 	achado=false;
@@ -429,11 +429,13 @@ const char* Extras::glslFragmentMain=R"GLSL(
 		if(d<extrasTesouro.z)
 			{
 			float falta=ep.z-extrasTesouro.w;
-			if(falta<=0.0||extrasInfo.y>0.5)
+			if(extrasInfo.z<1.5)
 				{
-				vec2 q=(ep.xy-extrasTesouro.xy)/extrasTesouro.z;
-				float brilho=0.75+0.25*sin(et*6.0-length(q)*8.0);
-				vec3 cor=vec3(0.95,0.75,0.15)*brilho;
+				if(falta<=0.0||extrasInfo.y>0.5)
+					{
+					vec2 q=(ep.xy-extrasTesouro.xy)/extrasTesouro.z;
+					float brilho=0.75+0.25*sin(et*6.0-length(q)*8.0);
+					vec3 cor=vec3(0.95,0.75,0.15)*brilho;
 				if(abs(q.x)<0.7&&abs(q.y)<0.45)
 					{
 					cor=vec3(0.45,0.25,0.08);
@@ -442,11 +444,85 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					if(abs(q.x)<0.08&&abs(q.y)<0.12)
 						cor=vec3(0.15);
 					}
-				float estrela=pow(max(0.0,sin(atan(q.y,q.x)*6.0+et*2.0)),30.0)*(1.0-length(q));
-				baseColor=vec4(cor+vec3(estrela),1.0);
+					float estrela=pow(max(0.0,sin(atan(q.y,q.x)*6.0+et*2.0)),30.0)*(1.0-length(q));
+					baseColor=vec4(cor+vec3(estrela),1.0);
+					}
+				else if(falta<2.5)
+					baseColor=mix(baseColor,vec4(1.0,0.82,0.25,1.0),(1.0-falta/2.5)*(0.35+0.25*sin(et*5.0)));
 				}
-			else if(falta<2.5)
-				baseColor=mix(baseColor,vec4(1.0,0.82,0.25,1.0),(1.0-falta/2.5)*(0.35+0.25*sin(et*5.0)));
+			else
+				{
+				vec2 q=(ep.xy-extrasTesouro.xy)/extrasTesouro.z;
+				float r=length(q);
+				if(falta<=0.0||extrasInfo.y>0.5)
+					{
+					float ru=exRuido(q*7.0);
+					vec3 rocha=mix(vec3(0.30,0.26,0.21),vec3(0.40,0.34,0.27),ru);
+					float fissura=smoothstep(0.08,0.0,abs(sin(q.y*16.0+ru*2.0)));
+					rocha=mix(rocha,vec3(0.18,0.14,0.11),fissura*0.5);
+
+					float osso=0.0;
+					int tf=int(extrasInfo.z+0.5);
+					if(tf<=2)
+						{
+						vec2 qc=q-vec2(0.15,-0.05);
+						float cabeca=smoothstep(0.40,0.32,length(qc*vec2(1.2,1.7)));
+						float orbita=smoothstep(0.06,0.09,length((qc-vec2(0.06,0.12))*vec2(1.3,1.0)));
+						float narina=smoothstep(0.04,0.07,length((qc-vec2(0.25,0.06))*vec2(1.2,1.0)));
+						float boca=step(qc.y,-0.02)*step(-0.18,qc.y)*step(-0.25,qc.x)*step(qc.x,0.32);
+						float dentes=abs(sin(qc.x*45.0))*boca;
+						float cranio=max(0.0,cabeca*orbita*narina-boca*0.8)+dentes*0.9;
+						float mand=smoothstep(0.06,0.02,abs(qc.y+0.16+qc.x*0.12))*step(-0.25,qc.x)*step(qc.x,0.30);
+						float vert=smoothstep(0.06,0.02,abs(q.y+0.1+q.x*0.15))*step(-0.85,q.x)*step(q.x,-0.1);
+						float cost=abs(sin(q.x*22.0))*smoothstep(0.28,0.0,abs(q.y+0.25))*step(-0.75,q.x)*step(q.x,-0.15);
+						osso=max(max(cranio,mand),max(vert,cost));
+						}
+					else if(tf==3)
+						{
+						vec2 qc=q;
+						float escudo=smoothstep(0.48,0.40,length((qc+vec2(0.22,0.0))*vec2(1.5,1.0)))*step(qc.x,-0.05);
+						float cabeca=smoothstep(0.35,0.28,length(qc*vec2(1.3,1.5)));
+						float chifre1=smoothstep(0.06,0.01,abs(qc.y-qc.x*0.7-0.18))*step(0.0,qc.x)*step(qc.x,0.45);
+						float chifre2=smoothstep(0.06,0.01,abs(qc.y+qc.x*0.7+0.18))*step(0.0,qc.x)*step(qc.x,0.45);
+						float chifrenas=smoothstep(0.05,0.01,abs(qc.y))*step(0.22,qc.x)*step(qc.x,0.48);
+						osso=max(max(escudo,cabeca),max(max(chifre1,chifre2),chifrenas));
+						}
+					else if(tf==4)
+						{
+						vec2 qc=q;
+						float crista=smoothstep(0.07,0.02,abs(qc.y-qc.x*0.5+0.15))*step(-0.5,qc.x)*step(qc.x,0.0);
+						float bico=smoothstep(0.06,0.02,abs(qc.y+qc.x*0.15))*step(0.0,qc.x)*step(qc.x,0.65)*(1.0-qc.x*1.1);
+						float asa1=smoothstep(0.06,0.02,abs(qc.y-qc.x*0.8-0.2))*step(-0.6,qc.x)*step(qc.x,0.3);
+						float asa2=smoothstep(0.06,0.02,abs(qc.y+qc.x*0.8+0.2))*step(-0.6,qc.x)*step(qc.x,0.3);
+						osso=max(max(crista,bico),max(asa1,asa2));
+						}
+					else
+						{
+						vec2 qc=q*1.2;
+						float d1=smoothstep(0.12,0.04,length((qc-vec2(0.0,0.35))*vec2(1.8,0.9)-vec2(0.0,qc.y*0.3)));
+						float d2=smoothstep(0.12,0.04,length((qc-vec2(0.28,-0.15))*vec2(1.2,1.4)));
+						float d3=smoothstep(0.12,0.04,length((qc-vec2(-0.28,-0.15))*vec2(1.2,1.4)));
+						float calcanhar=smoothstep(0.22,0.08,length((qc+vec2(0.0,0.25))*vec2(1.3,1.1)));
+						osso=max(max(d1,d2),max(d3,calcanhar));
+						}
+
+					vec3 corOsso=mix(vec3(0.92,0.89,0.78),vec3(0.78,0.72,0.60),ru);
+					vec3 fossil=mix(rocha,corOsso,clamp(osso,0.0,1.0));
+
+					float aura=extrasInfo.y>0.5?(0.75+0.25*sin(et*5.0))*(1.0-r):0.0;
+					float brilho=pow(max(0.0,sin(atan(q.y,q.x)*6.0+et*1.8)),25.0)*(1.0-r)*0.8;
+					baseColor=vec4(fossil+vec3(aura*0.35,aura*0.28,aura*0.1)+vec3(brilho),1.0);
+					}
+				else if(falta<3.0)
+					{
+					float prox=1.0-falta/3.0;
+					float gridX=smoothstep(0.05,0.0,abs(fract(q.x*3.5)-0.5));
+					float gridY=smoothstep(0.05,0.0,abs(fract(q.y*3.5)-0.5));
+					float grid=(gridX+gridY)*(1.0-r)*prox;
+					vec3 ambar=vec3(0.85,0.68,0.42);
+					baseColor=mix(baseColor,vec4(ambar+vec3(grid*0.4),1.0),prox*(0.35+0.25*sin(et*4.0)));
+					}
+				}
 			}
 		}
 	for(int i=0;i<24;++i)
@@ -508,6 +584,6 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 		}
 	glUniform4fvARB(locations[1],MAX_AGENTES,ag);
 	glUniform4fARB(locations[2],tx,ty,traio,tz);
-	glUniform4fARB(locations[3],GLfloat(tempo),achado?1.0f:0.0f,tesouro?1.0f:0.0f,nivelAgua);
-	glUniform4fARB(locations[4],GLfloat(efeito),referencia,0.0f,0.0f);
+	glUniform4fARB(locations[3],GLfloat(tempo),achado?1.0f:0.0f,tesouro?GLfloat(tipoTesouro):0.0f,nivelAgua);
+	glUniform4fARB(locations[4],GLfloat(efeito),referencia,GLfloat(tipoTesouro),0.0f);
 	}

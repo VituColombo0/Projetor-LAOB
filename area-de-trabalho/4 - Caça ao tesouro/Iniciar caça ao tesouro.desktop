@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Iniciar caça ao tesouro
+Comment=Esconde um baú na areia (3 cm) para cavarem e acharem
+Exec=/home/laob/SARndbox-rosto/gui-rodar.sh "Caça ao tesouro" games-highscores areia-tesouro
+Icon=games-highscores
+Terminal=false

@@ -8,8 +8,16 @@ Uns 20 segundos depois ele some e se esconde de novo em OUTRO lugar:
 é só continuar procurando!
 
 
-COMO USAR
----------
+COMO USAR (PELOS ATALHOS - MAIS FÁCIL)
+--------------------------------------
+- Para começar direto: dê dois cliques em "Iniciar caça ao tesouro"
+- Para parar o jogo: dê dois cliques em "Parar caça ao tesouro"
+- Para escolher nível (fácil/difícil) ou ver status: dê dois cliques em
+  "Opções do tesouro (fácil, difícil, placar)"
+
+
+OU PELO TERMINAL
+----------------
 1. Abra o Terminal: aperte Ctrl + Alt + T
 2. Digite o comando e aperte Enter:
 
@@ -34,4 +42,5 @@ DICAS
 
 VOLTAR PARA A TOPOGRAFIA
 ------------------------
-    areia-topografia
+Dê dois cliques em "Voltar para a topografia", aqui nesta pasta.
+Ou no terminal:  areia-topografia

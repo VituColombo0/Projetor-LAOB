@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Parar escavação
+Comment=Encerra a escavação
+Exec=/home/laob/SARndbox-rosto/gui-rodar.sh "Escavação de fósseis" process-stop areia-fossil parar
+Icon=process-stop
+Terminal=false

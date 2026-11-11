@@ -5,6 +5,8 @@
    relevo                                                  volta à topografia normal
    tesouro [profundidade cm] [segundos] / tesouroFim       caça ao tesouro; achado, some e reaparece
                                                            em outro lugar depois dos segundos (20)
+   fossil [trex|triceratops|pterodactilo|pegada] [cm] [s]   escavação de fóssil (mesmo mecanismo do tesouro)
+   fossilFim                                               encerra a escavação
    animais peixes|carros|todos|nada [quantidade]           peixes no lago e carrinhos nos vales
    efeito <tema>                                           animação do tema (lava, neve, poeira...)
 """
@@ -261,6 +263,7 @@ void Sandbox::toggleDEM(DEM* dem)
 						tesouroPedido=3.0f;
 					extras.reaparece=tokens.size()>=3?float(atof(tokens[2].c_str())):20.0f;
 					extras.quantosAchados=0;
+					extras.tipoTesouro=1;
 					extras.tesouro=true; // liga o shader já; o lugar é sorteado com o mapa pronto
 					extras.achado=false;
 					extras.tz=-1000.0f;
@@ -281,8 +284,45 @@ void Sandbox::toggleDEM(DEM* dem)
 				else if(isToken(tokens[0],"tesouroFim"))
 					{
 					extras.tesouro=false;
+					extras.tipoTesouro=1;
 					tesouroPedido=-1.0f;
 					std::cout<<"Tesouro desligado"<<std::endl;
+					}
+				else if(isToken(tokens[0],"fossil"))
+					{
+					int tipo=2;
+					float prof=3.0f;
+					float reap=30.0f;
+					int argIdx=1;
+					if(tokens.size()>=2)
+						{
+						if(isToken(tokens[1],"trex")||isToken(tokens[1],"t-rex")||isToken(tokens[1],"2")) { tipo=2; argIdx++; }
+						else if(isToken(tokens[1],"triceratops")||isToken(tokens[1],"3")) { tipo=3; argIdx++; }
+						else if(isToken(tokens[1],"pterodactilo")||isToken(tokens[1],"ptero")||isToken(tokens[1],"4")) { tipo=4; argIdx++; }
+						else if(isToken(tokens[1],"pegada")||isToken(tokens[1],"5")) { tipo=5; argIdx++; }
+						else if(isdigit(tokens[1][0])) { tipo=atoi(tokens[1].c_str()); argIdx++; }
+						}
+					if(int(tokens.size())>argIdx)
+						prof=float(atof(tokens[argIdx].c_str()));
+					if(prof<1.0f) prof=3.0f;
+					if(int(tokens.size())>argIdx+1)
+						reap=float(atof(tokens[argIdx+1].c_str()));
+					tesouroPedido=prof;
+					extras.reaparece=reap;
+					extras.quantosAchados=0;
+					extras.tipoTesouro=tipo;
+					extras.tesouro=true;
+					extras.achado=false;
+					extras.tz=-1000.0f;
+					setFaceMode(0,0);
+					std::cout<<"Fossil: escondendo tipo "<<tipo<<" a "<<prof<<" cm"<<std::endl;
+					}
+				else if(isToken(tokens[0],"fossilFim"))
+					{
+					extras.tesouro=false;
+					extras.tipoTesouro=1;
+					tesouroPedido=-1.0f;
+					std::cout<<"Fossil desligado"<<std::endl;
 					}
 				else if(isToken(tokens[0],"animais"))
 					{
@@ -348,14 +388,27 @@ void Sandbox::toggleDEM(DEM* dem)
 			extras.fechaMapa();
 			if(tesouroPedido>0.0f&&extras.novoTesouro(tesouroPedido))
 				{
-				std::cout<<"Tesouro escondido em x "<<extras.tx<<" y "<<extras.ty<<" (cavar até "<<extras.tz<<" cm)"<<std::endl;
+				if(extras.tipoTesouro>=2)
+					std::cout<<"Fossil escondido em x "<<extras.tx<<" y "<<extras.ty<<" (escavar ate "<<extras.tz<<" cm)"<<std::endl;
+				else
+					std::cout<<"Tesouro escondido em x "<<extras.tx<<" y "<<extras.ty<<" (cavar até "<<extras.tz<<" cm)"<<std::endl;
 				tesouroPedido=-1.0f;
 				}
 			if(extras.confereTesouro())
-				std::cout<<"Tesouro encontrado! ("<<extras.quantosAchados<<" achados)"<<std::endl;
+				{
+				if(extras.tipoTesouro>=2)
+					std::cout<<"Fossil encontrado! ("<<extras.quantosAchados<<" escavados)"<<std::endl;
+				else
+					std::cout<<"Tesouro encontrado! ("<<extras.quantosAchados<<" achados)"<<std::endl;
+				}
 			/* Achado: depois de um tempo ele some e é escondido de novo em outro lugar: */
 			if(extras.horaDeReesconder()&&extras.novoTesouro(extras.profundidade))
-				std::cout<<"Tesouro escondido em x "<<extras.tx<<" y "<<extras.ty<<" (cavar até "<<extras.tz<<" cm; novo)"<<std::endl;
+				{
+				if(extras.tipoTesouro>=2)
+					std::cout<<"Fossil escondido em x "<<extras.tx<<" y "<<extras.ty<<" (escavar ate "<<extras.tz<<" cm; novo)"<<std::endl;
+				else
+					std::cout<<"Tesouro escondido em x "<<extras.tx<<" y "<<extras.ty<<" (cavar até "<<extras.tz<<" cm; novo)"<<std::endl;
+				}
 			}
 		}
 	

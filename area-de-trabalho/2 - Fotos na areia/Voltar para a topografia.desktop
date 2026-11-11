@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Voltar para a topografia
+Comment=Volta a caixa de areia para o relevo colorido normal
+Exec=/home/laob/SARndbox-rosto/gui-rodar.sh "Topografia" applications-science areia-topografia
+Icon=applications-science
+Terminal=false

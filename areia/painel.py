@@ -56,6 +56,7 @@ def ver_estado():
     e["imagem"] = os.path.basename(e["imagem"]) if e.get("imagem") else None
     e["tesouro"] = areia.tesouro_situacao()
     e["tesouros_achados"] = areia.tesouro_achados()
+    e["fossil"] = areia.fossil_situacao()
     e["tema"] = areia.tema_atual()
     e["temas"] = [[t, areia.NOMES_TEMAS.get(t, t)] for t in areia.temas()]
     return jsonify(e)
@@ -107,6 +108,9 @@ def modo():
 def brincar():
     def faz():
         acao = (request.get_json(silent=True) or {}).get("acao")
+        if acao in areia.FOSSEIS:
+            nome, prof = areia.fossil(acao)
+            return f"fóssil de {nome} enterrado a {prof:g} cm"
         if acao == "tesouro":
             prof = areia.tesouro("normal")
             return f"tesouro escondido a {prof:g} cm"
@@ -115,6 +119,7 @@ def brincar():
             return f"{n} {t} na areia"
         if acao == "parar":
             areia.tesouro_fim()
+            areia.fossil_fim()
             areia.animais_fim()
             return "brincadeiras paradas"
         raise areia.Erro("brincadeira inválida")
@@ -187,7 +192,8 @@ input[type=range]{width:100%}
  <div class="row"><button data-m="original">Topografia</button></div>
 </div>
 <div class="card"><div class="small">Brincadeiras <span id="tes"></span></div><div class="row">
- <button data-b="tesouro">Caça ao tesouro</button><button data-b="peixes">Peixes</button>
+ <button data-b="tesouro">Caça ao tesouro</button><button data-b="trex">Fóssil de T-Rex</button>
+ <button data-b="triceratops">Fóssil de Triceratops</button><button data-b="peixes">Peixes</button>
  <button data-b="carros">Carrinhos</button><button data-b="todos">Peixes e carrinhos</button></div>
  <div class="row" style="margin-top:8px"><button data-b="parar">Parar brincadeiras</button></div></div>
 <div class="card"><div class="small">Cores do relevo</div><div class="row" id="temas"></div></div>
@@ -213,7 +219,8 @@ async function carrega(){E=await (await fetch('/estado')).json();
  for(const k of ['zoom','sombra','mistura'])$('#'+k).value=E.ajuste[k];
  $('#vz').textContent=Math.round(E.ajuste.zoom*1000)/10+'%/cm';$('#vs').textContent=E.ajuste.sombra;
  $('#vm').textContent=Math.round(E.ajuste.mistura*100)+'%';
- $('#tes').textContent={achado:'· tesouro ACHADO!',escondido:'· tesouro escondido',nenhum:''}[E.tesouro]||'';
+ $('#tes').textContent=({achado:'· tesouro ACHADO!',escondido:'· tesouro escondido',nenhum:''}[E.tesouro]||'')+
+  ({achado:'· fóssil ESCAVADO!',escondido:'· fóssil enterrado',nenhum:''}[E.fossil]||'');
  const T=$('#temas');if(!T.children.length)for(const [t,n] of E.temas){const b=document.createElement('button');
   b.textContent=n;b.dataset.t=t;b.onclick=()=>post('/tema',{tema:t});T.appendChild(b)}
  T.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.t===E.tema));

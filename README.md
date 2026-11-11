@@ -23,11 +23,16 @@ Coloque as imagens em **Área de Trabalho > Areia** e, no terminal:
     areia-tema vulcao     # cores do relevo: classico, vulcao, inverno, marte, deserto, oceano, arco-iris, mapa
     areia-tesouro         # caça ao tesouro (facil|normal|dificil, achou, parar)
     areia-animais todos   # peixes no lago e carrinhos nos vales (peixes|carros|todos [n], parar)
+    areia-fossil trex     # escavação de fóssil (trex|triceratops|pterodactilo|pegada [facil|dificil], achou, parar)
 
 Na Área de Trabalho do lab2 há uma pasta para cada coisa, cada uma com o seu `COMO USAR.txt`
 (os textos estão em [`area-de-trabalho/`](area-de-trabalho)): 1 - Topografia (ligar e consertar),
 2 - Fotos na areia (é também onde se colocam as fotos), 3 - Cores do relevo, 4 - Caça ao tesouro,
-5 - Peixes e carrinhos. A pasta 6 - Willbert vem do repositório do Willbert.
+5 - Peixes e carrinhos, 7 - Fósseis de dinossauro. A pasta 6 - Willbert vem do repositório do Willbert.
+Cada pasta também tem **atalhos de dois cliques** (ex.: "Iniciar caça ao tesouro", "Escolher cores do
+relevo"): os que pedem escolha abrem uma janela (`gui-foto.sh`, `gui-tema.sh`, `gui-tesouro.sh`,
+`gui-fossil.sh`) e todos rodam por `gui-rodar.sh`, que avisa por notificação quando dá certo e abre uma
+janela com o motivo quando dá errado. Os atalhos ficam em `area-de-trabalho/<pasta>/*.desktop`.
 
 ## Instalar
 
@@ -56,7 +61,7 @@ No PC tudo fica numa pasta só, `~/SARndbox-rosto` (cópia do SARndbox + os arqu
 
 ## Testes
 
-    bash testes/rodar.sh       # 46 testes: imagem, área iluminada, relevo, pasta, cache, comando,
+    bash testes/rodar.sh       # 53 testes: imagem, área iluminada, relevo, pasta, cache, comando,
                                # painel (com projetor falso) + sintaxe/shellcheck dos scripts
     bash testes/integracao.sh  # no lab2, depois do instalar.sh: compila, confere tudo instalado,
                                # o painel (aceita Tailscale, recusa a rede local) e o projetor de verdade
@@ -71,6 +76,9 @@ posições). Comandos no cano da versão com Foto: `tesouro [cm]`, `tesouroFim`,
 - **Tesouro:** lugar sorteado onde há areia acima da média; aparece onde cavarem abaixo de
   (altura - profundidade); brilha dourado a menos de 2,5 cm; "Tesouro encontrado!" vai para o
   `sandbox.log` (`areia-tesouro achou` lê de lá).
+- **Fósseis:** o mesmo mecanismo do tesouro (`tipoTesouro` 2–5), com raio maior; perto aparece a
+  quadrícula de escavação e, cavando, o esqueleto em marfim na rocha (T-Rex, Triceratops,
+  Pterodáctilo ou pegada). Achado, outro aparece em 30 s. Fóssil e tesouro se substituem.
 - **Lago e peixes:** tudo 1,5 cm abaixo da mediana da areia vira água; os peixes só nadam ali e
   desviam das margens (cavar um buraco cria um lago).
 - **Carrinhos:** escolhem a direção mais baixa (o vale), sem rampa íngreme, sem lago e sem sair da área.

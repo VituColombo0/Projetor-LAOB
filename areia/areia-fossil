@@ -1,0 +1,4 @@
+#!/bin/sh
+# Escavação paleontológica de dinossauros na caixa de areia (veja "areia-fossil ajuda"). Só biblioteca padrão.
+D=$(dirname "$(readlink -f "$0")")
+exec python3 "$D/areia_brincar.py" fossil "$@"

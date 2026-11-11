@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Abrir a topografia
+Comment=Abre a topografia (relevo colorido) no projetor
+Exec=/home/laob/SARndbox-rosto/gui-rodar.sh "Topografia" applications-science areia-topografia
+Icon=applications-science
+Terminal=false

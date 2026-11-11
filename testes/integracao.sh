@@ -20,14 +20,16 @@ trap 'cp -p "$TMP/estado.json" "$D/estado.json" 2>/dev/null; rm -rf "$TMP"' EXIT
 echo "== instalação"
 confere "compila do zero a partir do repositório" "bash '$R/instalar.sh' --compilar '$TMP/build' >/dev/null 2>&1"
 confere "binário instalado é o mesmo que o repositório gera" "cmp -s <(strings '$TMP/build/bin/SARndbox' | grep -c faceOut) <(strings '$D/bin/SARndbox' | grep -c faceOut)"
-confere "comandos no PATH" "for c in areia-foto areia-topografia areia-tema areia-tesouro areia-animais; do command -v \$c >/dev/null || exit 1; done"
+confere "comandos no PATH" "for c in areia-foto areia-topografia areia-tema areia-tesouro areia-animais areia-fossil; do command -v \$c >/dev/null || exit 1; done"
 confere "ao ligar abre a topografia" "grep -q '^Exec=.*areia-topografia' '$HOME/.config/autostart/SARndbox.desktop'"
 confere "modelos presentes" "[ -s '$D/modelos/u2net_human_seg.onnx' ] && [ -s '$D/modelos/face_detection_yunet_2023mar.onnx' ]"
 MESA=$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")
 for pasta in "1 - Topografia (ligar e consertar)" "2 - Fotos na areia" "3 - Cores do relevo" "4 - Caça ao tesouro" "5 - Peixes e carrinhos"; do
   confere "Área de Trabalho: '$pasta' com o manual" "[ -s \"$MESA/$pasta/COMO USAR.txt\" ]"
 done
-confere "atalho 'Abrir a topografia'" "[ -x \"$MESA/1 - Topografia (ligar e consertar)/Abrir a topografia.desktop\" ]"
+confere "pasta '7 - Fósseis de dinossauro' com o manual" "[ -s \"$MESA/7 - Fósseis de dinossauro/COMO USAR.txt\" ]"
+confere "atalhos de dois cliques: executáveis e liberados" "n=0; for a in \"$MESA\"/[1-7]\\ -\\ */*.desktop; do [ -x \"\$a\" ] && gio info -a metadata::trusted \"\$a\" | grep -q 'trusted: true' || exit 1; n=\$((n+1)); done; [ \$n -ge 20 ]"
+confere "atalhos apontam para programas que existem" "for a in \"$MESA\"/[1-7]\\ -\\ */*.desktop; do e=\$(sed -n 's/^Exec=//p' \"\$a\" | cut -d' ' -f1); [ \"\${e#xdg-open}\" != \"\$e\" ] || [ -x \"\$e\" ] || exit 1; done"
 confere "sem sobras da organização antiga" "[ ! -e '$MESA/Areia' ] && [ ! -e '$MESA/SE A AREIA NÃO ABRIR.txt' ]"
 
 echo "== painel do celular"
@@ -60,6 +62,8 @@ else
 fi
 confere "caça ao tesouro esconde o baú" "areia-tesouro facil >/dev/null && sleep 2 && grep -q 'Tesouro escondido' '$D/sandbox.log'"
 confere "tesouro: situação" "areia-tesouro achou | grep -qiE 'escondido|acharam'"
+confere "escavação de fóssil" "areia-fossil triceratops facil >/dev/null && sleep 2 && grep -q 'Fossil escondido' '$D/sandbox.log' && areia-fossil achou | grep -qiE 'enterrado|escavado'"
+confere "atalho com janela (gui-rodar) roda o comando" "DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/\$(id -u)/bus '$D/gui-rodar.sh' Teste dialog-information areia-fossil parar >/dev/null"
 confere "peixes e carrinhos" "areia-animais todos 12 >/dev/null && grep -q 'Animais: todos (12)' '$D/sandbox.log'"
 sleep 3
 DISPLAY=:0 XAUTHORITY=/run/user/$(id -u)/gdm/Xauthority ffmpeg -loglevel error -y -f x11grab \
@@ -68,7 +72,7 @@ DISPLAY=:0 XAUTHORITY=/run/user/$(id -u)/gdm/Xauthority ffmpeg -loglevel error -
 confere "sem erro de shader" "! grep -qiE 'shader.*(error|erro)|GLSL|compile error' '$D/sandbox.log'"
 confere "parar brincadeiras" "areia-animais parar >/dev/null && areia-tesouro parar >/dev/null"
 for t in vulcao inverno marte deserto oceano arco-iris mapa classico; do
-  confere "efeito do tema $t" "areia-tema $t >/dev/null && sleep 0.5 && tail -n 5 '$D/sandbox.log' | grep -q 'Efeito: $t'"
+  confere "efeito do tema $t" "areia-tema $t >/dev/null && sleep 0.5 && [ \"\$(grep '^Efeito: ' '$D/sandbox.log' | tail -n 1)\" = 'Efeito: $t' ]"
 done
 confere "sem erro de shader com os efeitos" "! grep -qiE 'shader.*(error|erro)|GLSL|compile error' '$D/sandbox.log'"
 confere "reserva: o SARndbox original abre" "'$D/sandbox.sh' original >/dev/null && [ \"\$('$D/sandbox.sh' estado)\" = original ] && no_projetor"

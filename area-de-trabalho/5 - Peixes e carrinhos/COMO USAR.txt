@@ -5,8 +5,16 @@ Peixes coloridos nadam nos lagos e desviam dos morros. Carrinhos andam
 pelos vales. Mexendo na areia, eles mudam o caminho.
 
 
-COMO USAR
----------
+COMO USAR (PELOS ATALHOS - MAIS FÁCIL)
+--------------------------------------
+- Para soltar os dois: dê dois cliques em "Soltar peixes e carrinhos"
+- Só peixes: dê dois cliques em "Soltar apenas peixes"
+- Só carrinhos: dê dois cliques em "Soltar apenas carrinhos"
+- Para tirar: dê dois cliques em "Parar animais"
+
+
+OU PELO TERMINAL
+----------------
 1. Abra o Terminal: aperte Ctrl + Alt + T
 2. Digite o comando e aperte Enter:
 
@@ -34,4 +42,5 @@ DICAS
 
 VOLTAR PARA A TOPOGRAFIA
 ------------------------
-    areia-topografia
+Dê dois cliques em "Voltar para a topografia", aqui nesta pasta.
+Ou no terminal:  areia-topografia

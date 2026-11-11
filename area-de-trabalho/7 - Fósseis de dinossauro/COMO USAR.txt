@@ -1,0 +1,53 @@
+ESCAVAÇÃO PALEONTOLÓGICA (FÓSSEIS DE DINOSSAURO)
+================================================
+
+Um fóssil de dinossauro fica enterrado sob a areia em um sítio paleontológico
+sorteado. Usem as mãos ou pincéis para escavar com cuidado!
+
+Quando vocês estiverem cavando perto do fóssil, surgirá a quadrícula de
+escavação arqueológica (linhas amarelas sobre o terreno) e poeira de rocha.
+Conforme cavam mais fundo, o esqueleto fossilizado (em marfim antigo incrustado
+na rocha) começa a aparecer! Ao ser completamente escavado, o fóssil brilha
+comemorando a grande descoberta científica!
+
+
+COMO USAR (PELOS ATALHOS - MAIS FÁCIL)
+--------------------------------------
+- Para começar direto (T-Rex a 3 cm): dê dois cliques em "Começar escavação (T-Rex)"
+- Para escolher outro dinossauro ou nível: dê dois cliques em "Escolher dinossauro e nível"
+  * 🦖 Tiranossauro Rex (crânio potente com dentes afiados e costelas)
+  * 🦏 Triceratops (escudo ósseo posterior e 3 chifres)
+  * 🦅 Pterodáctilo (bico longo com crista e asas abertas)
+  * 🐾 Pegada Gigante (pegada de terópode tridáctila profunda na rocha)
+- Para parar a escavação: dê dois cliques em "Parar escavação"
+
+
+OU PELO TERMINAL
+----------------
+1. Abra o Terminal: aperte Ctrl + Alt + T
+2. Digite um dos comandos e aperte Enter:
+
+    areia-fossil                começa a escavação de um T-Rex (3 cm)
+    areia-fossil triceratops    fóssil de Triceratops
+    areia-fossil pterodactilo   fóssil de Pterodáctilo
+    areia-fossil pegada         pegada gigante na rocha
+
+  Níveis de profundidade:
+    areia-fossil trex facil     mais raso (2 cm, ideal para crianças menores)
+    areia-fossil trex dificil   mais fundo (5 cm, requer escavação profunda)
+
+  Outros comandos:
+    areia-fossil achou          mostra se o fóssil está enterrado ou já foi achado
+    areia-fossil parar          encerra a escavação
+
+
+VOLTAR PARA A TOPOGRAFIA NORMAL
+-------------------------------
+Dê dois cliques em "Voltar para a topografia", aqui nesta pasta.
+Ou no terminal:  areia-topografia
+
+
+DICAS
+-----
+- Alise um pouco a areia antes de começar: o fóssil costuma ficar onde tem areia suficiente.
+- Usem as pontas dos dedos ou pequenos pincéis de cerdas macias para dar a sensação real de escavação paleontológica!

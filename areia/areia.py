@@ -344,6 +344,60 @@ def _brincadeira(comando):
 
 def tesouro(dificuldade="normal"):
     """Esconde um tesouro num lugar sorteado, embaixo da areia. Devolve a profundidade (cm)."""
+    prof = _profundidade(dificuldade)
+    _brincadeira(f"tesouro {prof:g}")
+    return prof
+
+
+def _registro_caca():
+    """Linhas do registro do programa da areia sobre o tesouro e os fósseis (mesmo mecanismo)."""
+    try:
+        with open(os.path.join(D, "sandbox.log"), errors="replace") as f:
+            return [l for l in f if l.startswith(("Tesouro", "Fossil", "Modo Rosto:"))]
+    except OSError:
+        return []
+
+
+def _situacao(prefixo):
+    """escondido, achado ou nenhum. Começar outra brincadeira (fóssil x tesouro) encerra esta."""
+    if qual() != "rosto":
+        return "nenhum"
+    linhas = _registro_caca()
+    if not linhas or not linhas[-1].startswith(prefixo) or linhas[-1].startswith(prefixo + " desligado"):
+        return "nenhum"
+    return "achado" if linhas[-1].startswith(prefixo + " encontrado") else "escondido"
+
+
+def _achados(prefixo):
+    linhas = _registro_caca()
+    inicio = max((i for i, l in enumerate(linhas) if l.startswith(prefixo + ": escondendo")), default=-1)
+    return sum(1 for l in linhas[inicio + 1:] if l.startswith(prefixo + " encontrado"))
+
+
+def tesouro_situacao():
+    return _situacao("Tesouro")
+
+
+def tesouro_achados():
+    """Quantos tesouros acharam desde que a caça começou (cada um reaparece em outro lugar)."""
+    return _achados("Tesouro")
+
+
+def tesouro_fim():
+    if qual() == "rosto":
+        _comando("tesouroFim")
+
+
+# ---------- escavação de fósseis (o mesmo mecanismo do tesouro, com esqueletos) ----------
+
+FOSSEIS = {"trex": (2, "Tiranossauro Rex"), "triceratops": (3, "Triceratops"),
+           "pterodactilo": (4, "Pterodáctilo"), "pegada": (5, "Pegada Gigante")}
+_APELIDOS_FOSSIL = {"t-rex": "trex", "tiranossauro": "trex", "rex": "trex", "trike": "triceratops",
+                    "ptero": "pterodactilo", "pterodactil": "pterodactilo", "pterossauro": "pterodactilo",
+                    "pegadas": "pegada", "rastro": "pegada", "pe": "pegada"}
+
+
+def _profundidade(dificuldade):
     d = _chave_tema(str(dificuldade))
     prof = DIFICULDADE.get(d)
     if prof is None:
@@ -353,38 +407,35 @@ def tesouro(dificuldade="normal"):
             raise Erro("dificuldade: facil, normal ou dificil (ou a profundidade em cm)")
     if not 1.0 <= prof <= 10.0:
         raise Erro("a profundidade tem que ser entre 1 e 10 cm")
-    _brincadeira(f"tesouro {prof:g}")
     return prof
 
 
-def tesouro_situacao():
-    """escondido, achado ou nenhum (lido do registro do programa da areia)."""
-    if qual() != "rosto":
-        return "nenhum"
-    try:
-        with open(os.path.join(D, "sandbox.log"), errors="replace") as f:
-            linhas = [l for l in f if l.startswith(("Tesouro", "Modo Rosto:"))]
-    except OSError:
-        return "nenhum"
-    if not linhas or linhas[-1].startswith(("Tesouro desligado", "Modo Rosto:")):
-        return "nenhum"
-    return "achado" if linhas[-1].startswith("Tesouro encontrado") else "escondido"
+def fossil(tipo="trex", dificuldade="normal"):
+    """Enterra um fóssil num lugar sorteado. "facil"/"dificil" sozinho vale como dificuldade do T-Rex.
+    Devolve (nome do dinossauro, profundidade em cm)."""
+    t = _chave_tema(str(tipo))
+    if t in DIFICULDADE or t.replace(",", "").replace(".", "").isdigit():
+        t, dificuldade = "trex", tipo
+    t = _APELIDOS_FOSSIL.get(t, t)
+    if t not in FOSSEIS:
+        raise Erro("dinossauro: trex, triceratops, pterodactilo ou pegada")
+    prof = _profundidade(dificuldade)
+    num, nome = FOSSEIS[t]
+    _brincadeira(f"fossil {num} {prof:g}")
+    return nome, prof
 
 
-def tesouro_achados():
-    """Quantos tesouros acharam desde que a caça começou (cada um reaparece em outro lugar)."""
-    try:
-        with open(os.path.join(D, "sandbox.log"), errors="replace") as f:
-            linhas = [l for l in f if l.startswith(("Tesouro", "Modo Rosto:"))]
-    except OSError:
-        return 0
-    inicio = max((i for i, l in enumerate(linhas) if l.startswith("Tesouro: escondendo")), default=-1)
-    return sum(1 for l in linhas[inicio + 1:] if l.startswith("Tesouro encontrado"))
+def fossil_situacao():
+    return _situacao("Fossil")
 
 
-def tesouro_fim():
+def fossil_achados():
+    return _achados("Fossil")
+
+
+def fossil_fim():
     if qual() == "rosto":
-        _comando("tesouroFim")
+        _comando("fossilFim")
 
 
 def animais(tipo, quantidade=None):

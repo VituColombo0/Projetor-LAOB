@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Soltar peixes e carrinhos
+Comment=Peixes nos lagos e carrinhos nos vales
+Exec=/home/laob/SARndbox-rosto/gui-rodar.sh "Peixes e carrinhos" input-gaming areia-animais todos
+Icon=input-gaming
+Terminal=false

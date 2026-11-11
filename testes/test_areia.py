@@ -248,6 +248,62 @@ class Brincadeiras(Ambiente):
         self.assertEqual(self.comandos()[-1], "cmd tesouroFim")
 
 
+class Fosseis(Ambiente):
+    def cmds(self):
+        return [c for c in self.comandos() if c.startswith("cmd")]
+
+    def test_dinossauros_e_niveis(self):
+        self.assertEqual(self.areia.fossil(), ("Tiranossauro Rex", 3.0))
+        self.assertEqual(self.cmds()[-1], "cmd fossil 2 3")
+        self.assertEqual(self.areia.fossil("Triceratops")[0], "Triceratops")
+        self.assertEqual(self.cmds()[-1], "cmd fossil 3 3")
+        self.areia.fossil("pegada", "facil")
+        self.assertEqual(self.cmds()[-1], "cmd fossil 5 2")
+        self.areia.fossil("ptero", "dificil")
+        self.assertEqual(self.cmds()[-1], "cmd fossil 4 5")
+
+    def test_dificuldade_sozinha_vale_para_o_trex(self):
+        self.assertEqual(self.areia.fossil("facil"), ("Tiranossauro Rex", 2.0))
+        self.assertEqual(self.cmds()[-1], "cmd fossil 2 2")
+
+    def test_erros(self):
+        with self.assertRaisesRegex(self.areia.Erro, "dinossauro"):
+            self.areia.fossil("gato")
+        with self.assertRaisesRegex(self.areia.Erro, "dificuldade"):
+            self.areia.fossil("trex", "xyz")
+
+    def test_tesouro_e_fossil_nao_se_misturam(self):
+        self.areia.fossil()
+        log = os.path.join(self.D, "sandbox.log")
+        escreve(log, "Tesouro: escondendo a 3 cm\nTesouro escondido em x 1 y 1\nTesouro encontrado! (1 achados)\n"
+                     "Fossil: escondendo tipo 2 a 3 cm\nFossil escondido em x 2 y 2\n")
+        self.assertEqual(self.areia.fossil_situacao(), "escondido")
+        self.assertEqual(self.areia.tesouro_situacao(), "nenhum")   # o fóssil substituiu o tesouro
+        self.assertEqual(self.areia.tesouro_achados(), 1)
+        escreve(log, "Fossil: escondendo tipo 2 a 3 cm\nFossil encontrado! (1 escavados)\n"
+                     "Fossil escondido em x 5 y 5 (escavar ate 2 cm; novo)\nFossil encontrado! (2 escavados)\n")
+        self.assertEqual(self.areia.fossil_situacao(), "achado")
+        self.assertEqual(self.areia.fossil_achados(), 2)
+        escreve(log, "Fossil encontrado! (2 escavados)\nFossil desligado\n")
+        self.assertEqual(self.areia.fossil_situacao(), "nenhum")
+
+    def test_comando_de_terminal(self):
+        import importlib
+        import areia_brincar
+        ab = importlib.reload(areia_brincar)
+        saida = io.StringIO()
+        with redirect_stdout(saida):
+            ab.fossil([])
+            ab.fossil(["triceratops", "dificil"])
+            ab.fossil(["achou"])
+            ab.fossil(["parar"])
+        out = saida.getvalue()
+        self.assertIn("Fóssil de Tiranossauro Rex enterrado a 3 cm", out)
+        self.assertIn("Fóssil de Triceratops enterrado a 5 cm", out)
+        self.assertIn("Escavação encerrada.", out)
+        self.assertEqual(self.cmds()[-1], "cmd fossilFim")
+
+
 class Comando(Ambiente):
     """areia-foto (areia_foto.main) sem terminal interativo."""
 

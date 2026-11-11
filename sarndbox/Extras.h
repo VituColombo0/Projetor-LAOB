@@ -38,8 +38,9 @@ class Extras
 	float referencia; // mediana da areia (cm)
 	GLfloat caixa[16]; // espaço da câmera -> caixa (cm), coluna-major, para o shader
 
-	/* Caça ao tesouro: */
+	/* Caça ao tesouro e fósseis: */
 	bool tesouro,achado;
+	int tipoTesouro; // 1 = baú, 2 = T-Rex, 3 = Triceratops, 4 = Pterodáctilo, 5 = Pegada
 	float tx,ty,traio,tz; // posição (cm), raio (cm), altura que precisa ser alcançada cavando (cm)
 	double quandoAchou;
 	float profundidade; // cm de areia em cima do tesouro (vale também para os próximos)

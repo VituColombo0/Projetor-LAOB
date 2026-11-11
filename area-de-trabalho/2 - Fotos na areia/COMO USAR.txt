@@ -12,13 +12,16 @@ Funciona com .jpg, .png, .webp e .bmp
 (foto do iPhone em HEIC: converta para .jpg antes)
 
 
-PASSO 2 - ABRA O TERMINAL
--------------------------
-Aperte Ctrl + Alt + T
+COMO ABRIR (PELO ATALHO - MAIS FÁCIL)
+-------------------------------------
+Dê dois cliques no ícone "Projetar foto na areia" nesta pasta.
+Uma janela vai se abrir para você escolher qual foto quer projetar!
 
 
-PASSO 3 - DIGITE O COMANDO E APERTE ENTER
------------------------------------------
+OU PELO TERMINAL
+----------------
+1. Abra o Terminal: aperte Ctrl + Alt + T
+2. Digite o comando e aperte Enter:
     areia-foto
 
   Ele mostra a lista das fotos com números. Digite o número e Enter.
@@ -31,6 +34,7 @@ PASSO 3 - DIGITE O COMANDO E APERTE ENTER
 
 AJUSTES
 -------
+Dê dois cliques nos ícones de ajuste nesta pasta, ou rode no terminal:
     areia-foto girar        a foto apareceu de lado? gira 90 graus
     areia-foto espelhar     a foto apareceu invertida? espelha
     areia-foto esculpir     mostra onde pôr areia (vermelho) e tirar (azul)
@@ -46,7 +50,8 @@ Ele tira sua foto e em uns 15 segundos você aparece na areia.
 
 VOLTAR PARA A TOPOGRAFIA
 ------------------------
-    areia-topografia
+Dê dois cliques em "Voltar para a topografia", aqui nesta pasta.
+Ou no terminal:  areia-topografia
 
 
 A primeira vez que uma foto aparece leva uns 5 segundos; depois, 1 segundo.

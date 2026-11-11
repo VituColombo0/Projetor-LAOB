@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Parar animais
+Comment=Tira os peixes e carrinhos da areia
+Exec=/home/laob/SARndbox-rosto/gui-rodar.sh "Peixes e carrinhos" process-stop areia-animais parar
+Icon=process-stop
+Terminal=false

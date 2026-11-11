@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Soltar apenas carrinhos
+Comment=Carrinhos andando pelos vales
+Exec=/home/laob/SARndbox-rosto/gui-rodar.sh "Carrinhos" input-gaming areia-animais carros
+Icon=input-gaming
+Terminal=false

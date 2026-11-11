@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Parar caça ao tesouro
+Comment=Tira o tesouro da areia
+Exec=/home/laob/SARndbox-rosto/gui-rodar.sh "Caça ao tesouro" process-stop areia-tesouro parar
+Icon=process-stop
+Terminal=false

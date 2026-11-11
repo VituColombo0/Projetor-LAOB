@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Começar escavação (T-Rex)
+Comment=Enterra um fóssil de T-Rex a 3 cm para escavarem
+Exec=/home/laob/SARndbox-rosto/gui-rodar.sh "Escavação de fósseis" applications-science areia-fossil trex
+Icon=applications-science
+Terminal=false

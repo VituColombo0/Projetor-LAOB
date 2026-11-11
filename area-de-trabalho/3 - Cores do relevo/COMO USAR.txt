@@ -5,8 +5,14 @@ Troca as cores da topografia na hora, e cada tema tem uma animação.
 O tema escolhido continua valendo quando o computador for ligado de novo.
 
 
-COMO USAR
----------
+COMO USAR (PELO ATALHO - MAIS FÁCIL)
+------------------------------------
+Dê dois cliques em "Escolher cores do relevo", aqui nesta pasta.
+Vai abrir uma janelinha com todos os temas e animações para você escolher!
+
+
+OU PELO TERMINAL
+----------------
 1. Abra o Terminal: aperte Ctrl + Alt + T
 2. Digite um destes comandos e aperte Enter:
 
@@ -29,6 +35,12 @@ Abra a mão por cima da areia e espere uns segundos: começa a chover ali.
 A chuva também muda com o tema:
     vulcão = lava · inverno = neve · marte = lama vermelha
     deserto = oásis · arco-íris = água colorida · os outros = água azul
+
+
+VOLTAR PARA A TOPOGRAFIA NORMAL
+-------------------------------
+Dê dois cliques em "Voltar para a topografia", aqui nesta pasta.
+Ou no terminal:  areia-topografia
 
 
 DICAS

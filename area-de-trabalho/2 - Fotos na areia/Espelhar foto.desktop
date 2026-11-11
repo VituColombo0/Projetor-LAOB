@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Espelhar foto
+Comment=Espelha a imagem projetada
+Exec=/home/laob/SARndbox-rosto/gui-rodar.sh "Fotos na areia" object-flip-horizontal areia-foto espelhar
+Icon=object-flip-horizontal
+Terminal=false
