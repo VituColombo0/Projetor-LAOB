@@ -6,6 +6,7 @@
    tesouro [profundidade cm] [segundos] / tesouroFim       caça ao tesouro; achado, some e reaparece
                                                            em outro lugar depois dos segundos (20)
    animais peixes|carros|todos|nada [quantidade]           peixes no lago e carrinhos nos vales
+   efeito <tema>                                           animação do tema (lava, neve, poeira...)
 """
 import sys
 
@@ -265,6 +266,17 @@ void Sandbox::toggleDEM(DEM* dem)
 					extras.tz=-1000.0f;
 					setFaceMode(0,0);
 					std::cout<<"Tesouro: escondendo a "<<tesouroPedido<<" cm"<<std::endl;
+					}
+				else if(isToken(tokens[0],"efeito"))
+					{
+					int e=tokens.size()>=2?Extras::efeitoDoTema(tokens[1].c_str()):-1;
+					if(e<0)
+						std::cerr<<"uso: efeito classico|vulcao|inverno|marte|deserto|oceano|arco-iris|mapa|nada"<<std::endl;
+					else
+						{
+						extras.efeito=e;
+						std::cout<<"Efeito: "<<tokens[1]<<std::endl;
+						}
 					}
 				else if(isToken(tokens[0],"tesouroFim"))
 					{

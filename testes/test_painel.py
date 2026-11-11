@@ -66,7 +66,7 @@ class Painel(Ambiente):
         self.assertIn("ainda não há imagem", r.get_json()["msg"])
         r = self.post("/modo", json={"modo": "original"})
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(self.rodando(), "original")
+        self.assertIn("topografia", self.comandos())
 
     def test_temas(self):
         j = self.get("/estado").get_json()

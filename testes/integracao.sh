@@ -39,10 +39,10 @@ TS=$(tailscale ip -4 2>/dev/null | head -1)
 [ -n "$TS" ] && confere "responde no Tailscale ($TS)" "curl -sf -m 5 http://$TS:8090/estado >/dev/null"
 
 echo "== projetor"
-confere "topografia abre" "areia-topografia >/dev/null && [ \"\$('$D/sandbox.sh' estado)\" = original ]"
+confere "topografia abre (na versão com efeitos)" "areia-topografia >/dev/null && [ \"\$('$D/sandbox.sh' estado)\" = rosto ]"
 confere "topografia no projetor, tela cheia" "no_projetor"
 TEMA0=$(readlink "$D/temas/atual.cpt" 2>/dev/null | sed 's/\.cpt$//'); TEMA0=${TEMA0:-classico}
-confere "topografia aceita troca de cores (cano de comandos)" "pgrep -af '^$HOME/SARndbox-2.8/bin/SARndbox' | grep -q -- ' -cp '"
+confere "topografia recebe o efeito do tema" "grep -q '^Efeito: ' '$D/sandbox.log'"
 confere "troca de tema na hora (< 2 s)" "s=\$(date +%s); areia-tema vulcao >/dev/null && areia-tema '$TEMA0' >/dev/null && [ \$((\$(date +%s) - s)) -lt 2 ]"
 N=$(areia-foto lista | grep -cE '^ +[0-9]+  ')
 if [ "$N" -gt 0 ]; then
@@ -67,6 +67,12 @@ DISPLAY=:0 XAUTHORITY=/run/user/$(id -u)/gdm/Xauthority ffmpeg -loglevel error -
   && ok "print das brincadeiras em /tmp/integracao-brincadeiras.png"
 confere "sem erro de shader" "! grep -qiE 'shader.*(error|erro)|GLSL|compile error' '$D/sandbox.log'"
 confere "parar brincadeiras" "areia-animais parar >/dev/null && areia-tesouro parar >/dev/null"
-confere "volta à topografia" "areia-topografia >/dev/null && [ \"\$('$D/sandbox.sh' estado)\" = original ] && no_projetor"
+for t in vulcao inverno marte deserto oceano arco-iris mapa classico; do
+  confere "efeito do tema $t" "areia-tema $t >/dev/null && sleep 0.5 && tail -n 5 '$D/sandbox.log' | grep -q 'Efeito: $t'"
+done
+confere "sem erro de shader com os efeitos" "! grep -qiE 'shader.*(error|erro)|GLSL|compile error' '$D/sandbox.log'"
+confere "reserva: o SARndbox original abre" "'$D/sandbox.sh' original >/dev/null && [ \"\$('$D/sandbox.sh' estado)\" = original ] && no_projetor"
+confere "volta à topografia" "areia-topografia >/dev/null && [ \"\$('$D/sandbox.sh' estado)\" = rosto ] && no_projetor"
+areia-tema "$TEMA0" >/dev/null
 
 [ $falhas = 0 ] && echo "TUDO OK" || { echo "HÁ FALHAS"; exit 1; }

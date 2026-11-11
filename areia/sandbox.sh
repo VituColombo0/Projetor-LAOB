@@ -1,7 +1,9 @@
 #!/bin/bash
 # Troca qual SARndbox está no projetor (só um programa usa o Kinect por vez).
-#   sandbox.sh original       a topografia: o SARndbox original, sem mudanças
-#   sandbox.sh rosto          a versão com os modos Foto/Esculpir (aceita comandos)
+#   sandbox.sh topografia     a topografia (relevo + efeito do tema) na versão com Foto; se ela
+#                             não abrir, o SARndbox original (sem efeitos) entra no lugar
+#   sandbox.sh original       o SARndbox original, sem mudanças (reserva)
+#   sandbox.sh rosto          a versão com Foto/Esculpir/brincadeiras (aceita comandos)
 #   sandbox.sh estado         qual está rodando: original, rosto ou nenhum
 #   sandbox.sh cmd "<texto>"  manda um comando para a versão com Foto (ex.: "relevo")
 #   sandbox.sh tema <arq.cpt> troca as cores do relevo na hora (no que estiver rodando)
@@ -28,6 +30,8 @@ fi
 
 CORES=(-uhm)
 [ -f "$TEMA" ] && CORES=(-uhm "$(readlink -f "$TEMA")")
+
+tema_nome() { local t; t=$(readlink "$TEMA" 2>/dev/null); t=${t##*/}; t=${t%.cpt}; echo "${t:-classico}"; }
 
 fifo() { [ -p "$1" ] || { rm -f "$1"; mkfifo -m 600 "$1"; }; }
 
@@ -77,7 +81,15 @@ case "${1:-estado}" in
       echo "a versão com Foto não subiu (veja $LOG); voltando à topografia"
       iniciar_original; espera original 5; exit 1
     fi
+    manda "$FIFO" "efeito $(tema_nome)" || true   # animação do tema (lava, neve...)
     echo rosto ;;
+  topografia)
+    "$0" rosto >/dev/null 2>&1
+    if [ "$(qual)" = rosto ]; then
+      for c in relevo tesouroFim "animais nada" "efeito $(tema_nome)"; do manda "$FIFO" "$c" || true; done
+      echo topografia; exit 0
+    fi
+    "$0" original ;;
   cmd)
     [ "$(qual)" = rosto ] || { echo "a versão com Foto não está rodando"; exit 1; }
     manda "$FIFO" "${2:?comando}" || { echo "sem resposta do SARndbox"; exit 1; }
@@ -92,8 +104,9 @@ case "${1:-estado}" in
         else  # aberta sem o cano de comandos (versão antiga do autostart): reabre já com o tema
           parar; iniciar_original; espera original 5 || { echo "a topografia não abriu"; exit 1; }
         fi ;;
-      rosto) manda "$FIFO" "colorMap $arq" || { echo "sem resposta do SARndbox"; exit 1; } ;;
+      rosto) manda "$FIFO" "colorMap $arq" || { echo "sem resposta do SARndbox"; exit 1; }
+             t=${arq##*/}; manda "$FIFO" "efeito ${t%.cpt}" || true ;;
     esac
     echo tema ;;
-  *) echo "uso: sandbox.sh original|rosto|estado|cmd \"<comando>\"|tema <arq.cpt>"; exit 2 ;;
+  *) echo "uso: sandbox.sh topografia|original|rosto|estado|cmd \"<comando>\"|tema <arq.cpt>"; exit 2 ;;
 esac

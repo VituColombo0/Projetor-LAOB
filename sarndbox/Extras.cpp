@@ -5,6 +5,7 @@ Extras - caça ao tesouro, peixes e carrinhos sobre o relevo (Projetor-LAOB).
 #include "Extras.h"
 
 #include <cmath>
+#include <cstring>
 #include <algorithm>
 #include <GL/Extensions/GLARBShaderObjects.h>
 #include <Geometry/ProjectiveTransformation.h>
@@ -18,7 +19,7 @@ Extras::Extras(void)
 	:celula(1.5f),gw(0),gh(0),mapaOk(false),referencia(0.0f),
 	 tesouro(false),achado(false),tx(0),ty(0),traio(5.0f),tz(0),quandoAchou(0.0),
 	 profundidade(3.0f),reaparece(20.0f),quantosAchados(0),
-	 modo(NADA),quantos(0),nivelAgua(SEM),semente(12345u),tempo(0.0)
+	 modo(NADA),quantos(0),nivelAgua(SEM),semente(12345u),tempo(0.0),efeito(SEM_EFEITO)
 	{
 	bmin[0]=bmin[1]=-10.0f;
 	bmax[0]=bmax[1]=10.0f;
@@ -173,6 +174,17 @@ bool Extras::confereTesouro(void)
 	return false;
 	}
 
+int Extras::efeitoDoTema(const char* nome)
+	{
+	static const struct {const char* tema;int efeito;} tabela[]={
+		{"classico",CHUVA},{"vulcao",LAVA},{"inverno",NEVE},{"marte",POEIRA},{"deserto",AREIA},
+		{"oceano",ONDAS},{"arco-iris",BRILHO},{"mapa",SEM_EFEITO},{"nada",SEM_EFEITO}};
+	for(unsigned i=0;i<sizeof(tabela)/sizeof(tabela[0]);++i)
+		if(std::strcmp(nome,tabela[i].tema)==0)
+			return tabela[i].efeito;
+	return -1;
+	}
+
 bool Extras::horaDeReesconder(void) const
 	{
 	return tesouro&&achado&&reaparece>0.0f&&tempo-quandoAchou>=reaparece;
@@ -297,7 +309,7 @@ void Extras::passo(float dt)
 
 /* ----------------------------------------------------------------- shader */
 
-const char* Extras::nomesUniforms[4]={"extrasCaixa","extrasAg","extrasTesouro","extrasInfo"};
+const char* Extras::nomesUniforms[NUM_UNIFORMS]={"extrasCaixa","extrasAg","extrasTesouro","extrasInfo","extrasEfeito"};
 
 const char* Extras::glslVertexUniforms=R"GLSL(
 uniform mat4 extrasCaixa; // espaço da câmera -> caixa (cm)
@@ -312,14 +324,99 @@ const char* Extras::glslFragmentUniforms=R"GLSL(
 uniform vec4 extrasAg[24];   // x, y (cm), ângulo, tipo (1.xx peixe, 2.xx carrinho; xx = cor)
 uniform vec4 extrasTesouro;  // x, y, raio (cm), altura a alcançar cavando (cm)
 uniform vec4 extrasInfo;     // tempo (s), achou, tesouro ligado, nível do lago (cm; -1000 = sem lago)
+uniform vec4 extrasEfeito;   // efeito do tema (0 nenhum, 1 lava, 2 neve, 3 poeira, 4 areia, 5 ondas, 6 brilho, 7 chuva), altura média da areia (cm)
 varying vec3 extrasPos;
+float exHash(vec2 p)
+	{
+	return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);
+	}
+float exRuido(vec2 p)
+	{
+	vec2 i=floor(p);
+	vec2 f=fract(p);
+	f=f*f*(3.0-2.0*f);
+	return mix(mix(exHash(i),exHash(i+vec2(1.0,0.0)),f.x),mix(exHash(i+vec2(0.0,1.0)),exHash(i+vec2(1.0,1.0)),f.x),f.y);
+	}
+/* Pontinhos que andam (neve, brilhos): grade de células com no máximo um ponto cada */
+float exPontos(vec2 p,float tamanho,float chance)
+	{
+	vec2 c=floor(p);
+	float h=exHash(c);
+	if(h>chance)
+		return 0.0;
+	vec2 centro=vec2(exHash(c+vec2(3.1,7.7)),exHash(c+vec2(9.2,1.3)))*0.7+0.15;
+	return smoothstep(tamanho,tamanho*0.3,length(fract(p)-centro));
+	}
 )GLSL";
 
 const char* Extras::glslFragmentMain=R"GLSL(
 	{
-	/* Projetor-LAOB: lago, tesouro e animais sobre o relevo */
+	/* Projetor-LAOB: efeito do tema, lago, tesouro e animais sobre o relevo */
 	vec3 ep=extrasPos;
 	float et=extrasInfo.x;
+	float ef=extrasEfeito.x;
+	float ref=extrasEfeito.y;
+	if(ef>0.5&&ef<1.5)
+		{
+		/* Lava: faixas incandescentes que descem dos morros (a fase acompanha a altura) */
+		float n=exRuido(ep.xy*0.5+vec2(0.0,et*0.25));
+		float faixa=smoothstep(0.55,0.95,fract(ep.z*0.8+et*0.45+n*0.7));
+		float onde=smoothstep(ref-1.0,ref+2.5,ep.z);
+		float topo=smoothstep(ref+3.0,ref+6.0,ep.z)*(0.6+0.4*sin(et*4.0+n*6.0));
+		vec3 lava=mix(vec3(0.9,0.2,0.0),vec3(1.0,0.85,0.2),faixa);
+		baseColor=vec4(mix(baseColor.rgb,lava,clamp(faixa*onde*0.85+topo*0.5,0.0,1.0)),1.0);
+		}
+	else if(ef>1.5&&ef<2.5)
+		{
+		/* Neve caindo: três camadas de flocos, cada uma numa velocidade, com vento leve */
+		float flocos=0.0;
+		for(int k=0;k<3;++k)
+			{
+			float fk=float(k);
+			vec2 p=ep.xy*(0.35+0.15*fk)+vec2(sin(et*0.4+fk*2.0)*1.5+et*0.3,et*(0.9+0.5*fk));
+			flocos=max(flocos,exPontos(p,0.13-0.03*fk,0.35));
+			}
+		baseColor=vec4(mix(baseColor.rgb,vec3(1.0),flocos*0.9),1.0);
+		}
+	else if(ef>2.5&&ef<3.5)
+		{
+		/* Tempestade de poeira marciana */
+		float n=exRuido(ep.xy*0.12+vec2(et*0.35,et*0.08))+0.5*exRuido(ep.xy*0.35-vec2(et*0.5,0.0));
+		baseColor=vec4(mix(baseColor.rgb,vec3(0.85,0.48,0.28),smoothstep(0.7,1.3,n)*0.5),1.0);
+		}
+	else if(ef>3.5&&ef<4.5)
+		{
+		/* Areia levada pelo vento: riscos que correm de um lado para o outro */
+		float n=exRuido(vec2(ep.x*0.07-et*1.2,ep.y*1.1));
+		float risco=smoothstep(0.62,0.9,n)*(0.6+0.4*exRuido(ep.xy*0.2+et*0.2));
+		baseColor=vec4(mix(baseColor.rgb,vec3(1.0,0.92,0.72),risco*0.45),1.0);
+		}
+	else if(ef>4.5&&ef<5.5)
+		{
+		/* Mar: luz dançando no fundo e espuma na beira das ilhas */
+		float c=abs(sin(ep.x*0.7+et*1.2+sin(ep.y*0.45+et*0.8))*sin(ep.y*0.8-et*1.0+sin(ep.x*0.55-et*0.6)));
+		float agua=1.0-smoothstep(ref+2.5,ref+3.6,ep.z);
+		float espuma=smoothstep(0.45,0.0,abs(ep.z-(ref+3.6)+0.25*sin(et*2.0+ep.x*0.8)));
+		baseColor=vec4(baseColor.rgb+vec3(0.5,0.8,0.9)*pow(1.0-c,10.0)*0.5*agua+vec3(0.9)*espuma*0.55,1.0);
+		}
+	else if(ef>5.5&&ef<6.5)
+		{
+		/* Arco-íris: estrelinhas piscando */
+		vec2 p=ep.xy*0.45;
+		float b=exPontos(p,0.12,0.25)*pow(0.5+0.5*sin(et*3.0+exHash(floor(p))*6.283),3.0);
+		baseColor=vec4(mix(baseColor.rgb,vec3(1.0),b),1.0);
+		}
+	else if(ef>6.5&&ef<7.5)
+		{
+		/* Chuva fina: gotas caindo e fazendo ondinhas que se abrem */
+		vec2 p=ep.xy/5.0;
+		vec2 c=floor(p);
+		float fase=fract(et*0.6+exHash(c)*7.0);
+		vec2 centro=(c+vec2(exHash(c+vec2(2.0,5.0)),exHash(c+vec2(8.0,1.0)))*0.8+0.1)*5.0;
+		float d=distance(ep.xy,centro);
+		float anel=smoothstep(0.35,0.0,abs(d-fase*2.5))*(1.0-fase);
+		baseColor=vec4(mix(baseColor.rgb,vec3(0.85,0.93,1.0),anel*0.55),1.0);
+		}
 	if(ep.z<extrasInfo.w)
 		{
 		float prof=clamp((extrasInfo.w-ep.z)/4.0,0.0,1.0);
@@ -397,7 +494,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 	}
 )GLSL";
 
-void Extras::uploadUniforms(const GLint locations[4]) const
+void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 	{
 	glUniformMatrix4fvARB(locations[0],1,GL_FALSE,caixa);
 	GLfloat ag[MAX_AGENTES*4];
@@ -412,4 +509,5 @@ void Extras::uploadUniforms(const GLint locations[4]) const
 	glUniform4fvARB(locations[1],MAX_AGENTES,ag);
 	glUniform4fARB(locations[2],tx,ty,traio,tz);
 	glUniform4fARB(locations[3],GLfloat(tempo),achado?1.0f:0.0f,tesouro?1.0f:0.0f,nivelAgua);
+	glUniform4fARB(locations[4],GLfloat(efeito),referencia,0.0f,0.0f);
 	}

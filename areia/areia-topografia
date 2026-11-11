@@ -1,5 +1,6 @@
 #!/bin/bash
-# Volta a caixa de areia para a TOPOGRAFIA (o SARndbox original). É também o que roda ao ligar o PC
+# Volta a caixa de areia para a TOPOGRAFIA (relevo colorido com a animação do tema; se a versão
+# com Foto falhar, o SARndbox original entra no lugar). É também o que roda ao ligar o PC
 # (~/.config/autostart/SARndbox.desktop): espera o Kinect aparecer e tenta de novo se não abrir.
 # Não depende do venv: a topografia abre mesmo que a parte de fotos esteja quebrada.
 set -uo pipefail
@@ -23,9 +24,9 @@ fi
 python3 "$D/areia.py" marca-topografia 2>/dev/null || registra "não consegui anotar o estado"
 
 for tentativa in 1 2 3; do
-  "$D/sandbox.sh" original >/dev/null 2>&1
-  sleep 3
-  if [ "$("$D/sandbox.sh" estado)" = original ]; then
+  "$D/sandbox.sh" topografia >/dev/null 2>&1
+  sleep 2
+  if [ "$("$D/sandbox.sh" estado)" != nenhum ]; then
     registra "topografia aberta (tentativa $tentativa)"
     echo "Topografia no projetor."
     exit 0

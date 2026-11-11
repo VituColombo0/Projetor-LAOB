@@ -109,7 +109,7 @@ class Projetor(Ambiente):
         e = self.areia.estado()
         e["modo"] = "original"
         self.areia.aplica(e)
-        self.assertEqual(self.rodando(), "original")
+        self.assertEqual(self.comandos()[-2], "topografia")   # a topografia roda na versão com efeitos
         self.assertEqual(self.areia.estado()["modo"], "original")
 
     def test_foto_sem_imagem_da_erro(self):

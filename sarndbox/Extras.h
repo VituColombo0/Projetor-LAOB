@@ -23,6 +23,10 @@ class Extras
 	public:
 	enum {MAX_AGENTES=24};
 	enum Modo {NADA=0,PEIXES=1,CARROS=2,TODOS=3};
+	enum {NUM_UNIFORMS=5};
+	/* Efeito animado de cada tema de cor: */
+	enum Efeito {SEM_EFEITO=0,LAVA=1,NEVE=2,POEIRA=3,AREIA=4,ONDAS=5,BRILHO=6,CHUVA=7};
+	int efeito;
 
 	/* Área iluminada (cm, espaço da caixa) e mapa de alturas: */
 	float bmin[2],bmax[2];
@@ -55,7 +59,7 @@ class Extras
 	/* Ligado: o shader precisa do código extra (tesouro, lago ou agentes): */
 	bool ativo(void) const
 		{
-		return tesouro||modo!=NADA;
+		return tesouro||modo!=NADA||efeito!=SEM_EFEITO;
 		}
 
 	void setArea(const double areaMin[2],const double areaMax[2],const OGTransform& cameraToBox);
@@ -73,6 +77,7 @@ class Extras
 
 	/* Animais e objetos: */
 	void povoa(int novoModo,int quantidade);
+	static int efeitoDoTema(const char* nome); // vulcao -> LAVA, inverno -> NEVE...; -1 se não existe
 	void passo(float dt);
 
 	/* Shader: código a acrescentar e envio dos uniforms (na ordem de localizações): */
@@ -80,8 +85,8 @@ class Extras
 	static const char* glslVertexMain;
 	static const char* glslFragmentUniforms;
 	static const char* glslFragmentMain;
-	static const char* nomesUniforms[4];
-	void uploadUniforms(const GLint locations[4]) const;
+	static const char* nomesUniforms[NUM_UNIFORMS];
+	void uploadUniforms(const GLint locations[NUM_UNIFORMS]) const;
 
 	private:
 	float aleatorio(void); // 0..1

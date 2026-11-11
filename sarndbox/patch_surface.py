@@ -165,7 +165,7 @@ void SurfaceRenderer::setDemDistScale(""")
 """, """				*(ulPtr++)=glGetUniformLocationARB(result,"faceReference");
 				}
 			if(extras!=0)
-				for(int k=0;k<4;++k)
+				for(int k=0;k<Extras::NUM_UNIFORMS;++k)
 					*(ulPtr++)=glGetUniformLocationARB(result,Extras::nomesUniforms[k]);
 """)
     c = rep(c, """			faceImage->uploadUniforms(tl,pl,rl);
@@ -174,8 +174,8 @@ void SurfaceRenderer::setDemDistScale(""")
 			}
 		if(extras!=0)
 			{
-			GLint el[4];
-			for(int k=0;k<4;++k)
+			GLint el[Extras::NUM_UNIFORMS];
+			for(int k=0;k<Extras::NUM_UNIFORMS;++k)
 				el[k]=*(ulPtr++);
 			extras->uploadUniforms(el);
 			}

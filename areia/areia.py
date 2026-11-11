@@ -214,9 +214,9 @@ def _comando(texto):
 
 def aplica(e):
     """Põe o projetor no modo de e (sobe a versão com Foto se precisar) e salva o estado."""
-    if e["modo"] == "original":
-        rc, out = _sandbox("original")
-        if rc != 0 or qual() != "original":
+    if e["modo"] == "original":  # topografia: relevo + efeito do tema (o original só se a cópia falhar)
+        rc, out = _sandbox("topografia")
+        if rc != 0 or qual() == "nenhum":
             raise Erro("a topografia não abriu: " + out)
         salva(e)
         return
