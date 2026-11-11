@@ -117,16 +117,7 @@ def brincar():
         if acao in areia.ANIMAIS:
             t, n = areia.animais(acao)
             return f"{n} {t} na areia"
-        if acao == "desenho":
-            areia.desenho()
-            return "folha em branco: desenhe com a ponta do dedo"
-        if acao == "limpar":
-            areia.desenho_limpar()
-            return "folha limpa"
-        if acao in areia.CORES_DESENHO:
-            return "cor: " + areia.desenho_cor(acao)
         if acao == "parar":
-            areia.desenho_fim()
             areia.tesouro_fim()
             areia.fossil_fim()
             areia.animais_fim()
@@ -204,10 +195,6 @@ input[type=range]{width:100%}
  <button data-b="tesouro">Caça ao tesouro</button><button data-b="trex">Fóssil de T-Rex</button>
  <button data-b="triceratops">Fóssil de Triceratops</button><button data-b="peixes">Peixes</button>
  <button data-b="carros">Carrinhos</button><button data-b="todos">Peixes e carrinhos</button></div>
- <div class="row" style="margin-top:8px"><button data-b="desenho">Desenhar com o dedo</button>
- <button data-b="limpar">Limpar o desenho</button></div>
- <div class="row" style="margin-top:8px"><button data-b="preto">Preto</button><button data-b="azul">Azul</button>
- <button data-b="vermelho">Vermelho</button><button data-b="arco-iris">Arco-íris</button><button data-b="borracha">Borracha</button></div>
  <div class="row" style="margin-top:8px"><button data-b="parar">Parar brincadeiras</button></div></div>
 <div class="card"><div class="small">Cores do relevo</div><div class="row" id="temas"></div></div>
 <div class="card"><div class="small">Posição da foto na areia</div><div class="row">

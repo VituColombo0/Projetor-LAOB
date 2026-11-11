@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Limpar a folha
-Comment=Apaga todo o desenho
-Exec=/home/laob/SARndbox-rosto/gui-rodar.sh "Desenho na areia" edit-delete areia-desenho limpar
-Icon=edit-delete
-Terminal=false

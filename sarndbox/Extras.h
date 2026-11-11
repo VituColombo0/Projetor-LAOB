@@ -15,27 +15,15 @@ Não existe no SARndbox original.
 
 #include <vector>
 #include <GL/gl.h>
-#include <GL/GLObject.h>
 
 #include "Types.h"
 
-class Extras:public GLObject
+class Extras
 	{
-	/* A folha do desenho fica numa textura (uma por contexto OpenGL): */
-	private:
-	struct DataItem:public GLObject::DataItem
-		{
-		public:
-		GLuint textura;
-		unsigned int versao;
-		DataItem(void);
-		virtual ~DataItem(void);
-		};
-	
 	public:
 	enum {MAX_AGENTES=24};
 	enum Modo {NADA=0,PEIXES=1,CARROS=2,TODOS=3};
-	enum {NUM_UNIFORMS=7};
+	enum {NUM_UNIFORMS=5};
 	/* Efeito animado de cada tema de cor: */
 	enum Efeito {SEM_EFEITO=0,LAVA=1,NEVE=2,POEIRA=3,AREIA=4,ONDAS=5,BRILHO=6,CHUVA=7};
 	int efeito;
@@ -65,21 +53,6 @@ class Extras:public GLObject
 	float ax[MAX_AGENTES],ay[MAX_AGENTES],ang[MAX_AGENTES],vel[MAX_AGENTES],tipo[MAX_AGENTES]; // tipo: 0 nada, 1.xx peixe, 2.xx carro (xx = cor)
 	float nivelAgua; // peixes: lago = tudo abaixo desta altura (cm)
 	unsigned int semente;
-	
-	/* Desenho na areia: folha branca; o dedo encostando (ou quase) na areia pinta: */
-	enum {DW=160,DH=120}; // células da folha (~0,37 cm cada na área iluminada do lab2)
-	bool desenho;
-	unsigned char tela[DH][DW][4]; // RGBA; alfa 0 = papel
-	unsigned int telaVersao;
-	float corCaneta[3];
-	bool arcoIris,borracha;
-	int raioCaneta; // em células
-	std::vector<unsigned short> toques; // pontos do dedo por célula no quadro atual
-	void limpaDesenho(void);
-	bool escolheCor(const char* nome); // preto, azul, vermelho, verde, laranja, roxo, rosa, amarelo, arco-iris, borracha
-	void comecaToque(void);
-	void toque(float x,float y,float z); // ponto da imagem crua do Kinect, já no espaço da caixa (cm)
-	int fechaToque(void); // pinta onde o dedo encostou; devolve quantas células pintou
 	double tempo;
 
 	Extras(void);
@@ -87,7 +60,7 @@ class Extras:public GLObject
 	/* Ligado: o shader precisa do código extra (tesouro, lago ou agentes): */
 	bool ativo(void) const
 		{
-		return tesouro||modo!=NADA||efeito!=SEM_EFEITO||desenho;
+		return tesouro||modo!=NADA||efeito!=SEM_EFEITO;
 		}
 
 	void setArea(const double areaMin[2],const double areaMax[2],const OGTransform& cameraToBox);
@@ -115,8 +88,6 @@ class Extras:public GLObject
 	static const char* glslFragmentMain;
 	static const char* nomesUniforms[NUM_UNIFORMS];
 	void uploadUniforms(const GLint locations[NUM_UNIFORMS]) const;
-	virtual void initContext(GLContextData& contextData) const;
-	void bindDesenho(GLContextData& contextData) const; // liga a textura da folha (envia se mudou)
 
 	private:
 	float aleatorio(void); // 0..1

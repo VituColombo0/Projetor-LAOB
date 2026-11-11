@@ -1,4 +1,0 @@
-#!/bin/sh
-# Desenho na areia com a ponta do dedo (veja "areia-desenho ajuda"). Só biblioteca padrão.
-D=$(dirname "$(readlink -f "$0")")
-exec python3 "$D/areia_brincar.py" desenho "$@"

@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Borracha
-Comment=O dedo passa a apagar
-Exec=/home/laob/SARndbox-rosto/gui-rodar.sh "Desenho na areia" edit-clear areia-desenho borracha
-Icon=edit-clear
-Terminal=false

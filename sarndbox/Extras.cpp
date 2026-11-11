@@ -7,9 +7,7 @@ Extras - caça ao tesouro, peixes e carrinhos sobre o relevo (Projetor-LAOB).
 #include <cmath>
 #include <cstring>
 #include <algorithm>
-#include <GL/GLContextData.h>
 #include <GL/Extensions/GLARBShaderObjects.h>
-#include <GL/Extensions/GLARBMultitexture.h>
 #include <Geometry/ProjectiveTransformation.h>
 
 namespace {
@@ -17,28 +15,12 @@ const float SEM=-1000.0f; // célula sem medida
 const float PI=3.14159265f;
 }
 
-Extras::DataItem::DataItem(void)
-	:textura(0),versao(~0u)
-	{
-	glGenTextures(1,&textura);
-	}
-
-Extras::DataItem::~DataItem(void)
-	{
-	glDeleteTextures(1,&textura);
-	}
-
 Extras::Extras(void)
-	:GLObject(false),
-	 celula(1.5f),gw(0),gh(0),mapaOk(false),referencia(0.0f),
+	:celula(1.5f),gw(0),gh(0),mapaOk(false),referencia(0.0f),
 	 tesouro(false),achado(false),tipoTesouro(1),tx(0),ty(0),traio(5.0f),tz(0),quandoAchou(0.0),
 	 profundidade(3.0f),reaparece(20.0f),quantosAchados(0),
-	 modo(NADA),quantos(0),nivelAgua(SEM),semente(12345u),tempo(0.0),efeito(SEM_EFEITO),
-	 desenho(false),telaVersao(1),arcoIris(false),borracha(false),raioCaneta(1)
+	 modo(NADA),quantos(0),nivelAgua(SEM),semente(12345u),tempo(0.0),efeito(SEM_EFEITO)
 	{
-	corCaneta[0]=corCaneta[1]=corCaneta[2]=0.05f;
-	limpaDesenho();
-	toques.assign(DW*DH,0);
 	bmin[0]=bmin[1]=-10.0f;
 	bmax[0]=bmax[1]=10.0f;
 	for(int i=0;i<16;++i)
@@ -47,121 +29,6 @@ Extras::Extras(void)
 		{
 		ax[i]=ay[i]=ang[i]=vel[i]=0.0f;
 		tipo[i]=0.0f;
-		}
-	GLObject::init();
-	}
-
-/* ------------------------------------------------------- desenho na areia */
-
-void Extras::limpaDesenho(void)
-	{
-	std::memset(tela,0,sizeof(tela));
-	++telaVersao;
-	}
-
-bool Extras::escolheCor(const char* nome)
-	{
-	static const struct {const char* nome;float r,g,b;} cores[]={
-		{"preto",0.05f,0.05f,0.05f},{"azul",0.1f,0.3f,0.95f},{"vermelho",0.9f,0.1f,0.1f},
-		{"verde",0.1f,0.7f,0.2f},{"laranja",1.0f,0.5f,0.0f},{"roxo",0.55f,0.15f,0.8f},
-		{"rosa",1.0f,0.35f,0.7f},{"amarelo",1.0f,0.85f,0.0f}};
-	arcoIris=std::strcmp(nome,"arco-iris")==0;
-	borracha=std::strcmp(nome,"borracha")==0;
-	if(arcoIris||borracha)
-		return true;
-	for(unsigned i=0;i<sizeof(cores)/sizeof(cores[0]);++i)
-		if(std::strcmp(nome,cores[i].nome)==0)
-			{
-			corCaneta[0]=cores[i].r;
-			corCaneta[1]=cores[i].g;
-			corCaneta[2]=cores[i].b;
-			return true;
-			}
-	return false;
-	}
-
-void Extras::comecaToque(void)
-	{
-	std::fill(toques.begin(),toques.end(),0);
-	}
-
-void Extras::toque(float x,float y,float z)
-	{
-	/* O dedo é o que está um pouco acima da areia: de 1 a 5 cm. Mais alto é a mão ou o braço,
-	   que não pintam; mais baixo é a própria areia (ou ruído do Kinect): */
-	float h=altura(x,y);
-	if(h<SEM+1.0f)
-		return;
-	float acima=z-h;
-	if(acima<1.0f||acima>5.0f)
-		return;
-	int cx=int((x-bmin[0])/(bmax[0]-bmin[0])*float(DW)),cy=int((y-bmin[1])/(bmax[1]-bmin[1])*float(DH));
-	if(cx>=0&&cy>=0&&cx<DW&&cy<DH&&toques[cy*DW+cx]<65000)
-		++toques[cy*DW+cx];
-	}
-
-int Extras::fechaToque(void)
-	{
-	/* Célula com pontos suficientes do dedo (tira ruído solto) pinta um pincel redondo em volta: */
-	unsigned char cor[4];
-	if(arcoIris)
-		{
-		float a=float(tempo)*0.8f;
-		cor[0]=(unsigned char)(127.5f+127.5f*std::cos(a));
-		cor[1]=(unsigned char)(127.5f+127.5f*std::cos(a-2.094f));
-		cor[2]=(unsigned char)(127.5f+127.5f*std::cos(a+2.094f));
-		}
-	else
-		for(int k=0;k<3;++k)
-			cor[k]=(unsigned char)(corCaneta[k]*255.0f);
-	cor[3]=borracha?0:255;
-	int pintadas=0;
-	int r=raioCaneta;
-	for(int cy=0;cy<DH;++cy)
-		for(int cx=0;cx<DW;++cx)
-			{
-			if(toques[cy*DW+cx]<3)
-				continue;
-			for(int dy=-r;dy<=r;++dy)
-				for(int dx=-r;dx<=r;++dx)
-					{
-					int px=cx+dx,py=cy+dy;
-					if(dx*dx+dy*dy>r*r+r||px<0||py<0||px>=DW||py>=DH)
-						continue;
-					for(int k=0;k<4;++k)
-						tela[py][px][k]=cor[k];
-					}
-			++pintadas;
-			}
-	if(pintadas>0)
-		++telaVersao;
-	return pintadas;
-	}
-
-void Extras::initContext(GLContextData& contextData) const
-	{
-	DataItem* dataItem=new DataItem;
-	contextData.addDataItem(this,dataItem);
-	glBindTexture(GL_TEXTURE_2D,dataItem->textura);
-	glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
-	glPixelStorei(GL_UNPACK_ALIGNMENT,1);
-	glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,DW,DH,0,GL_RGBA,GL_UNSIGNED_BYTE,tela);
-	dataItem->versao=telaVersao;
-	glBindTexture(GL_TEXTURE_2D,0);
-	}
-
-void Extras::bindDesenho(GLContextData& contextData) const
-	{
-	DataItem* dataItem=contextData.retrieveDataItem<DataItem>(this);
-	glBindTexture(GL_TEXTURE_2D,dataItem->textura);
-	if(dataItem->versao!=telaVersao)
-		{
-		glPixelStorei(GL_UNPACK_ALIGNMENT,1);
-		glTexSubImage2D(GL_TEXTURE_2D,0,0,0,DW,DH,GL_RGBA,GL_UNSIGNED_BYTE,tela);
-		dataItem->versao=telaVersao;
 		}
 	}
 
@@ -442,8 +309,7 @@ void Extras::passo(float dt)
 
 /* ----------------------------------------------------------------- shader */
 
-const char* Extras::nomesUniforms[NUM_UNIFORMS]={"extrasCaixa","extrasAg","extrasTesouro","extrasInfo","extrasEfeito",
-	"extrasDesenho","extrasDesenhoArea"};
+const char* Extras::nomesUniforms[NUM_UNIFORMS]={"extrasCaixa","extrasAg","extrasTesouro","extrasInfo","extrasEfeito"};
 
 const char* Extras::glslVertexUniforms=R"GLSL(
 uniform mat4 extrasCaixa; // espaço da câmera -> caixa (cm)
@@ -458,9 +324,7 @@ const char* Extras::glslFragmentUniforms=R"GLSL(
 uniform vec4 extrasAg[24];   // x, y (cm), ângulo, tipo (1.xx peixe, 2.xx carrinho; xx = cor)
 uniform vec4 extrasTesouro;  // x, y, raio (cm), altura a alcançar cavando (cm)
 uniform vec4 extrasInfo;     // tempo (s), achou, tesouro ligado, nível do lago (cm; -1000 = sem lago)
-uniform vec4 extrasEfeito;   // efeito do tema (0 nenhum, 1 lava, 2 neve, 3 poeira, 4 areia, 5 ondas, 6 brilho, 7 chuva), altura média da areia (cm), tipo do tesouro, desenho ligado
-uniform sampler2D extrasDesenho;   // folha do desenho (RGBA; alfa 0 = papel)
-uniform vec4 extrasDesenhoArea;    // xmin, ymin, xmax, ymax da folha (cm, espaço da caixa)
+uniform vec4 extrasEfeito;   // efeito do tema (0 nenhum, 1 lava, 2 neve, 3 poeira, 4 areia, 5 ondas, 6 brilho, 7 chuva), altura média da areia (cm)
 varying vec3 extrasPos;
 float exHash(vec2 p)
 	{
@@ -486,14 +350,6 @@ float exPontos(vec2 p,float tamanho,float chance)
 )GLSL";
 
 const char* Extras::glslFragmentMain=R"GLSL(
-	/* Desenho na areia: folha branca com a tinta do dedo (substitui todo o resto no fim) */
-	vec4 desenhoOut=vec4(1.0);
-	if(extrasEfeito.w>0.5)
-		{
-		vec2 du=(extrasPos.xy-extrasDesenhoArea.xy)/(extrasDesenhoArea.zw-extrasDesenhoArea.xy);
-		vec4 tinta=texture2D(extrasDesenho,clamp(du,0.0,1.0));
-		desenhoOut=vec4(mix(vec3(1.0),tinta.rgb,tinta.a),1.0);
-		}
 	{
 	/* Projetor-LAOB: efeito do tema, lago, tesouro e animais sobre o relevo */
 	vec3 ep=extrasPos;
@@ -729,7 +585,5 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 	glUniform4fvARB(locations[1],MAX_AGENTES,ag);
 	glUniform4fARB(locations[2],tx,ty,traio,tz);
 	glUniform4fARB(locations[3],GLfloat(tempo),achado?1.0f:0.0f,tesouro?GLfloat(tipoTesouro):0.0f,nivelAgua);
-	glUniform4fARB(locations[4],GLfloat(efeito),referencia,GLfloat(tipoTesouro),desenho?1.0f:0.0f);
-	glUniform1iARB(locations[5],6); // a folha fica na unidade de textura 6 (ver bindDesenho)
-	glUniform4fARB(locations[6],bmin[0],bmin[1],bmax[0],bmax[1]);
+	glUniform4fARB(locations[4],GLfloat(efeito),referencia,GLfloat(tipoTesouro),0.0f);
 	}

@@ -10,10 +10,10 @@ echo "== sintaxe dos scripts"
 for f in "$R"/instalar.sh "$R"/areia/sandbox.sh "$R"/areia/areia-topografia "$R"/testes/*.sh; do
   bash -n "$f" || { echo "  ERRO em $f"; falhas=1; }
 done
-for w in areia-foto areia-tema areia-tesouro areia-animais areia-fossil areia-desenho; do sh -n "$R/areia/$w" || falhas=1; done
+for w in areia-foto areia-tema areia-tesouro areia-animais areia-fossil; do sh -n "$R/areia/$w" || falhas=1; done
 for g in "$R"/areia/gui-*.sh; do bash -n "$g" || falhas=1; done
 if command -v shellcheck >/dev/null; then
-  shellcheck -S warning "$R"/instalar.sh "$R"/areia/sandbox.sh "$R"/areia/areia-topografia "$R"/areia/areia-foto "$R"/areia/areia-tema "$R"/areia/areia-tesouro "$R"/areia/areia-animais "$R"/areia/areia-fossil "$R"/areia/areia-desenho "$R"/areia/gui-*.sh || falhas=1
+  shellcheck -S warning "$R"/instalar.sh "$R"/areia/sandbox.sh "$R"/areia/areia-topografia "$R"/areia/areia-foto "$R"/areia/areia-tema "$R"/areia/areia-tesouro "$R"/areia/areia-animais "$R"/areia/areia-fossil "$R"/areia/gui-*.sh || falhas=1
 else
   echo "  (shellcheck não instalado: só a sintaxe)"
 fi
