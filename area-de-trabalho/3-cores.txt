@@ -23,6 +23,14 @@ COMO USAR
     areia-tema
 
 
+CHUVA COM A MÃO
+---------------
+Abra a mão por cima da areia e espere uns segundos: começa a chover ali.
+A chuva também muda com o tema:
+    vulcão = lava · inverno = neve · marte = lama vermelha
+    deserto = oásis · arco-íris = água colorida · os outros = água azul
+
+
 DICAS
 -----
 - Pode digitar com ou sem acento: areia-tema vulcão também funciona.

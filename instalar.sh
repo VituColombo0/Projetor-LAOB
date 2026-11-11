@@ -25,8 +25,10 @@ for f in BoxLayout.txt ProjectorMatrix.dat HeightColorMap.cpt SARndbox.cfg; do
 done
 
 echo "[2/8] modo Foto: patches e compilação"
-cp "$REPO"/sarndbox/{FaceImage.h,FaceImage.cpp,Extras.h,Extras.cpp,patch_surface.py,patch_sandbox.py,projetor.cfg} "$DEST/"
-( cd "$DEST" && python3 patch_surface.py >/dev/null && python3 patch_sandbox.py >/dev/null )
+cp "$REPO"/sarndbox/{FaceImage.h,FaceImage.cpp,Extras.h,Extras.cpp,patch_surface.py,patch_sandbox.py,patch_agua.py,projetor.cfg} "$DEST/"
+S=share/SARndbox-2.8/Shaders/SurfaceAddWaterColor.fs
+mkdir -p "$DEST/$(dirname "$S")" && cp "$ORIG/$S" "$DEST/$S"   # sempre do original, antes do patch
+( cd "$DEST" && python3 patch_surface.py >/dev/null && python3 patch_sandbox.py >/dev/null && python3 patch_agua.py >/dev/null )
 if ! make -C "$DEST" INSTALLDIR="$DEST" > "$DEST/compilacao.log" 2>&1 \
    || ! [ "$DEST/bin/SARndbox" -nt "$DEST/FaceImage.cpp" ]; then
   echo "a compilação falhou; veja $DEST/compilacao.log"; exit 1
@@ -62,6 +64,7 @@ AD=$REPO/area-de-trabalho
 FOTOS_DIR="$MESA/2 - Fotos na areia"
 # versões antigas: a pasta "Areia" vira a pasta das fotos; a ajuda e o atalho soltos vão para a pasta 1
 if [ -d "$MESA/Areia" ] && [ ! -e "$FOTOS_DIR" ]; then mv "$MESA/Areia" "$FOTOS_DIR"; fi
+[ -f "$DEST/estado.json" ] && sed -i "s#$MESA/Areia/#$FOTOS_DIR/#g" "$DEST/estado.json"   # última foto no lugar novo
 rm -f "$FOTOS_DIR/COMO USAR.txt.old" "$MESA/SE A AREIA NÃO ABRIR.txt" "$MESA/Abrir a areia.desktop"
 for par in "1 - Topografia (ligar e consertar):1-topografia.txt" "2 - Fotos na areia:2-fotos.txt" \
            "3 - Cores do relevo:3-cores.txt" "4 - Caça ao tesouro:4-tesouro.txt" "5 - Peixes e carrinhos:5-animais.txt"; do
