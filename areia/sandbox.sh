@@ -75,7 +75,7 @@ case "${1:-estado}" in
     [ -x "$ROSTO" ] || { echo "falta $ROSTO (rode o instalar.sh)"; exit 1; }
     fifo "$FIFO"
     parar
-    ( cd "$HOME" && exec setsid nohup "$ROSTO" "${TELA[@]}" "${CORES[@]}" -fpv -cp "$FIFO" ) > "$LOG" 2>&1 < /dev/null &
+    ( cd "$HOME" && exec setsid nohup "$ROSTO" "${TELA[@]}" "${CORES[@]}" -wts 320 240 -fpv -cp "$FIFO" ) > "$LOG" 2>&1 < /dev/null &
     sleep 8  # o Kinect e a janela levam uns segundos para ficar prontos para comandos
     if [ "$(qual)" != rosto ]; then
       echo "a versão com Foto não subiu (veja $LOG); voltando à topografia"
@@ -86,7 +86,7 @@ case "${1:-estado}" in
   topografia)
     "$0" rosto >/dev/null 2>&1
     if [ "$(qual)" = rosto ]; then
-      for c in relevo tesouroFim "animais nada" "efeito $(tema_nome)"; do manda "$FIFO" "$c" || true; done
+      for c in relevo tesouroFim labirintoFim "animais nada" "efeito $(tema_nome)"; do manda "$FIFO" "$c" || true; done
       echo topografia; exit 0
     fi
     "$0" original ;;

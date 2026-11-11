@@ -84,8 +84,17 @@ class Painel(Ambiente):
         self.assertEqual(self.comandos()[-1], "cmd tesouro 3")
         self.assertEqual(self.post("/brincar", json={"acao": "peixes"}).status_code, 200)
         self.assertEqual(self.post("/brincar", json={"acao": "parar"}).status_code, 200)
-        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-3:], ["cmd tesouroFim", "cmd fossilFim", "cmd animais nada"])
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-4:],
+                         ["cmd tesouroFim", "cmd fossilFim", "cmd animais nada", "cmd labirintoFim"])
         self.assertIn(self.get("/estado").get_json()["tesouro"], ("nenhum", "escondido"))
+
+    def test_labirinto_pelo_painel(self):
+        r = self.post("/brincar", json={"acao": "labirinto"})
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd labirinto normal")
+        e = self.get("/estado").get_json()
+        self.assertIn(e["labirinto"], ("nenhum", "correndo"))
+        self.assertEqual(e["labirinto_rodadas"], 0)
 
     def test_fossil_pelo_painel(self):
         r = self.post("/brincar", json={"acao": "triceratops"})

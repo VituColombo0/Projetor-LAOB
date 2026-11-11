@@ -348,3 +348,54 @@ class Comando(Ambiente):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Labirinto(Ambiente):
+    def cmds(self):
+        return [c for c in self.comandos() if c.startswith("cmd")]
+
+    def test_niveis(self):
+        self.assertEqual(self.areia.labirinto(), "normal")
+        self.assertEqual(self.cmds()[-1], "cmd labirinto normal")
+        self.assertEqual(self.areia.labirinto("Fácil"), "facil")
+        self.assertEqual(self.areia.labirinto("3"), "dificil")
+        self.assertEqual(self.cmds()[-1], "cmd labirinto dificil")
+        with self.assertRaisesRegex(self.areia.Erro, "dificuldade"):
+            self.areia.labirinto("xyz")
+
+    def test_situacao_pelo_registro(self):
+        self.assertEqual(self.areia.labirinto_situacao(), ("nenhum", 0))
+        with self.assertRaisesRegex(self.areia.Erro, "não está ligado"):
+            self.areia.labirinto_novo()
+        self.areia.labirinto()
+        log = os.path.join(self.D, "sandbox.log")
+        escreve(log, "Labirinto: a água chegou! (1 rodadas vencidas, 30 s)\n"   # de uma partida antiga
+                     "Labirinto: nascente em x 1 y 2, alvo em x 30 y 20 (dificuldade 2)\nRan out of time\n")
+        self.assertEqual(self.areia.labirinto_situacao(), ("correndo", 0))
+        escreve(log, "Labirinto: nascente em x 1 y 2, alvo em x 30 y 20 (dificuldade 2)\n"
+                     "Tesouro: escondendo a 3 cm\nLabirinto: a água chegou! (1 rodadas vencidas, 41 s)\n")
+        self.assertEqual(self.areia.labirinto_situacao(), ("chegou", 1))   # o tesouro não atrapalha
+        escreve(log, "Labirinto: nascente em x 1 y 2, alvo em x 30 y 20 (dificuldade 2)\n"
+                     "Labirinto: a água chegou! (1 rodadas vencidas, 41 s)\nLabirinto: rodada nova, nascente em x 5 y 5\n")
+        self.assertEqual(self.areia.labirinto_situacao(), ("correndo", 1))
+        self.areia.labirinto_novo()
+        self.assertEqual(self.cmds()[-1], "cmd labirintoNovo")
+        for fim in ("Labirinto desligado\n", "Modo Rosto: foto.png\n"):
+            escreve(log, "Labirinto: nascente em x 1 y 2, alvo em x 30 y 20 (dificuldade 2)\n" + fim)
+            self.assertEqual(self.areia.labirinto_situacao()[0], "nenhum")
+        self.areia.labirinto_fim()
+        self.assertEqual(self.cmds()[-1], "cmd labirintoFim")
+
+    def test_comando_de_terminal(self):
+        import importlib
+        import areia_brincar
+        ab = importlib.reload(areia_brincar)
+        saida = io.StringIO()
+        with redirect_stdout(saida):
+            ab.labirinto(["facil"])
+            ab.labirinto(["placar"])
+            ab.labirinto(["parar"])
+        out = saida.getvalue()
+        self.assertIn("Labirinto de água ligado (Fácil", out)
+        self.assertIn("Labirinto encerrado.", out)
+        self.assertEqual(self.cmds()[-2:], ["cmd labirinto facil", "cmd labirintoFim"])

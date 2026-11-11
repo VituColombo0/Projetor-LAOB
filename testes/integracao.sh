@@ -20,7 +20,7 @@ trap 'cp -p "$TMP/estado.json" "$D/estado.json" 2>/dev/null; rm -rf "$TMP"' EXIT
 echo "== instalação"
 confere "compila do zero a partir do repositório" "bash '$R/instalar.sh' --compilar '$TMP/build' >/dev/null 2>&1"
 confere "binário instalado é o mesmo que o repositório gera" "cmp -s <(strings '$TMP/build/bin/SARndbox' | grep -c faceOut) <(strings '$D/bin/SARndbox' | grep -c faceOut)"
-confere "comandos no PATH" "for c in areia-foto areia-topografia areia-tema areia-tesouro areia-animais areia-fossil; do command -v \$c >/dev/null || exit 1; done"
+confere "comandos no PATH" "for c in areia-foto areia-topografia areia-tema areia-tesouro areia-animais areia-fossil areia-labirinto; do command -v \$c >/dev/null || exit 1; done"
 confere "ao ligar abre a topografia" "grep -q '^Exec=.*areia-topografia' '$HOME/.config/autostart/SARndbox.desktop'"
 confere "modelos presentes" "[ -s '$D/modelos/u2net_human_seg.onnx' ] && [ -s '$D/modelos/face_detection_yunet_2023mar.onnx' ]"
 MESA=$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")
@@ -28,8 +28,9 @@ for pasta in "1 - Topografia (ligar e consertar)" "2 - Fotos na areia" "3 - Core
   confere "Área de Trabalho: '$pasta' com o manual" "[ -s \"$MESA/$pasta/COMO USAR.txt\" ]"
 done
 confere "pasta '7 - Fósseis de dinossauro' com o manual" "[ -s \"$MESA/7 - Fósseis de dinossauro/COMO USAR.txt\" ]"
-confere "atalhos de dois cliques: executáveis e liberados" "n=0; for a in \"$MESA\"/[1-7]\\ -\\ */*.desktop; do [ -x \"\$a\" ] && gio info -a metadata::trusted \"\$a\" | grep -q 'trusted: true' || exit 1; n=\$((n+1)); done; [ \$n -ge 20 ]"
-confere "atalhos apontam para programas que existem" "for a in \"$MESA\"/[1-7]\\ -\\ */*.desktop; do e=\$(sed -n 's/^Exec=//p' \"\$a\" | cut -d' ' -f1); [ \"\${e#xdg-open}\" != \"\$e\" ] || [ -x \"\$e\" ] || exit 1; done"
+confere "pasta '8 - Labirinto de água' com o manual" "[ -s \"$MESA/8 - Labirinto de água/COMO USAR.txt\" ]"
+confere "atalhos de dois cliques: executáveis e liberados" "n=0; for a in \"$MESA\"/[1-8]\\ -\\ */*.desktop; do [ -x \"\$a\" ] && gio info -a metadata::trusted \"\$a\" | grep -q 'trusted: true' || exit 1; n=\$((n+1)); done; [ \$n -ge 20 ]"
+confere "atalhos apontam para programas que existem" "for a in \"$MESA\"/[1-8]\\ -\\ */*.desktop; do e=\$(sed -n 's/^Exec=//p' \"\$a\" | cut -d' ' -f1); [ \"\${e#xdg-open}\" != \"\$e\" ] || [ -x \"\$e\" ] || exit 1; done"
 confere "sem sobras da organização antiga" "[ ! -e '$MESA/Areia' ] && [ ! -e '$MESA/SE A AREIA NÃO ABRIR.txt' ]"
 
 echo "== painel do celular"
@@ -65,12 +66,17 @@ confere "tesouro: situação" "areia-tesouro achou | grep -qiE 'escondido|achara
 confere "escavação de fóssil" "areia-fossil triceratops facil >/dev/null && sleep 2 && grep -q 'Fossil escondido' '$D/sandbox.log' && areia-fossil achou | grep -qiE 'enterrado|escavado'"
 confere "atalho com janela (gui-rodar) roda o comando" "DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/\$(id -u)/bus '$D/gui-rodar.sh' Teste dialog-information areia-fossil parar >/dev/null"
 confere "peixes e carrinhos" "areia-animais todos 12 >/dev/null && grep -q 'Animais: todos (12)' '$D/sandbox.log'"
+confere "labirinto de água liga" "areia-labirinto facil >/dev/null && sleep 1 && grep -q '^Labirinto: nascente' '$D/sandbox.log' && areia-labirinto placar | grep -qiE 'correndo|chegou'"
+confere "labirinto: a água chega ao alvo e é medida" "'$D/sandbox.sh' cmd labirintoTeste >/dev/null && for _ in \$(seq 1 40); do grep -q '^Labirinto: a água chegou' '$D/sandbox.log' && break; sleep 0.5; done; grep -q '^Labirinto: a água chegou' '$D/sandbox.log' && areia-labirinto placar | grep -q 'chegou'"
+confere "labirinto: rodada nova" "areia-labirinto nova >/dev/null && sleep 1 && tail -n 20 '$D/sandbox.log' | grep -q '^Labirinto: rodada nova'"
 sleep 3
 DISPLAY=:0 XAUTHORITY=/run/user/$(id -u)/gdm/Xauthority ffmpeg -loglevel error -y -f x11grab \
   -video_size 1024x768 -i :0.0+1280,0 -frames:v 1 /tmp/integracao-brincadeiras.png 2>/dev/null \
   && ok "print das brincadeiras em /tmp/integracao-brincadeiras.png"
 confere "sem erro de shader" "! grep -qiE 'shader.*(error|erro)|GLSL|compile error' '$D/sandbox.log'"
-confere "parar brincadeiras" "areia-animais parar >/dev/null && areia-tesouro parar >/dev/null"
+confere "parar brincadeiras" "areia-animais parar >/dev/null && areia-tesouro parar >/dev/null && areia-labirinto parar >/dev/null && areia-labirinto placar | grep -q 'não está ligado'"
+confere "desempenho medido no log" "grep -q '^Desempenho: ' '$D/sandbox.log' || { sleep 31; grep -q '^Desempenho: ' '$D/sandbox.log'; }"
+confere "log sem a enxurrada de 'Ran out of time'" "! grep -q 'Ran out of time' '$D/sandbox.log'"
 for t in vulcao inverno marte deserto oceano arco-iris mapa classico; do
   confere "efeito do tema $t" "areia-tema $t >/dev/null && sleep 0.5 && [ \"\$(grep '^Efeito: ' '$D/sandbox.log' | tail -n 1)\" = 'Efeito: $t' ]"
 done

@@ -9,6 +9,11 @@
    fossilFim                                               encerra a escavação
    animais peixes|carros|todos|nada [quantidade]           peixes no lago e carrinhos nos vales
    efeito <tema>                                           animação do tema (lava, neve, poeira...)
+   labirinto [facil|normal|dificil] / labirintoNovo / labirintoFim (labirintoTeste: alvo na nascente)
+                                                           labirinto de água: uma nascente joga água de
+                                                           verdade; cavem canais até ela chegar ao alvo
+Também mede quadros por segundo (linha "Desempenho:" no log a cada 30 s) em vez de encher o
+log com "Ran out of time" a cada quadro.
 """
 import sys
 
@@ -33,13 +38,18 @@ if "FaceImage" not in h:
     # Extras (Projetor-LAOB): tesouro, peixes e carrinhos
     h = rep(h, '#include "Types.h"\n', '#include "Types.h"\n#include "Extras.h"\n')
     h = rep(h, "\tdouble faceRefTime; // Última medição da altura média da areia\n", """\tdouble faceRefTime; // Última medição da altura média da areia
-	Extras extras; // Tesouro, lago, peixes e carrinhos sobre o relevo
+	mutable Extras extras; // Tesouro, lago, peixes, carrinhos e labirinto sobre o relevo
+	mutable double labLeitura; // Labirinto: última medição da água no alvo
+	mutable std::vector<GLfloat> labQuantidade,labFundo; // Labirinto: leitura da água e do fundo
+	mutable unsigned int quadrosAgua,atrasosAgua; // Desempenho: passos de água e quantos atrasaram
+	double desempenhoTempo; unsigned int quadros; // Desempenho: quadros desde a última linha no log
 	double extrasMapaTempo,extrasUltimoPasso; // Última atualização do mapa e do movimento
 	float tesouroPedido; // Profundidade do tesouro pedido antes de haver mapa (<0 = nenhum)
 """)
     h = rep(h, "\tfloat measureSandHeight(void) const; // Altura mediana da areia (cm acima do plano base)\n",
             "\tfloat measureSandHeight(void) const; // Altura mediana da areia (cm acima do plano base)\n"
-            "\tvoid atualizaExtras(void); // Mapa de alturas, movimento e tesouro (a cada quadro)\n")
+            "\tvoid atualizaExtras(void); // Mapa de alturas, movimento e tesouro (a cada quadro)\n"
+            "\tfloat medeAguaNoAlvo(GLContextData& contextData) const; // Labirinto: água no alvo (cm)\n")
     open("Sandbox.h", "w").write(h)
 
 c = open("Sandbox.cpp").read()
@@ -247,7 +257,8 @@ void Sandbox::toggleDEM(DEM* dem)
 """)
     # --- Extras (Projetor-LAOB)
     c = rep(c, "\t faceImage(0),faceDem(0),faceRefTime(0.0)",
-            "\t faceImage(0),faceDem(0),faceRefTime(0.0),\n\t extrasMapaTempo(0.0),extrasUltimoPasso(0.0),tesouroPedido(-1.0f)")
+            "\t faceImage(0),faceDem(0),faceRefTime(0.0),\n\t extrasMapaTempo(0.0),extrasUltimoPasso(0.0),tesouroPedido(-1.0f),\n"
+            "\t labLeitura(0.0),quadrosAgua(0),atrasosAgua(0),desempenhoTempo(0.0),quadros(0)")
     c = rep(c, """<<" cm"<<std::endl;
 			break;
 			}
@@ -418,6 +429,196 @@ void Sandbox::toggleDEM(DEM* dem)
 
 void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
 """)
+    # --- Labirinto de água e desempenho (Projetor-LAOB)
+    c = rep(c, "\tFaceImage* oldFace=faceImage;\n", """\tFaceImage* oldFace=faceImage;
+	if(newFaceImage!=0||newFaceDem!=0)
+		{
+		/* Foto ou esculpir: o labirinto acaba (a nascente não fica jogando água escondida) */
+		if(extras.labirinto)
+			extras.labZerarAgua=true;
+		extras.labirinto=false;
+		extras.labEstado=0;
+		}
+""")
+    c = rep(c, """				else if(isToken(tokens[0],"relevo"))""", """				else if(isToken(tokens[0],"labirinto"))
+					{
+					int d=2;
+					if(tokens.size()>=2)
+						d=isToken(tokens[1],"facil")||isToken(tokens[1],"1")?1:isToken(tokens[1],"dificil")||isToken(tokens[1],"3")?3:2;
+					setFaceMode(0,0);
+					extras.labRodadas=0;
+					extras.novoLabirinto(d);
+					std::cout<<"Labirinto: nascente em x "<<extras.lsx<<" y "<<extras.lsy<<", alvo em x "<<extras.ltx<<" y "<<extras.lty<<" (dificuldade "<<d<<")"<<std::endl;
+					}
+				else if(isToken(tokens[0],"labirintoNovo"))
+					{
+					if(extras.labirinto)
+						{
+						extras.novoLabirinto(extras.labDificuldade);
+						std::cout<<"Labirinto: rodada nova, nascente em x "<<extras.lsx<<" y "<<extras.lsy<<", alvo em x "<<extras.ltx<<" y "<<extras.lty<<std::endl;
+						}
+					}
+				else if(isToken(tokens[0],"labirintoTeste"))
+					{
+					/* Para o teste automático: põe o alvo em cima da nascente (a água chega em segundos) */
+					if(extras.labirinto)
+						{
+						extras.ltx=extras.lsx;
+						extras.lty=extras.lsy;
+						std::cout<<"Labirinto: teste, alvo na nascente"<<std::endl;
+						}
+					}
+				else if(isToken(tokens[0],"labirintoFim"))
+					{
+					if(extras.labirinto)
+						extras.labZerarAgua=true; // a água do labirinto vai embora junto
+					extras.labirinto=false;
+					extras.labEstado=0;
+					std::cout<<"Labirinto desligado"<<std::endl;
+					}
+				else if(isToken(tokens[0],"relevo"))""")
+    # nascente: água de verdade entrando na simulação
+    c = rep(c, """			glEnd();
+			}
+		
+		glPopAttrib();
+		}
+	}
+""", """			glEnd();
+			}
+		
+		glPopAttrib();
+		}
+	
+	/* Labirinto de água: a nascente joga água enquanto a rodada corre: */
+	if(extras.labirinto&&extras.labEstado==1&&waterSpeed>0.0)
+		{
+		glPushAttrib(GL_ENABLE_BIT);
+		glDisable(GL_CULL_FACE);
+		Vector z=waterTable->getBaseTransform().inverseTransform(Vector(0,0,1));
+		Vector x=Geometry::normal(z);
+		Vector y=Geometry::cross(z,x);
+		x.normalize();
+		y.normalize();
+		Point centro=boxTransform.inverseTransform(Point(extras.lsx,extras.lsy,extras.referencia));
+		glVertexAttrib1fARB(1,GLfloat(extras.labVazao/waterSpeed));
+		glBegin(GL_POLYGON);
+		for(int i=0;i<24;++i)
+			{
+			Scalar angle=Scalar(2)*Math::Constants<Scalar>::pi*Scalar(i)/Scalar(24);
+			glVertex(centro+x*(Math::cos(angle)*Scalar(2))+y*(Math::sin(angle)*Scalar(2)));
+			}
+		glEnd();
+		glPopAttrib();
+		}
+	}
+
+float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
+	{
+	/* Lê a água (nível da superfície, no centro das células) e o fundo (nos cantos) e
+	   devolve a maior profundidade de água dentro do alvo, em cm: */
+	GLint qw=0,qh=0,bw=0,bh=0;
+	waterTable->bindQuantityTexture(contextData);
+	glGetTexLevelParameteriv(GL_TEXTURE_RECTANGLE_ARB,0,GL_TEXTURE_WIDTH,&qw);
+	glGetTexLevelParameteriv(GL_TEXTURE_RECTANGLE_ARB,0,GL_TEXTURE_HEIGHT,&qh);
+	if(qw<=2||qh<=2)
+		{
+		glBindTexture(GL_TEXTURE_RECTANGLE_ARB,0);
+		return 0.0f;
+		}
+	labQuantidade.resize(size_t(qw)*size_t(qh));
+	glGetTexImage(GL_TEXTURE_RECTANGLE_ARB,0,GL_RED,GL_FLOAT,&labQuantidade[0]);
+	waterTable->bindBathymetryTexture(contextData);
+	glGetTexLevelParameteriv(GL_TEXTURE_RECTANGLE_ARB,0,GL_TEXTURE_WIDTH,&bw);
+	glGetTexLevelParameteriv(GL_TEXTURE_RECTANGLE_ARB,0,GL_TEXTURE_HEIGHT,&bh);
+	if(bw<=1||bh<=1)
+		{
+		glBindTexture(GL_TEXTURE_RECTANGLE_ARB,0);
+		return 0.0f;
+		}
+	labFundo.resize(size_t(bw)*size_t(bh));
+	glGetTexImage(GL_TEXTURE_RECTANGLE_ARB,0,GL_RED,GL_FLOAT,&labFundo[0]);
+	glBindTexture(GL_TEXTURE_RECTANGLE_ARB,0);
+
+	/* Alvo: caixa (cm) -> câmera -> grade da água: */
+	Point pc=boxTransform.inverseTransform(Point(extras.ltx,extras.lty,extras.referencia));
+	Point pw=waterTable->getBaseTransform().transform(pc);
+	const GLfloat* cs=waterTable->getCellSize();
+	double ci=(pw[0]-waterTable->getDomain().min[0])/cs[0];
+	double cj=(pw[1]-waterTable->getDomain().min[1])/cs[1];
+	double ri=extras.lraio/cs[0],rj=extras.lraio/cs[1];
+	float maior=0.0f;
+	for(int j=std::max(1,int(cj-rj));j<=std::min(int(std::min(qh,bh))-1,int(cj+rj));++j)
+		for(int i=std::max(1,int(ci-ri));i<=std::min(int(std::min(qw,bw))-1,int(ci+ri));++i)
+			{
+			double di=(i+0.5-ci)/ri,dj=(j+0.5-cj)/rj;
+			if(di*di+dj*dj>1.0)
+				continue;
+			float b=0.25f*(labFundo[(j-1)*bw+i-1]+labFundo[(j-1)*bw+i]+labFundo[j*bw+i-1]+labFundo[j*bw+i]);
+			maior=std::max(maior,labQuantidade[j*qw+i]-b);
+			}
+	return maior;
+	}
+""")
+    # no contexto OpenGL: esvazia a água quando pedido e mede a água no alvo 2x por segundo
+    c = rep(c, """		/* Finish an active grid request: */
+		if(request.isActive())
+			request.complete();
+""", """		/* Finish an active grid request: */
+		if(request.isActive())
+			request.complete();
+
+		/* Labirinto de água (Projetor-LAOB): */
+		if(extras.labZerarAgua)
+			{
+			const GLsizei* ws=waterTable->getSize();
+			std::vector<GLfloat> vazio(size_t(ws[0])*size_t(ws[1]),GLfloat(-1000));
+			waterTable->setWaterLevel(&vazio[0],contextData);
+			extras.labZerarAgua=false;
+			}
+		if(extras.labirinto&&extras.labEstado==1&&Vrui::getApplicationTime()-labLeitura>0.5)
+			{
+			labLeitura=Vrui::getApplicationTime();
+			if(extras.aguaNoAlvo(medeAguaNoAlvo(contextData)))
+				std::cout<<"Labirinto: a água chegou! ("<<extras.labRodadas<<" rodadas vencidas, "<<int(extras.labChegou-extras.labInicio)<<" s)"<<std::endl;
+			}
+""")
+    # "Ran out of time" a cada quadro enchia o log; conta e mostra junto do desempenho
+    c = rep(c, """		if(totalTimeStep>1.0e-8f)
+			std::cout<<"Ran out of time by "<<totalTimeStep<<std::endl;
+""", """		++quadrosAgua;
+		if(totalTimeStep>1.0e-8f)
+			++atrasosAgua;
+""")
+    c = rep(c, """	/* Tesouro, lago, peixes e carrinhos: */
+	atualizaExtras();
+""", """	/* Tesouro, lago, peixes e carrinhos: */
+	atualizaExtras();
+
+	/* Desempenho, a cada 30 s no log: */
+	++quadros;
+	if(desempenhoTempo==0.0)
+		desempenhoTempo=Vrui::getApplicationTime();
+	else if(Vrui::getApplicationTime()-desempenhoTempo>=30.0)
+		{
+		double dt=Vrui::getApplicationTime()-desempenhoTempo;
+		std::cout<<"Desempenho: "<<int(quadros/dt+0.5)<<" quadros/s; água atrasada em "<<atrasosAgua<<" de "<<quadrosAgua<<" passos"<<std::endl;
+		quadros=0;
+		quadrosAgua=0;
+		atrasosAgua=0;
+		desempenhoTempo=Vrui::getApplicationTime();
+		}
+""")
+    c = rep(c, """	/* Movimento dos peixes e carrinhos: */
+	extras.passo(dt);""", """	/* Labirinto: 20 s depois da chegada, rodada nova com a água zerada: */
+	if(extras.labirinto&&extras.labEstado==2&&extras.tempo-extras.labChegou>20.0)
+		{
+		extras.novoLabirinto(extras.labDificuldade);
+		std::cout<<"Labirinto: rodada nova, nascente em x "<<extras.lsx<<" y "<<extras.lsy<<", alvo em x "<<extras.ltx<<" y "<<extras.lty<<std::endl;
+		}
+
+	/* Movimento dos peixes e carrinhos: */
+	extras.passo(dt);""")
     open("Sandbox.cpp", "w").write(c)
 
 m = open("makefile").read()

@@ -1,4 +1,4 @@
-"""Brincadeiras na caixa de areia (comandos areia-tesouro, areia-animais e areia-fossil).
+"""Brincadeiras na caixa de areia (comandos areia-tesouro, areia-animais, areia-fossil e areia-labirinto).
 
   areia-tesouro              esconde um tesouro (normal: 3 cm embaixo da areia); achado, ele
                              some depois de 20 s e reaparece em outro lugar
@@ -16,6 +16,13 @@
   areia-fossil facil         T-Rex mais raso (2 cm) · areia-fossil dificil: mais fundo (5 cm)
   areia-fossil achou         diz se está enterrado e quantos já escavaram
   areia-fossil parar         encerra a escavação
+
+  areia-labirinto            labirinto de água: uma nascente joga água e vocês cavam canais
+                             até ela chegar ao alvo (bandeira); chegou, comemora e começa outra
+  areia-labirinto facil      alvo mais perto · areia-labirinto dificil: cantos opostos e menos água
+  areia-labirinto nova       outra nascente e outro alvo agora
+  areia-labirinto placar     diz se a água já chegou e quantas rodadas venceram
+  areia-labirinto parar      encerra (a água do labirinto vai embora)
 
 Para voltar à topografia normal: areia-topografia
 """
@@ -81,12 +88,36 @@ def fossil(args):
     return 0
 
 
+def labirinto(args):
+    pedido = args[0] if args else "normal"
+    if pedido in ("ajuda", "-h", "--help"):
+        print(__doc__.strip())
+    elif pedido in ("placar", "achou", "chegou", "status", "estado"):
+        sit, n = areia.labirinto_situacao()
+        placar = f" Rodadas vencidas: {n}." if n else ""
+        print({"chegou": "A água chegou ao alvo! Em uns 20 segundos começa outra rodada.",
+               "correndo": "A água está correndo. Cavem canais até a bandeira!",
+               "nenhum": "O labirinto não está ligado. Para começar: areia-labirinto"}[sit] + placar)
+    elif pedido in ("nova", "novo", "outra", "proxima"):
+        areia.labirinto_novo()
+        print("Rodada nova: olhem onde está a nascente e a bandeira!")
+    elif pedido in ("parar", "tirar", "fim"):
+        areia.labirinto_fim()
+        print("Labirinto encerrado.")
+    else:
+        d = areia.labirinto(pedido)
+        print(f"Labirinto de água ligado ({areia.LABIRINTO[d]})!\n"
+              "A água nasce nas ondas azuis. Cavem canais e levantem paredes de areia\n"
+              "para levar a água até a bandeira vermelha. Quando chegar, o alvo fica dourado.")
+    return 0
+
+
 if __name__ == "__main__":
     qual_cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     try:
-        sys.exit({"tesouro": tesouro, "animais": animais, "fossil": fossil}[qual_cmd](sys.argv[2:]))
+        sys.exit({"tesouro": tesouro, "animais": animais, "fossil": fossil, "labirinto": labirinto}[qual_cmd](sys.argv[2:]))
     except areia.Erro as err:
         print(err, file=sys.stderr)
         sys.exit(1)
     except KeyError:
-        sys.exit("uso: areia_brincar.py tesouro|animais|fossil ...")
+        sys.exit("uso: areia_brincar.py tesouro|animais|fossil|labirinto ...")

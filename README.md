@@ -24,14 +24,15 @@ Coloque as imagens em **Área de Trabalho > Areia** e, no terminal:
     areia-tesouro         # caça ao tesouro (facil|normal|dificil, achou, parar)
     areia-animais todos   # peixes no lago e carrinhos nos vales (peixes|carros|todos [n], parar)
     areia-fossil trex     # escavação de fóssil (trex|triceratops|pterodactilo|pegada [facil|dificil], achou, parar)
+    areia-labirinto       # labirinto de água: levar a água da nascente até o alvo (facil|normal|dificil, nova, placar, parar)
 
 Na Área de Trabalho do lab2 há uma pasta para cada coisa, cada uma com o seu `COMO USAR.txt`
 (os textos estão em [`area-de-trabalho/`](area-de-trabalho)): 1 - Topografia (ligar e consertar),
 2 - Fotos na areia (é também onde se colocam as fotos), 3 - Cores do relevo, 4 - Caça ao tesouro,
-5 - Peixes e carrinhos, 7 - Fósseis de dinossauro. A pasta 6 - Willbert vem do repositório do Willbert.
+5 - Peixes e carrinhos, 7 - Fósseis de dinossauro, 8 - Labirinto de água. A pasta 6 - Willbert vem do repositório do Willbert.
 Cada pasta também tem **atalhos de dois cliques** (ex.: "Iniciar caça ao tesouro", "Escolher cores do
 relevo"): os que pedem escolha abrem uma janela (`gui-foto.sh`, `gui-tema.sh`, `gui-tesouro.sh`,
-`gui-fossil.sh`) e todos rodam por `gui-rodar.sh`, que avisa por notificação quando dá certo e abre uma
+`gui-fossil.sh`, `gui-labirinto.sh`) e todos rodam por `gui-rodar.sh`, que avisa por notificação quando dá certo e abre uma
 janela com o motivo quando dá errado. Os atalhos ficam em `area-de-trabalho/<pasta>/*.desktop`.
 
 ## Instalar
@@ -81,7 +82,25 @@ posições). Comandos no cano da versão com Foto: `tesouro [cm]`, `tesouroFim`,
   Pterodáctilo ou pegada). Achado, outro aparece em 30 s. Fóssil e tesouro se substituem.
 - **Lago e peixes:** tudo 1,5 cm abaixo da mediana da areia vira água; os peixes só nadam ali e
   desviam das margens (cavar um buraco cria um lago).
-- **Carrinhos:** escolhem a direção mais baixa (o vale), sem rampa íngreme, sem lago e sem sair da área.
+  Nadam em cardume (separação, alinhamento e coesão), viram suave (no máximo 2,8 rad/s) e dão
+  nadadas (a velocidade oscila); preso numa poça por 4 s, o peixe reaparece num lago de verdade
+  (só nasce onde há água num raio de 3,5 cm).
+- **Carrinhos:** seguem os vales pela curva de nível (baixo, mas sem despencar no fundo do buraco),
+  sem rampa íngreme, sem lago e sem sair da área; descem mais rápido e sobem devagar, se espalham
+  (custo por carro perto) e freiam para o da frente só se ele tem número menor (nunca travam um
+  esperando o outro); travado por 3 s, dá meia-volta.
+- **Desenho:** peixes com corpo que ondula, cauda bifurcada, nadadeiras, olhos, listras e sombra;
+  carrinhos com carroceria arredondada, cabine, vidros, faróis com facho, lanternas, rodas e sombra.
+- **Labirinto de água:** comandos `labirinto [facil|normal|dificil]`, `labirintoNovo`, `labirintoFim`
+  (e `labirintoTeste`, que põe o alvo na nascente, para o teste de integração). A nascente é um
+  disco de 2 cm que entra na simulação de água do próprio SARndbox (`addWater`, a mesma via da chuva
+  com a mão); 2x por segundo o `display` lê a grade de água e a de fundo (`glGetTexImage`) e mede a
+  maior profundidade dentro do alvo; com 0,25 cm escreve "Labirinto: a água chegou!" no log, o alvo
+  fica dourado e, 20 s depois, rodada nova com a água zerada (`setWaterLevel`). Foto, esculpir,
+  `labirintoFim` e a topografia encerram o labirinto e esvaziam a água dele.
+- **Fluidez:** a versão com Foto roda com a grade de água em 320x240 (`-wts 320 240`; o padrão
+  640x480 não dava conta na GTX 750 Ti e escrevia "Ran out of time" no log a cada quadro). O log
+  mostra a cada 30 s uma linha `Desempenho: N quadros/s; água atrasada em X de Y passos`.
 - **Willbert:** "Willbert, grave o meu rosto" manda a foto da pessoa para `POST /foto` do painel
   (só aceita a própria máquina), que tira o fundo e projeta.
 

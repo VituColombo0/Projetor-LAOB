@@ -23,7 +23,7 @@ class Extras
 	public:
 	enum {MAX_AGENTES=24};
 	enum Modo {NADA=0,PEIXES=1,CARROS=2,TODOS=3};
-	enum {NUM_UNIFORMS=5};
+	enum {NUM_UNIFORMS=7};
 	/* Efeito animado de cada tema de cor: */
 	enum Efeito {SEM_EFEITO=0,LAVA=1,NEVE=2,POEIRA=3,AREIA=4,ONDAS=5,BRILHO=6,CHUVA=7};
 	int efeito;
@@ -51,6 +51,8 @@ class Extras
 	int modo;
 	int quantos;
 	float ax[MAX_AGENTES],ay[MAX_AGENTES],ang[MAX_AGENTES],vel[MAX_AGENTES],tipo[MAX_AGENTES]; // tipo: 0 nada, 1.xx peixe, 2.xx carro (xx = cor)
+	float vb[MAX_AGENTES]; // velocidade de cruzeiro (vel varia em volta dela: nadadas, rampas, curvas)
+	float parado[MAX_AGENTES]; // segundos travado (carro dá meia-volta; peixe preso numa poça renasce)
 	float nivelAgua; // peixes: lago = tudo abaixo desta altura (cm)
 	unsigned int semente;
 	double tempo;
@@ -60,7 +62,7 @@ class Extras
 	/* Ligado: o shader precisa do código extra (tesouro, lago ou agentes): */
 	bool ativo(void) const
 		{
-		return tesouro||modo!=NADA||efeito!=SEM_EFEITO;
+		return tesouro||modo!=NADA||efeito!=SEM_EFEITO||labirinto;
 		}
 
 	void setArea(const double areaMin[2],const double areaMax[2],const OGTransform& cameraToBox);
@@ -78,6 +80,19 @@ class Extras
 
 	/* Animais e objetos: */
 	void povoa(int novoModo,int quantidade);
+	
+	/* Labirinto de água: uma nascente joga água de verdade (simulação do SARndbox) e a turma cava
+	   canais até a água chegar ao alvo, do outro lado. Chegou: comemora e, depois, rodada nova: */
+	bool labirinto;
+	int labEstado; // 1 = água correndo, 2 = chegou ao alvo
+	float lsx,lsy,ltx,lty,lraio; // nascente e alvo (cm, espaço da caixa); raio do alvo (cm)
+	float labVazao; // quanto de água a nascente joga
+	double labInicio,labChegou; // tempo de início da rodada e da chegada
+	int labRodadas; // rodadas vencidas desde o "labirinto"
+	int labDificuldade; // 1 fácil (perto), 2 normal (lados opostos), 3 difícil (cantos opostos, menos água)
+	bool labZerarAgua; // pedido para esvaziar a água (feito no contexto OpenGL)
+	void novoLabirinto(int dificuldade);
+	bool aguaNoAlvo(float nivel); // nível de água medido no alvo (cm); true no instante da chegada
 	static int efeitoDoTema(const char* nome); // vulcao -> LAVA, inverno -> NEVE...; -1 se não existe
 	void passo(float dt);
 

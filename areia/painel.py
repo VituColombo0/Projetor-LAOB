@@ -57,6 +57,7 @@ def ver_estado():
     e["tesouro"] = areia.tesouro_situacao()
     e["tesouros_achados"] = areia.tesouro_achados()
     e["fossil"] = areia.fossil_situacao()
+    e["labirinto"], e["labirinto_rodadas"] = areia.labirinto_situacao()
     e["tema"] = areia.tema_atual()
     e["temas"] = [[t, areia.NOMES_TEMAS.get(t, t)] for t in areia.temas()]
     return jsonify(e)
@@ -114,6 +115,12 @@ def brincar():
         if acao == "tesouro":
             prof = areia.tesouro("normal")
             return f"tesouro escondido a {prof:g} cm"
+        if acao == "labirinto":
+            d = areia.labirinto("normal")
+            return f"labirinto de água: {areia.LABIRINTO[d].lower()}"
+        if acao == "labirintoNovo":
+            areia.labirinto_novo()
+            return "labirinto: rodada nova"
         if acao in areia.ANIMAIS:
             t, n = areia.animais(acao)
             return f"{n} {t} na areia"
@@ -121,6 +128,7 @@ def brincar():
             areia.tesouro_fim()
             areia.fossil_fim()
             areia.animais_fim()
+            areia.labirinto_fim()
             return "brincadeiras paradas"
         raise areia.Erro("brincadeira inválida")
     return resposta(faz)
@@ -194,7 +202,8 @@ input[type=range]{width:100%}
 <div class="card"><div class="small">Brincadeiras <span id="tes"></span></div><div class="row">
  <button data-b="tesouro">Caça ao tesouro</button><button data-b="trex">Fóssil de T-Rex</button>
  <button data-b="triceratops">Fóssil de Triceratops</button><button data-b="peixes">Peixes</button>
- <button data-b="carros">Carrinhos</button><button data-b="todos">Peixes e carrinhos</button></div>
+ <button data-b="carros">Carrinhos</button><button data-b="todos">Peixes e carrinhos</button>
+ <button data-b="labirinto">Labirinto de água</button><button data-b="labirintoNovo">Labirinto: outra rodada</button></div>
  <div class="row" style="margin-top:8px"><button data-b="parar">Parar brincadeiras</button></div></div>
 <div class="card"><div class="small">Cores do relevo</div><div class="row" id="temas"></div></div>
 <div class="card"><div class="small">Posição da foto na areia</div><div class="row">
@@ -220,7 +229,8 @@ async function carrega(){E=await (await fetch('/estado')).json();
  $('#vz').textContent=Math.round(E.ajuste.zoom*1000)/10+'%/cm';$('#vs').textContent=E.ajuste.sombra;
  $('#vm').textContent=Math.round(E.ajuste.mistura*100)+'%';
  $('#tes').textContent=({achado:'· tesouro ACHADO!',escondido:'· tesouro escondido',nenhum:''}[E.tesouro]||'')+
-  ({achado:'· fóssil ESCAVADO!',escondido:'· fóssil enterrado',nenhum:''}[E.fossil]||'');
+  ({achado:'· fóssil ESCAVADO!',escondido:'· fóssil enterrado',nenhum:''}[E.fossil]||'')+
+  ({chegou:'· a água CHEGOU!',correndo:'· água correndo'}[E.labirinto]||'')+(E.labirinto_rodadas?' ('+E.labirinto_rodadas+' rodadas)':'');
  const T=$('#temas');if(!T.children.length)for(const [t,n] of E.temas){const b=document.createElement('button');
   b.textContent=n;b.dataset.t=t;b.onclick=()=>post('/tema',{tema:t});T.appendChild(b)}
  T.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.t===E.tema));

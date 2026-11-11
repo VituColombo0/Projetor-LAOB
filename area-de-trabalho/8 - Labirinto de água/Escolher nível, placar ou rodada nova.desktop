@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Escolher nível, placar ou rodada nova
+Comment=Fácil, normal, difícil, rodada nova, placar
+Exec=/home/laob/SARndbox-rosto/gui-labirinto.sh
+Icon=preferences-other
+Terminal=false

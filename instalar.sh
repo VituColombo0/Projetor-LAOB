@@ -37,7 +37,7 @@ fi
 
 echo "[3/8] programas da pasta areia/"
 cp "$REPO"/areia/{areia.py,areia_foto.py,areia_tema.py,areia_brincar.py,rosto.py,painel.py,sandbox.sh} "$DEST/"
-COMANDOS=(areia-foto areia-tema areia-topografia areia-tesouro areia-animais areia-fossil)
+COMANDOS=(areia-foto areia-tema areia-topografia areia-tesouro areia-animais areia-fossil areia-labirinto)
 for c in "${COMANDOS[@]}"; do cp "$REPO/areia/$c" "$DEST/"; chmod +x "$DEST/$c"; done
 cp "$REPO"/areia/gui-*.sh "$DEST/" && chmod +x "$DEST"/gui-*.sh   # janelas dos atalhos
 rm -f "$DEST"/*.bak "$DEST/patch_brincar.py" "$DEST/gui-willbert-estado.sh"   # sobras de edições manuais
@@ -101,4 +101,4 @@ systemctl --user daemon-reload
 systemctl --user enable --now sandbox-painel >/dev/null 2>&1 && systemctl --user restart sandbox-painel || true
 
 echo
-echo "Pronto. Manuais na Área de Trabalho (pastas 1 a 5). Teste completo: bash testes/integracao.sh"
+echo "Pronto. Manuais na Área de Trabalho (uma pasta para cada coisa). Teste completo: bash testes/integracao.sh"

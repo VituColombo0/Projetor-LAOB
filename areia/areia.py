@@ -455,6 +455,58 @@ def animais_fim():
         _comando("animais nada")
 
 
+# ---------- labirinto de água: uma nascente joga água; cavem canais até ela chegar ao alvo ----------
+
+LABIRINTO = {"facil": "Fácil (alvo perto)", "normal": "Normal (lados opostos)", "dificil": "Difícil (cantos opostos, menos água)"}
+_APELIDOS_LABIRINTO = {"1": "facil", "2": "normal", "3": "dificil", "medio": "normal"}
+
+
+def labirinto(dificuldade="normal"):
+    """Começa o labirinto (nascente e alvo sorteados). Devolve a dificuldade usada."""
+    d = _chave_tema(str(dificuldade or "normal"))
+    d = _APELIDOS_LABIRINTO.get(d, d)
+    if d not in LABIRINTO:
+        raise Erro("dificuldade: facil, normal ou dificil")
+    _brincadeira(f"labirinto {d}")
+    return d
+
+
+def _registro_labirinto():
+    try:
+        with open(os.path.join(D, "sandbox.log"), errors="replace") as f:
+            return [l for l in f if l.startswith(("Labirinto", "Modo Rosto:", "Modo Esculpir:"))]
+    except OSError:
+        return []
+
+
+def labirinto_situacao():
+    """(situação, rodadas vencidas): situação = correndo, chegou ou nenhum."""
+    if qual() != "rosto":
+        return "nenhum", 0
+    linhas = _registro_labirinto()
+    inicio = max((i for i, l in enumerate(linhas) if l.startswith("Labirinto: nascente")), default=-1)
+    if inicio < 0:
+        return "nenhum", 0
+    depois = linhas[inicio:]
+    vencidas = sum(1 for l in depois if l.startswith("Labirinto: a água chegou"))
+    ultima = depois[-1]
+    if not ultima.startswith("Labirinto") or ultima.startswith("Labirinto desligado"):
+        return "nenhum", vencidas
+    return ("chegou" if ultima.startswith("Labirinto: a água chegou") else "correndo"), vencidas
+
+
+def labirinto_novo():
+    """Rodada nova (outra nascente e outro alvo) sem esperar."""
+    if labirinto_situacao()[0] == "nenhum":
+        raise Erro("o labirinto não está ligado (para começar: areia-labirinto)")
+    _comando("labirintoNovo")
+
+
+def labirinto_fim():
+    if qual() == "rosto":
+        _comando("labirintoFim")
+
+
 def marca_topografia():
     """Só anota no estado que o projetor está na topografia (usado pelo areia-topografia)."""
     e = estado()
