@@ -84,6 +84,11 @@ if "FaceImage" not in c:
 			/* Modo Foto: só a foto; o relevo só entra pela mistura: */\\n\\
 			gl_FragColor=mix(faceOut,baseColor,faceParams.z);\\n\\
 			}\\n";
+		else if(fragmentMain.find("desenhoOut")!=std::string::npos)
+			fragmentMain+="\\
+			/* Desenho na areia (Projetor-LAOB): só a folha com a tinta */\\n\\
+			gl_FragColor=extrasEfeito.w>0.5?desenhoOut:baseColor;\\n\\
+			}\\n";
 		else
 		fragmentMain+="\\
 			/* Assign the final color to the fragment: */\\n\\
@@ -178,6 +183,9 @@ void SurfaceRenderer::setDemDistScale(""")
 			for(int k=0;k<Extras::NUM_UNIFORMS;++k)
 				el[k]=*(ulPtr++);
 			extras->uploadUniforms(el);
+			glActiveTextureARB(GL_TEXTURE6_ARB);
+			extras->bindDesenho(contextData);
+			glActiveTextureARB(GL_TEXTURE0_ARB);
 			}
 """)
     c = rep(c, "void SurfaceRenderer::setFaceImage(FaceImage* newFaceImage)", """void SurfaceRenderer::setExtras(const Extras* newExtras)

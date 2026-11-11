@@ -84,7 +84,7 @@ class Painel(Ambiente):
         self.assertEqual(self.comandos()[-1], "cmd tesouro 3")
         self.assertEqual(self.post("/brincar", json={"acao": "peixes"}).status_code, 200)
         self.assertEqual(self.post("/brincar", json={"acao": "parar"}).status_code, 200)
-        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-3:], ["cmd tesouroFim", "cmd fossilFim", "cmd animais nada"])
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-4:], ["cmd desenhoFim", "cmd tesouroFim", "cmd fossilFim", "cmd animais nada"])
         self.assertIn(self.get("/estado").get_json()["tesouro"], ("nenhum", "escondido"))
 
     def test_fossil_pelo_painel(self):
@@ -93,6 +93,12 @@ class Painel(Ambiente):
         self.assertIn("Triceratops", r.get_json()["msg"])
         self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd fossil 3 3")
         self.assertIn("fossil", self.get("/estado").get_json())
+
+    def test_desenho_pelo_painel(self):
+        self.assertEqual(self.post("/brincar", json={"acao": "desenho"}).status_code, 200)
+        r = self.post("/brincar", json={"acao": "vermelho"})
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertIn("vermelho", r.get_json()["msg"])
 
     def test_ajustes(self):
         self.areia.mostra(self.poe("a.jpg"))

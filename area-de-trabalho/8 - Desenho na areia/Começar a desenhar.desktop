@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Começar a desenhar
+Comment=Folha branca na areia: desenhe com a ponta do dedo
+Exec=/home/laob/SARndbox-rosto/gui-rodar.sh "Desenho na areia" applications-graphics areia-desenho
+Icon=applications-graphics
+Terminal=false

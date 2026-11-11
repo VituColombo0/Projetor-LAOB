@@ -9,6 +9,8 @@
    fossilFim                                               encerra a escavação
    animais peixes|carros|todos|nada [quantidade]           peixes no lago e carrinhos nos vales
    efeito <tema>                                           animação do tema (lava, neve, poeira...)
+   desenho / desenhoCor <cor> / desenhoTraco fino|medio|grosso / desenhoLimpar / desenhoFim
+                                                           folha branca; o dedo perto da areia pinta
 """
 import sys
 
@@ -36,6 +38,7 @@ if "FaceImage" not in h:
 	Extras extras; // Tesouro, lago, peixes e carrinhos sobre o relevo
 	double extrasMapaTempo,extrasUltimoPasso; // Última atualização do mapa e do movimento
 	float tesouroPedido; // Profundidade do tesouro pedido antes de haver mapa (<0 = nenhum)
+	Threads::TripleBuffer<Kinect::FrameBuffer> rawFrames; // Desenho: quadros crus do Kinect (com a mão)
 """)
     h = rep(h, "\tfloat measureSandHeight(void) const; // Altura mediana da areia (cm acima do plano base)\n",
             "\tfloat measureSandHeight(void) const; // Altura mediana da areia (cm acima do plano base)\n"
@@ -246,6 +249,20 @@ void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
 void Sandbox::toggleDEM(DEM* dem)
 """)
     # --- Extras (Projetor-LAOB)
+    c = rep(c, """	if(handExtractor!=0)
+		handExtractor->receiveRawFrame(frameBuffer);
+	}
+""", """	if(handExtractor!=0)
+		handExtractor->receiveRawFrame(frameBuffer);
+	
+	/* Desenho na areia: o quadro cru (com a mão, que o filtro apaga) vai para o desenho: */
+	if(extras.desenho)
+		{
+		rawFrames.postNewValue(frameBuffer);
+		Vrui::requestUpdate();
+		}
+	}
+""")
     c = rep(c, "\t faceImage(0),faceDem(0),faceRefTime(0.0)",
             "\t faceImage(0),faceDem(0),faceRefTime(0.0),\n\t extrasMapaTempo(0.0),extrasUltimoPasso(0.0),tesouroPedido(-1.0f)")
     c = rep(c, """<<" cm"<<std::endl;
@@ -269,6 +286,35 @@ void Sandbox::toggleDEM(DEM* dem)
 					extras.tz=-1000.0f;
 					setFaceMode(0,0);
 					std::cout<<"Tesouro: escondendo a "<<tesouroPedido<<" cm"<<std::endl;
+					}
+				else if(isToken(tokens[0],"desenho"))
+					{
+					extras.desenho=true;
+					extras.limpaDesenho();
+					setFaceMode(0,0);
+					std::cout<<"Desenho: ligado"<<std::endl;
+					}
+				else if(isToken(tokens[0],"desenhoCor"))
+					{
+					if(tokens.size()>=2&&extras.escolheCor(tokens[1].c_str()))
+						std::cout<<"Desenho: cor "<<tokens[1]<<std::endl;
+					else
+						std::cerr<<"uso: desenhoCor preto|azul|vermelho|verde|laranja|roxo|rosa|amarelo|arco-iris|borracha"<<std::endl;
+					}
+				else if(isToken(tokens[0],"desenhoTraco"))
+					{
+					extras.raioCaneta=(tokens.size()>=2&&isToken(tokens[1],"grosso"))?3:(tokens.size()>=2&&isToken(tokens[1],"medio"))?2:1;
+					std::cout<<"Desenho: traço "<<extras.raioCaneta<<std::endl;
+					}
+				else if(isToken(tokens[0],"desenhoLimpar"))
+					{
+					extras.limpaDesenho();
+					std::cout<<"Desenho: folha limpa"<<std::endl;
+					}
+				else if(isToken(tokens[0],"desenhoFim"))
+					{
+					extras.desenho=false;
+					std::cout<<"Desenho: desligado"<<std::endl;
 					}
 				else if(isToken(tokens[0],"efeito"))
 					{
@@ -409,6 +455,33 @@ void Sandbox::toggleDEM(DEM* dem)
 				else
 					std::cout<<"Tesouro escondido em x "<<extras.tx<<" y "<<extras.ty<<" (cavar até "<<extras.tz<<" cm; novo)"<<std::endl;
 				}
+			}
+		}
+	
+	/* Desenho: o dedo perto da areia (imagem crua do Kinect) pinta a folha */
+	if(extras.desenho&&extras.mapaOk&&rawFrames.lockNewValue())
+		{
+		const Kinect::FrameBuffer& rf=rawFrames.getLockedValue();
+		const unsigned short* rd=rf.getData<unsigned short>();
+		if(rd!=0)
+			{
+			int w=rf.getSize(0),h=rf.getSize(1);
+			PTransform full=PTransform(OGTransform(boxTransform));
+			full*=depthImageRenderer->getDepthProjection();
+			extras.comecaToque();
+			for(int y=0;y<h;y+=2)
+				for(int x=0;x<w;x+=2)
+					{
+					unsigned short v=rd[y*w+x];
+					if(v==0||v>=0x07ffU)
+						continue;
+					float z=float(v);
+					if(pixelDepthCorrection!=0)
+						z=pixelDepthCorrection[y*w+x].correct(z);
+					Point p=full.transform(Point(Scalar(x)+Scalar(0.5),Scalar(y)+Scalar(0.5),Scalar(z)));
+					extras.toque(float(p[0]),float(p[1]),float(p[2]));
+					}
+			extras.fechaToque();
 			}
 		}
 	

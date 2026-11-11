@@ -304,6 +304,50 @@ class Fosseis(Ambiente):
         self.assertEqual(self.cmds()[-1], "cmd fossilFim")
 
 
+class Desenho(Ambiente):
+    def cmds(self):
+        return [c for c in self.comandos() if c.startswith("cmd")]
+
+    def test_comecar_cor_traco(self):
+        self.assertEqual(self.areia.desenho(), ("preto", "fino"))
+        self.assertEqual(self.cmds()[-3:], ["cmd desenho", "cmd desenhoCor preto", "cmd desenhoTraco fino"])
+        self.assertEqual(self.rodando(), "rosto")
+        with self.assertRaisesRegex(self.areia.Erro, "cor"):
+            self.areia.desenho("dourado")
+        with self.assertRaisesRegex(self.areia.Erro, "traço"):
+            self.areia.desenho("azul", "gigante")
+
+    def test_cor_liga_o_desenho_se_preciso(self):
+        self.assertFalse(self.areia.desenho_ligado())
+        self.assertEqual(self.areia.desenho_cor("Arco-íris"), "arco-iris")
+        self.assertIn("cmd desenho", self.cmds())                     # não estava ligado: ligou
+        escreve(os.path.join(self.D, "sandbox.log"), "Desenho: ligado\nRan out of time\n")
+        self.assertTrue(self.areia.desenho_ligado())
+        antes = len(self.cmds())
+        self.areia.desenho_cor("azul")
+        self.assertEqual(self.cmds()[antes:], ["cmd desenhoCor azul"])  # já ligado: só troca a cor
+        self.areia.desenho_limpar()
+        self.assertEqual(self.cmds()[-1], "cmd desenhoLimpar")
+        escreve(os.path.join(self.D, "sandbox.log"), "Desenho: ligado\nDesenho: desligado\n")
+        self.assertFalse(self.areia.desenho_ligado())
+
+    def test_comando_de_terminal(self):
+        import importlib
+        import areia_brincar
+        ab = importlib.reload(areia_brincar)
+        saida = io.StringIO()
+        with redirect_stdout(saida):
+            ab.desenho([])
+            ab.desenho(["grosso"])
+            ab.desenho(["borracha"])
+            ab.desenho(["parar"])
+        out = saida.getvalue()
+        self.assertIn("Encoste a ponta do dedo", out)
+        self.assertIn("Traço grosso.", out)
+        self.assertIn("Borracha", out)
+        self.assertEqual(self.cmds()[-1], "cmd desenhoFim")
+
+
 class Comando(Ambiente):
     """areia-foto (areia_foto.main) sem terminal interativo."""
 

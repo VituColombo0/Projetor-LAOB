@@ -1,4 +1,4 @@
-"""Brincadeiras na caixa de areia (comandos areia-tesouro, areia-animais e areia-fossil).
+"""Brincadeiras na caixa de areia (comandos areia-tesouro, areia-animais, areia-fossil e areia-desenho).
 
   areia-tesouro              esconde um tesouro (normal: 3 cm embaixo da areia); achado, ele
                              some depois de 20 s e reaparece em outro lugar
@@ -16,6 +16,13 @@
   areia-fossil facil         T-Rex mais raso (2 cm) · areia-fossil dificil: mais fundo (5 cm)
   areia-fossil achou         diz se está enterrado e quantos já escavaram
   areia-fossil parar         encerra a escavação
+
+  areia-desenho              folha branca: encoste a ponta do dedo na areia para desenhar
+  areia-desenho azul         troca a cor (preto, azul, vermelho, verde, laranja, roxo, rosa,
+                             amarelo, arco-iris, borracha)
+  areia-desenho grosso       troca o traço (fino, medio, grosso)
+  areia-desenho limpar       folha em branco de novo
+  areia-desenho parar        sai do desenho (volta ao relevo)
 
 Para voltar à topografia normal: areia-topografia
 """
@@ -81,12 +88,33 @@ def fossil(args):
     return 0
 
 
+def desenho(args):
+    pedido = args[0] if args else "comecar"
+    if pedido in ("ajuda", "-h", "--help"):
+        print(__doc__.strip())
+    elif pedido in ("comecar", "começar", "novo", "nova"):
+        areia.desenho()
+        print("Folha em branco na areia! Encoste a ponta do dedo na areia para desenhar.")
+    elif pedido in ("limpar", "apagar", "limpa"):
+        areia.desenho_limpar()
+        print("Folha limpa.")
+    elif pedido in ("parar", "fim", "sair"):
+        areia.desenho_fim()
+        print("Desenho encerrado.")
+    elif areia._chave_tema(pedido) in areia.TRACOS:
+        print(f"Traço {areia.desenho_traco(pedido)}.")
+    else:
+        c = areia.desenho_cor(pedido)
+        print("Borracha: passe o dedo para apagar." if c == "borracha" else f"Cor: {c}.")
+    return 0
+
+
 if __name__ == "__main__":
     qual_cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     try:
-        sys.exit({"tesouro": tesouro, "animais": animais, "fossil": fossil}[qual_cmd](sys.argv[2:]))
+        sys.exit({"tesouro": tesouro, "animais": animais, "fossil": fossil, "desenho": desenho}[qual_cmd](sys.argv[2:]))
     except areia.Erro as err:
         print(err, file=sys.stderr)
         sys.exit(1)
     except KeyError:
-        sys.exit("uso: areia_brincar.py tesouro|animais|fossil ...")
+        sys.exit("uso: areia_brincar.py tesouro|animais|fossil|desenho ...")

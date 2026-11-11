@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Escolher cor e traço
+Comment=Troca a cor da tinta ou a grossura do traço
+Exec=/home/laob/SARndbox-rosto/gui-desenho.sh
+Icon=preferences-desktop-color
+Terminal=false

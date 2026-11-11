@@ -438,6 +438,69 @@ def fossil_fim():
         _comando("fossilFim")
 
 
+# ---------- desenho na areia (folha branca; o dedo pinta) ----------
+
+CORES_DESENHO = ("preto", "azul", "vermelho", "verde", "laranja", "roxo", "rosa", "amarelo", "arco-iris", "borracha")
+TRACOS = ("fino", "medio", "grosso")
+
+
+def desenho(cor="preto", traco="fino"):
+    """Liga a folha em branco (limpa) com a cor e o traço escolhidos."""
+    c, t = _chave_tema(str(cor)), _chave_tema(str(traco))
+    if c not in CORES_DESENHO:
+        raise Erro("cor: " + ", ".join(CORES_DESENHO))
+    if t not in TRACOS:
+        raise Erro("traço: fino, medio ou grosso")
+    _brincadeira("desenho")
+    _comando(f"desenhoCor {c}")
+    _comando(f"desenhoTraco {t}")
+    return c, t
+
+
+def desenho_ligado():
+    if qual() != "rosto":
+        return False
+    try:
+        with open(os.path.join(D, "sandbox.log"), errors="replace") as f:
+            linhas = [l for l in f if l.startswith(("Desenho: ligado", "Desenho: desligado", "Modo Rosto:"))]
+    except OSError:
+        return False
+    return bool(linhas) and linhas[-1].startswith("Desenho: ligado")
+
+
+def desenho_cor(cor):
+    c = _chave_tema(str(cor))
+    if c not in CORES_DESENHO:
+        raise Erro("cor: " + ", ".join(CORES_DESENHO))
+    if not desenho_ligado():
+        return desenho(c)[0]
+    _comando(f"desenhoCor {c}")
+    return c
+
+
+def desenho_traco(traco):
+    t = _chave_tema(str(traco))
+    if t not in TRACOS:
+        raise Erro("traço: fino, medio ou grosso")
+    if not desenho_ligado():
+        desenho("preto", t)
+    else:
+        _comando(f"desenhoTraco {t}")
+    return t
+
+
+def desenho_limpar():
+    if desenho_ligado():
+        _comando("desenhoLimpar")
+    else:
+        desenho()
+
+
+def desenho_fim():
+    if qual() == "rosto":
+        _comando("desenhoFim")
+
+
 def animais(tipo, quantidade=None):
     t = _chave_tema(str(tipo))
     t = {"peixe": "peixes", "carro": "carros", "carrinhos": "carros", "carrinho": "carros", "tudo": "todos"}.get(t, t)

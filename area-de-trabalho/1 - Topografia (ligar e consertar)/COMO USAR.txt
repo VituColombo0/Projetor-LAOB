@@ -39,5 +39,6 @@ OUTRAS COISAS PARA FAZER NA AREIA
   Peixes e carrinhos ........ pasta "5 - Peixes e carrinhos"
   Willbert .................. pasta "6 - Willbert"
   Fósseis de dinossauro ..... pasta "7 - Fósseis de dinossauro"
+  Desenho com o dedo ........ pasta "8 - Desenho na areia"
 
   Pelo celular (com o Tailscale ligado): http://100.114.194.28:8090
