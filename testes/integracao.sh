@@ -56,7 +56,8 @@ if [ "$N" -gt 0 ]; then
   DISPLAY=:0 XAUTHORITY=/run/user/$(id -u)/gdm/Xauthority ffmpeg -loglevel error -y -f x11grab \
     -video_size 1024x768 -i :0.0+1280,0 -frames:v 1 /tmp/integracao-foto.png 2>/dev/null \
     && ok "print do projetor em /tmp/integracao-foto.png"
-  confere "girar 4 vezes volta ao começo" "for i in 1 2 3 4; do areia-foto girar >/dev/null || exit 1; done; grep -q '\"giro\": 0' '$D/estado.json'"
+  GIRO0=$(grep -o '"giro": [0-9]*' "$D/estado.json")
+  confere "girar 4 vezes volta ao começo ($GIRO0)" "for i in 1 2 3 4; do areia-foto girar >/dev/null || exit 1; done; grep -q '$GIRO0' '$D/estado.json'"
   confere "esculpir" "areia-foto esculpir >/dev/null && sleep 1 && grep -q 'Modo Esculpir:' '$D/sandbox.log'"
   confere "segunda vez sai do cache (< 15 s)" "s=\$(date +%s); areia-foto 1 >/dev/null; [ \$((\$(date +%s) - s)) -lt 15 ]"
 else

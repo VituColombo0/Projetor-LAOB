@@ -45,6 +45,34 @@ class Pasta(Ambiente):
             self.areia.acha(p)
 
 
+class UmaBrincadeiraPorVez(Ambiente):
+    def cmds(self):
+        return [c for c in self.comandos() if c.startswith("cmd")]
+
+    def test_trocar_encerra_a_anterior(self):
+        self.areia.animais("todos")
+        self.areia.labirinto("facil")
+        self.assertEqual(self.cmds()[-3:], ["cmd tesouroFim", "cmd animais nada", "cmd labirinto facil"])
+        self.areia.tesouro()
+        self.assertEqual(self.cmds()[-3:], ["cmd labirintoFim", "cmd animais nada", "cmd tesouro 3"])
+        self.areia.fossil("pegada")
+        self.assertEqual(self.cmds()[-3:], ["cmd labirintoFim", "cmd animais nada", "cmd fossil 5 3"])
+        self.areia.animais("peixes")
+        self.assertEqual(self.cmds()[-3:], ["cmd tesouroFim", "cmd labirintoFim", "cmd animais peixes 10"])
+
+    def test_foto_encerra_as_brincadeiras(self):
+        self.areia.animais("todos")
+        self.poe("ana.jpg")
+        os.makedirs(self.areia.FOTOS, exist_ok=True)
+        escreve(os.path.join(self.areia.FOTOS, "rosto.png"), b"x")
+        e = self.areia.estado()
+        e["modo"] = "rosto"
+        self.areia.aplica(e)
+        c = self.cmds()
+        self.assertIn("cmd animais nada", c[c.index("cmd animais todos 14"):])
+        self.assertTrue(c[-2].startswith("cmd rosto "))
+
+
 class FotosDoWillbert(Ambiente):
     def test_antigas_saem_do_menu_mas_ficam_guardadas(self):
         import time as _t

@@ -251,6 +251,8 @@ def aplica(e):
         if rc != 0:
             raise Erro("o modo foto não abriu; a topografia voltou")
     a = e["ajuste"]
+    if e["modo"] in ("rosto", "esculpir"):
+        _encerra_outras("foto")
     if e["modo"] == "rosto":
         _comando(f"rosto {os.path.join(FOTOS, 'rosto.png')} {e['giro']} {int(e['espelho'])}")
         _comando(f"rostoAjuste {a['zoom']} {a['desloc']} {a['mistura']} {a['sombra']}")
@@ -354,12 +356,27 @@ def escolhe_tema(nome):
 
 # ---------- brincadeiras: caça ao tesouro, peixes e carrinhos ----------
 
+# Uma brincadeira por vez: começar uma encerra as outras (antes elas se acumulavam: peixes,
+# carrinhos, labirinto e fóssil juntos; e os animais "voltavam" depois da foto). O tema fica.
+PARAR_BRINCADEIRAS = {"tesouro": ("labirintoFim", "animais nada"),
+                      "fossil": ("labirintoFim", "animais nada"),
+                      "labirinto": ("tesouroFim", "animais nada"),
+                      "animais": ("tesouroFim", "labirintoFim"),
+                      "foto": ("tesouroFim", "labirintoFim", "animais nada")}
+
+
+def _encerra_outras(qual_brincadeira):
+    for c in PARAR_BRINCADEIRAS.get(qual_brincadeira, ()):
+        _comando(c)
+
+
 def _brincadeira(comando):
     """Brincadeiras rodam na versão com Foto (sobre o relevo colorido); sobe ela se precisar."""
     if qual() != "rosto":
         rc, _ = _sandbox("rosto")
         if rc != 0:
             raise Erro("a caixa de areia não abriu o modo brincadeira; a topografia voltou")
+    _encerra_outras(comando.split()[0])
     _comando(comando)
     e = estado()
     e["modo"] = "relevo"

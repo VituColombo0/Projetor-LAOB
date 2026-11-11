@@ -338,10 +338,12 @@ void Extras::passo(float dt)
 				float dx=ax[j]-ax[i],dy=ay[j]-ay[i],d2=dx*dx+dy*dy;
 				if(d2<0.01f||d2>100.0f)
 					continue;
-				if(d2<12.0f)
+				if(d2<30.0f) // ~5,5 cm: um peixe tem ~4,5 cm; antes (3,5 cm) eles se empilhavam
 					{
-					sepX-=dx/d2;
-					sepY-=dy/d2;
+					float d=std::sqrt(d2);
+					float f=(5.5f-d)/5.5f;
+					sepX-=dx/d*f*1.5f;
+					sepY-=dy/d*f*1.5f;
 					}
 				aliX+=std::cos(ang[j]);
 				aliY+=std::sin(ang[j]);
@@ -351,8 +353,8 @@ void Extras::passo(float dt)
 				}
 			if(n>0)
 				{
-				vx+=0.5f*aliX/n+0.04f*cx/n;
-				vy+=0.5f*aliY/n+0.04f*cy/n;
+				vx+=0.45f*aliX/n+0.012f*cx/n;  // atração fraca: nadam juntos, sem amontoar
+				vy+=0.45f*aliY/n+0.012f*cy/n;
 				}
 			vx+=2.0f*sepX;
 			vy+=2.0f*sepY;
@@ -455,7 +457,24 @@ void Extras::passo(float dt)
 				ax[i]=nx;
 				ay[i]=ny;
 				}
-			/* Travado (devagar ou sem andar) por 3 s: dá meia-volta */
+			/* Carrinhos lado a lado (o freio só vale para o da frente): empurra para se separarem */
+			for(int j=0;j<quantos;++j)
+				{
+				if(j==i||tipo[j]<2.0f||vel[j]==0.0f)
+					continue;
+				float dx=ax[i]-ax[j],dy=ay[i]-ay[j],d2=dx*dx+dy*dy;
+				if(d2<20.0f&&d2>1e-4f) // ~4,5 cm (um carrinho tem ~4,3 x 2,1 cm)
+					{
+					float d=std::sqrt(d2),empurra=std::min(0.5f,(4.5f-d)*0.25f);
+					float px=ax[i]+dx/d*empurra,py=ay[i]+dy/d*empurra;
+					if(dentro(px,py,1.5f)&&!agua(px,py))
+						{
+						ax[i]=px;
+						ay[i]=py;
+						}
+					}
+				}
+						/* Travado (devagar ou sem andar) por 3 s: dá meia-volta */
 			parado[i]=(!andou||vel[i]<0.3f*vb[i])?parado[i]+dt:0.0f;
 			if(parado[i]>3.0f)
 				{

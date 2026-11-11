@@ -82,7 +82,7 @@ posições). Comandos no cano da versão com Foto: `tesouro [cm]`, `tesouroFim`,
   Pterodáctilo ou pegada). Achado, outro aparece em 30 s. Fóssil e tesouro se substituem.
 - **Lago e peixes:** tudo 1,5 cm abaixo da mediana da areia vira água; os peixes só nadam ali e
   desviam das margens (cavar um buraco cria um lago).
-  Nadam em cardume (separação, alinhamento e coesão), viram suave (no máximo 2,8 rad/s) e dão
+  Nadam em cardume (separação de ~5,5 cm, alinhamento e coesão fraca: juntos, sem amontoar), viram suave (no máximo 2,8 rad/s) e dão
   nadadas (a velocidade oscila); preso numa poça por 4 s, o peixe reaparece num lago de verdade
   (só nasce onde há água num raio de 3,5 cm).
 - **Carrinhos:** seguem os vales pela curva de nível (baixo, mas sem despencar no fundo do buraco),
@@ -91,6 +91,8 @@ posições). Comandos no cano da versão com Foto: `tesouro [cm]`, `tesouroFim`,
   esperando o outro); travado por 3 s, dá meia-volta.
 - **Desenho:** peixes com corpo que ondula, cauda bifurcada, nadadeiras, olhos, listras e sombra;
   carrinhos com carroceria arredondada, cabine, vidros, faróis com facho, lanternas, rodas e sombra.
+- **Uma brincadeira por vez:** começar tesouro, fóssil, labirinto ou animais encerra as outras
+  (`PARAR_BRINCADEIRAS` em `areia.py`); a foto e o esculpir também encerram; o tema de cores fica.
 - **Labirinto de água:** comandos `labirinto [facil|normal|dificil]`, `labirintoNovo`, `labirintoFim`
   (e `labirintoTeste`, que põe o alvo na nascente, para o teste de integração). A nascente é um
   disco de 2 cm que entra na simulação de água do próprio SARndbox (`addWater`, a mesma via da chuva
