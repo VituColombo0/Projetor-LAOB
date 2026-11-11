@@ -103,18 +103,49 @@ def mascara_pessoa(img):
     return cv2.resize(m, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_LINEAR)
 
 
-def tira_fundo(img, mascara):
-    """Fundo preto, borda suave (sem serrilhado nem halo claro)."""
-    m = np.clip((mascara - 0.15) / 0.7, 0, 1).astype(np.float32)
+def so_a_pessoa(m):
+    """Fica só com a maior região da máscara e tapa os buracos dela: pedaços soltos do fundo
+    (um extintor atrás da cabeça, uma cadeira) somem. m em 0..1."""
+    bin_ = (m > 0.5).astype(np.uint8)
+    n, rot, stats, _ = cv2.connectedComponentsWithStats(bin_, 8)
+    if n <= 2:
+        principal = bin_
+    else:
+        maior = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+        principal = (rot == maior).astype(np.uint8)
+    # buracos internos (olhos escuros, sombra no pescoço): preenche pelo contorno de fora
+    cheia = np.zeros_like(principal)
+    contornos, _ = cv2.findContours(principal, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    cv2.drawContours(cheia, contornos, -1, 1, thickness=cv2.FILLED)
+    # mantém a borda suave original só perto da região principal
+    perto = cv2.dilate(cheia, np.ones((9, 9), np.uint8)).astype(np.float32)
+    return np.maximum(m * perto, cheia.astype(np.float32) * 0.999)
+
+
+def tira_fundo(img, mascara, base_suave=True):
+    """Fundo preto, borda suave (sem serrilhado nem halo claro). base_suave: o corte de baixo
+    (ombros) some num degradê em vez de terminar numa linha reta serrilhada."""
+    m = so_a_pessoa(np.clip(mascara, 0, 1).astype(np.float32))
+    m = np.clip((m - 0.15) / 0.7, 0, 1).astype(np.float32)
     m = cv2.erode(m, np.ones((3, 3), np.uint8))
-    m = cv2.GaussianBlur(m, (0, 0), 1.2)
+    m = cv2.GaussianBlur(m, (0, 0), 1.6)
+    if base_suave:
+        h = m.shape[0]
+        y = np.arange(h, dtype=np.float32)[:, None]
+        m *= np.clip((h - 1 - y) / (0.14 * h), 0, 1) ** 1.5
     return (img * m[..., None]).astype(np.uint8), m
 
 
 def realca(img, vinheta=True):
     """Projetado na areia o contraste cai muito: reforça contraste e cor (e escurece as bordas)."""
     lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-    lab[..., 0] = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(6, 6)).apply(lab[..., 0])
+    # contraste geral (estica do 1% mais escuro ao 1% mais claro) e só um pouco de contraste
+    # local: com o CLAHE forte (2,5 em 6x6) a pele da câmera ficava manchada, "pintada"
+    L = lab[..., 0].astype(np.float32)
+    lo, hi = np.percentile(L, (1, 99))
+    if hi - lo > 20:
+        L = np.clip((L - lo) * 255.0 / (hi - lo), 0, 255)
+    lab[..., 0] = cv2.createCLAHE(clipLimit=1.4, tileGridSize=(4, 4)).apply(L.astype(np.uint8))
     img = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV).astype(np.float32)
     hsv[..., 1] = np.clip(hsv[..., 1] * 1.25, 0, 255)
@@ -213,6 +244,8 @@ def main():
     if tirar_fundo and alfa is None:
         if not os.path.exists(U2NET):
             sys.exit(f"falta o modelo de recorte {U2NET}")
+        # na imagem inteira: testado (2026-11-11) rodar na imagem já enquadrada, e aí a rede
+        # passou a tomar o extintor atrás da cabeça como parte da pessoa
         alfa = mascara_pessoa(img)
     if rosto is not None:   # retrato 3:4 em volta do rosto
         foto = realca(recorta(img, rosto), vinheta=False)

@@ -93,8 +93,22 @@ class Preparo(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         out = cv2.imread(os.path.join(saida, "rosto.png"))
         self.assertEqual(out.shape[:2], (576, 1024))  # maior lado 1024, mesma proporção
-        self.assertGreater(out[5, 5].sum(), 60)       # o fundo continua lá
+        self.assertGreater(out[5, 5].sum(), 30)       # o fundo continua lá (não é preto; o contraste geral escurece um pouco)
         self.assertTrue(os.path.getsize(os.path.join(saida, "rosto.dem")) > 1000)
+
+    def test_pedaco_solto_do_fundo_some(self):
+        import rosto
+        m = np.zeros((200, 150), np.float32)
+        m[40:200, 30:120] = 1.0          # a pessoa
+        m[10:30, 130:145] = 0.9          # um pedaço solto do fundo
+        m[100:110, 70:80] = 0.0          # um buraco dentro da pessoa
+        r = rosto.so_a_pessoa(m)
+        self.assertLess(r[20, 137], 0.1)    # o pedaço solto sumiu
+        self.assertGreater(r[105, 75], 0.9)  # o buraco foi tapado
+        img = np.full((200, 150, 3), 200, np.uint8)
+        out, alfa = rosto.tira_fundo(img, m)
+        self.assertLess(alfa[-1, 75], 0.05)   # base em degradê: o fim de baixo some
+        self.assertGreater(alfa[120, 75], 0.9)
 
     def test_png_transparente_usa_o_proprio_alfa(self):
         tmp = tempfile.mkdtemp()
