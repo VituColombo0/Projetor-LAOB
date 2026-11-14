@@ -491,7 +491,7 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
     <div class="moradores" id="moradores"></div>
     <div class="grid" style="margin-top:12px">
       <button class="primary" id="laob-ligar">🏙️ Abrir o mundo LAOB</button>
-      <button class="danger" data-b="parar">Fechar</button>
+      <button class="danger" data-b="parar" id="laob-fechar" hidden>Fechar o mundo</button>
     </div>
   </section>
 
@@ -712,6 +712,7 @@ async function carrega() {
     const ligado = a === 'mundo';
     $('#laob-estado').textContent = ligado ? 'aberto' : '';
     $('#laob-ligar').hidden = ligado;
+    $('#laob-fechar').hidden = !ligado;
     $('#laob-dica').textContent = ligado
       ? (mundo.length ? 'Toque num nome: a imagem vai até o bairro onde ele está e o rosto aparece num balão. Bolinha verde: está no laboratório de verdade agora.'
                       : 'Mundo aberto só com moradores sem nome: não há fotos de membros na pasta do projetor.')

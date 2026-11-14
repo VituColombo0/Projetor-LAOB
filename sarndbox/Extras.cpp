@@ -41,7 +41,7 @@ Extras::Extras(void)
 	for(int i=0;i<MAX_AGENTES;++i)
 		{
 		wpN[i]=wpI[i]=wpCarro[i]=0;
-		for(int k=0;k<4;++k)
+		for(int k=0;k<5;++k)
 			wpX[i][k]=wpY[i][k]=0.0f;
 		alvoX[i]=alvoY[i]=mAte[i]=mTroca[i]=0.0f;
 		temAlvo[i]=escondido[i]=false;
@@ -983,7 +983,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 						g=vec3(0.9);
 					float idx=floor(q.x/2.6)+(q.y>0.0?7.0:0.0);
 					if(exHash(vec2(idx,3.0))>0.45&&vaga>0.2&&vaga<0.85&&abs(abs(q.y)-2.7)<1.5)
-						g=(vec3(0.55)+0.45*cos(6.2832*(vec3(exHash(vec2(idx,9.0)))+vec3(0.0,0.33,0.67))))
+						g=(vec3(0.55)+0.45*cos(6.2832*(vec3(fract(idx*0.381+0.13))+vec3(0.0,0.33,0.67))))
 						  *(abs(abs(q.y)-2.7)<0.6?0.75:1.0);
 					}
 				}

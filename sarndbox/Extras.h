@@ -145,7 +145,7 @@ class Extras
 	bool temAlvo[MAX_AGENTES],escondido[MAX_AGENTES];
 	int mEstado[MAX_AGENTES],mLugar[MAX_AGENTES],mCasa[MAX_AGENTES]; // 0 no lugar / 1 a caminho; peça atual ou destino; casa
 	double rostoAte[MAX_NOMES]; // até quando mostrar o rosto no balão
-	float wpX[MAX_AGENTES][4],wpY[MAX_AGENTES][4]; int wpN[MAX_AGENTES],wpI[MAX_AGENTES],wpCarro[MAX_AGENTES]; // pontos de passagem
+	float wpX[MAX_AGENTES][5],wpY[MAX_AGENTES][5]; int wpN[MAX_AGENTES],wpI[MAX_AGENTES],wpCarro[MAX_AGENTES]; // pontos de passagem
 	float camX,camAlvo; double camTroca; // a cidade tem 3 telas de largura: deslocamento da imagem (cm)
 	bool mundoPedido;
 	void mundo(const std::vector<std::string>& lista,int giro,int fotos,int moradores);

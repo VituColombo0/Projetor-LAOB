@@ -291,7 +291,7 @@ void Extras::mundoPasso(float dt)
 				anda=true;
 				}
 			else
-				escondido[i]=true; // dentro da casa, do laboratório, do café ou do mercado
+				escondido[i]=float(tempo)>=mTroca[i]; // para um instante na porta (o rosto aparece) e entra
 			if(float(tempo)>=mAte[i])
 				{
 				int d=mundoEscolhe(i);
@@ -306,32 +306,32 @@ void Extras::mundoPasso(float dt)
 					porta(D,desvio,qx,qy);
 					bool carro=std::abs(D.x-L.x)>w*0.6f;
 					int n=0;
+					/* primeiro até a calçada em frente (quem estava lá dentro sai pela porta) */
+					wpX[i][n]=px; wpY[i][n]=py; ++n;
+					if(escondido[i])
+						{
+						ax[i]=px;
+						ay[i]=py+(L.y>meio?1.0f:-1.0f)*1.6f;
+						}
 					if(carro)
 						{
-						float faixa=meio+(D.x>L.x?-1.0f:1.0f)*RA*0.5f; // mão direita
-						wpX[i][n]=L.x; wpY[i][n]=faixa; ++n;
-						wpX[i][n]=D.x; wpY[i][n]=faixa; ++n;
-						wpCarro[i]=2;
-						ax[i]=L.x;
-						ay[i]=faixa;
+						/* entra no carro ali e segue pela faixa da direita até a frente do destino */
+						float faixa=meio+(D.x>L.x?-1.0f:1.0f)*RA*0.5f;
+						wpX[i][n]=px+(D.x>L.x?1.5f:-1.5f); wpY[i][n]=faixa; ++n;
+						wpX[i][n]=qx; wpY[i][n]=faixa; ++n;
+						wpCarro[i]=1; // de carro nos trechos 1 e 2
 						}
 					else
 						{
-						wpX[i][n]=px; wpY[i][n]=py; ++n;
-						wpX[i][n]=qx; wpY[i][n]=py; ++n; // anda pela calçada do seu lado até a frente do destino
+						wpX[i][n]=qx; wpY[i][n]=py; ++n; // pela calçada do seu lado até a frente do destino
 						wpCarro[i]=0;
-						if(escondido[i])
-							{
-							ax[i]=px;
-							ay[i]=py+(L.y>meio?1.0f:-1.0f)*1.6f; // saindo pela porta
-							}
 						}
 					wpX[i][n]=qx; wpY[i][n]=qy; ++n;   // a porta do destino (atravessa a avenida, se for do outro lado)
 					wpX[i][n]=D.x+desvio; wpY[i][n]=D.y+(D.y>meio?-1.0f:1.0f)*D.raio*(aberto(D.tipo)?0.4f:0.75f); ++n;
 					wpN[i]=n;
 					wpI[i]=0;
-					tipo[i]=(carro?2.0f:3.0f)+cor;
-					vb[i]=carro?(10.0f+3.0f*aleatorio()):(3.0f+1.0f*aleatorio());
+					tipo[i]=3.0f+cor; // a pé até a calçada
+					vb[i]=3.0f+1.0f*aleatorio();
 					vel[i]=vb[i];
 					ang[i]=std::atan2(wpY[i][0]-ay[i],wpX[i][0]-ax[i]);
 					escondido[i]=false;
@@ -354,27 +354,28 @@ void Extras::mundoPasso(float dt)
 			if(dx*dx+dy*dy<0.8f*0.8f)
 				{
 				++wpI[i];
-				if(wpI[i]==wpCarro[i]&&wpCarro[i]>0)
+				if(wpCarro[i]>0)
 					{
-					tipo[i]=3.0f+cor; // estacionou: desce do carro
-					vb[i]=3.0f+1.0f*aleatorio();
+					bool noCarro=wpI[i]==1||wpI[i]==2; // trechos pela avenida
+					tipo[i]=(noCarro?2.0f:3.0f)+cor;   // entra no carro na calçada; estaciona e desce na frente do destino
+					vb[i]=noCarro?(10.0f+3.0f*aleatorio()):(3.0f+1.0f*aleatorio());
 					vel[i]=vb[i];
 					}
 				if(wpI[i]>=wpN[i])
 					{
 					/* chegou */
 					mEstado[i]=0;
-					mTroca[i]=0.0f;
+					mTroca[i]=aberto(L.tipo)?0.0f:float(tempo)+3.5f; // lugar fechado: 3,5 s na porta antes de entrar
 					float fica=L.tipo==P_CASA?(7.0f+9.0f*aleatorio()):
 					           L.tipo==P_LAB?((i<nNomes&&presente[i])?(20.0f+22.0f*aleatorio()):(8.0f+8.0f*aleatorio())):
 					           (L.tipo==P_CAFE||L.tipo==P_MERCADO)?(6.0f+6.0f*aleatorio()):(14.0f+16.0f*aleatorio());
 					mAte[i]=float(tempo)+fica;
-					escondido[i]=!aberto(L.tipo);
+					escondido[i]=false;
 					wpX[i][0]=ax[i];
 					wpY[i][0]=ay[i];
 					if(i<nNomes)
 						{
-						rostoAte[i]=tempo+5.0; // o rosto aparece um instante: dá para ver quem chegou
+						rostoAte[i]=tempo+(aberto(L.tipo)?5.0:3.5); // o rosto aparece um instante: dá para ver quem chegou
 						anuncia(std::string("Mundo: ")+nomes[i]+" está "+ondeEsta(L.tipo));
 						}
 					continue;
