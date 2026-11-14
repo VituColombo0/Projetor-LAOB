@@ -544,7 +544,7 @@ const OUTROS = [
   {id: 'todos', ic: '🐠', t: 'Peixes e carrinhos', c: 'Os dois juntos na areia.', tag: 'Animação',
    d: 'Peixes no lago e carrinhos nos vales ao mesmo tempo.'},
 ];
-const ICONES = {corrida: '🏁', vila: '🏘️', fazenda: '🌱', rota: '🚩', lago: '🎯', vulcao: '🌋', barco: '⛵', resgate: '🐡'};
+const ICONES = {corrida: '🏁', vila: '🏘️', rota: '🚩', vulcao: '🌋'};
 const TODOS = [...AGUA.map(j => ({id: j[0], ic: ICONES[j[0]] || '💧', t: j[1], c: j[2], d: j[3], tag: 'Jogo de água'})), ...OUTROS];
 
 function msg(t, tipo) {
@@ -659,7 +659,9 @@ async function carrega() {
       txt = '<b></b> · rodada ' + (E.jogo.rodadas + (E.jogo.fase === 'fim' ? 0 : 1)) + '<br><span></span>';
       pl.innerHTML = txt;
       pl.querySelector('b').textContent = n;
-      pl.querySelector('span').textContent = E.jogo.aviso ? (E.jogo.fase === 'fim' ? '🏆 ' : '') + E.jogo.aviso + (E.jogo.fase === 'fim' ? ' — nova rodada em 20 s' : '') : '';
+      const casas = E.jogo.casas ? '🏠 ' + (E.jogo.casas - E.jogo.perdidas) + ' de ' + E.jogo.casas + ' casas de pé'
+        + (E.jogo.perdidas ? ' · ' + E.jogo.perdidas + ' perdida' + (E.jogo.perdidas > 1 ? 's' : '') : '') : '';
+      pl.querySelector('span').textContent = (casas && E.jogo.fase !== 'fim') ? casas : E.jogo.aviso ? (E.jogo.fase === 'fim' ? '🏆 ' : '') + E.jogo.aviso + (E.jogo.fase === 'fim' ? ' — nova rodada em 20 s' : '') : '';
     } else if (a === 'labirinto') {
       pl.innerHTML = '<b>Labirinto de água</b> · rodadas vencidas: ' + (E.labirinto_rodadas || 0);
       txt = 'x';

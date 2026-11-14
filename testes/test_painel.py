@@ -124,12 +124,13 @@ class Painel(Ambiente):
         for nome, (titulo, curta, desc) in areia.JOGOS.items():
             self.assertIn(titulo, pagina)
             self.assertIn(desc[:40], pagina)   # a descrição de cada jogo está no painel
-        r = self.post("/brincar", json={"acao": "barco", "nivel": "facil"})
+        r = self.post("/brincar", json={"acao": "rota", "nivel": "facil"})
         self.assertEqual(r.status_code, 200, r.get_json())
-        self.assertIn("Barquinho", r.get_json()["msg"])
-        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd jogo barco 1")
+        self.assertIn("Rota", r.get_json()["msg"])
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd jogo rota 1")
+        self.assertEqual(self.post("/brincar", json={"acao": "barco"}).status_code, 400)   # jogo retirado
         e = self.get("/estado").get_json()
-        self.assertIn("jogo", e)
+        self.assertIn("casas", e["jogo"])
         self.assertIn(e["animais"], ("nada", "peixes", "carros", "todos"))
         self.assertEqual(self.post("/brincar", json={"acao": "jogoNovo"}).status_code in (200, 400), True)
 

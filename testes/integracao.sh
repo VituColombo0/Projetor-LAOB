@@ -71,12 +71,12 @@ DISPLAY=:0 XAUTHORITY=/run/user/$(id -u)/gdm/Xauthority ffmpeg -loglevel error -
   -video_size 1024x768 -i :0.0+1280,0 -frames:v 1 /tmp/integracao-brincadeiras.png 2>/dev/null \
   && ok "print das brincadeiras em /tmp/integracao-brincadeiras.png"
 confere "sem erro de shader" "! grep -qiE 'shader.*(error|erro)|GLSL|compile error' '$D/sandbox.log'"
-for j in corrida vila fazenda rota lago vulcao barco resgate; do
+for j in corrida vila rota vulcao; do
   confere "jogo de água: $j liga" "areia-jogo $j >/dev/null && sleep 1.5 && tail -n 30 '$D/sandbox.log' | grep -q '^Jogo pedido: $j' && areia-jogo placar | grep -q 'rodada'"
 done
-confere "vulcão vira lava e depois volta o tema de antes" "antes=\$(readlink '$D/temas/atual.cpt'); [ \"\$antes\" = vulcao.cpt ] || { areia-jogo vulcao >/dev/null && [ \"\$(readlink '$D/temas/atual.cpt')\" = vulcao.cpt ] && areia-jogo parar >/dev/null && [ \"\$(readlink '$D/temas/atual.cpt')\" = \"\$antes\" ]; }"
+confere "vulcão: não troca o tema e mostra o placar de casas" "antes=\$(readlink '$D/temas/atual.cpt'); areia-jogo vulcao >/dev/null && sleep 1.5 && [ \"\$(readlink '$D/temas/atual.cpt')\" = \"\$antes\" ] && tail -n 5 '$D/sandbox.log' | grep -q 'casas)' && curl -s -m 5 localhost:8090/estado | grep -q '\"casas\":[1-9]'"
 confere "corrida: a água chega à bandeira e há vencedor" "areia-jogo corrida >/dev/null && sleep 2 && '$D/sandbox.sh' cmd jogoTeste >/dev/null && for _ in \$(seq 1 40); do tail -n 5 '$D/sandbox.log' | grep -q 'fim da rodada; venceu' && break; sleep 0.5; done; tail -n 5 '$D/sandbox.log' | grep -q 'fim da rodada; venceu' && areia-jogo placar | grep -q 'terminou'"
-confere "resgate: os peixes são salvos pela água" "areia-jogo resgate facil >/dev/null && sleep 2 && '$D/sandbox.sh' cmd jogoTeste >/dev/null && for _ in \$(seq 1 40); do tail -n 5 '$D/sandbox.log' | grep -q 'peixes salvos' && break; sleep 0.5; done; tail -n 5 '$D/sandbox.log' | grep -q 'peixes salvos'"
+confere "jogos retirados não ligam" "! areia-jogo barco >/dev/null 2>&1 && ! areia-jogo fazenda >/dev/null 2>&1"
 confere "jogo: parar" "areia-jogo parar >/dev/null && areia-jogo placar | grep -q 'Nenhum jogo'"
 confere "parar brincadeiras" "areia-animais parar >/dev/null && areia-tesouro parar >/dev/null && areia-labirinto parar >/dev/null && areia-labirinto placar | grep -q 'não está ligado'"
 confere "desempenho medido no log" "grep -q '^Desempenho: ' '$D/sandbox.log' || { sleep 31; grep -q '^Desempenho: ' '$D/sandbox.log'; }"

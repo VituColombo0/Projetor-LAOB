@@ -397,12 +397,15 @@ class JogosDeAgua(Ambiente):
         return [c for c in self.comandos() if c.startswith("cmd")]
 
     def test_todos_os_jogos_e_niveis(self):
-        self.assertEqual(len(self.areia.JOGOS), 8)
+        self.assertEqual(sorted(self.areia.JOGOS), ['corrida', 'rota', 'vila', 'vulcao'])
+        for fora in ('fazenda', 'lago', 'barco', 'resgate'):
+            with self.assertRaisesRegex(self.areia.Erro, 'jogo:'):
+                self.areia.jogo(fora)
         for nome in self.areia.JOGOS:
             self.assertEqual(self.areia.jogo(nome, "dificil"), (nome, 3))
             self.assertEqual(self.cmds()[-1], f"cmd jogo {nome} 3")
         self.assertEqual(self.areia.jogo("Corrida de rios"), ("corrida", 2))
-        self.assertEqual(self.areia.jogo("barquinho", "Fácil"), ("barco", 1))
+        self.assertEqual(self.areia.jogo("erupção", "Fácil"), ("vulcao", 1))
         with self.assertRaisesRegex(self.areia.Erro, "jogo:"):
             self.areia.jogo("xadrez")
         with self.assertRaisesRegex(self.areia.Erro, "nível"):
@@ -419,34 +422,26 @@ class JogosDeAgua(Ambiente):
         self.assertIsNone(self.areia.jogo_situacao()["jogo"])
         with self.assertRaisesRegex(self.areia.Erro, "nenhum jogo"):
             self.areia.jogo_novo()
-        self.areia.jogo("fazenda")
+        self.areia.jogo("vila")
         log = os.path.join(self.D, "sandbox.log")
-        escreve(log, "Jogo pedido: fazenda (nível 2)\nJogo: irrigue a fazenda (4 plantações)\n")
+        escreve(log, "Jogo pedido: vila (nível 2)\nJogo: salve a vila (4 casas); a chuva começa em 10 s\nJogo: uma casa alagou!\n")
         s = self.areia.jogo_situacao()
-        self.assertEqual((s["jogo"], s["fase"], s["rodadas"]), ("fazenda", "correndo", 0))
-        escreve(log, "Jogo pedido: fazenda (nível 2)\nJogo: irrigue a fazenda\nJogo: uma plantação secou!\n"
-                     "Jogo: fim da rodada; 3 de 4 plantações vivas\n")
+        self.assertEqual((s["jogo"], s["fase"], s["rodadas"], s["casas"], s["perdidas"]), ("vila", "correndo", 0, 4, 1))
+        escreve(log, "Jogo pedido: vila (nível 2)\nJogo: salve a vila (4 casas)\nJogo: uma casa alagou!\n"
+                     "Jogo: fim da rodada; 3 de 4 casas secas\n")
         s = self.areia.jogo_situacao()
-        self.assertEqual((s["fase"], s["rodadas"], s["aviso"]), ("fim", 1, "3 de 4 plantações vivas"))
+        self.assertEqual((s["fase"], s["rodadas"], s["aviso"]), ("fim", 1, "3 de 4 casas secas"))
         self.areia.jogo_novo()
         self.assertEqual(self.cmds()[-1], "cmd jogoNovo")
         for fim in ("Jogo desligado\n", "Modo Rosto: foto.png\n", "Labirinto: nascente em x 1 y 2\n"):
             escreve(log, "Jogo pedido: vila (nível 1)\nJogo: salve a vila\n" + fim)
             self.assertIsNone(self.areia.jogo_situacao()["jogo"])
 
-    def test_vulcao_troca_o_tema_e_depois_volta(self):
+    def test_vulcao_nao_troca_o_tema(self):
         self.areia.escolhe_tema("oceano")
-        self.areia.jogo("vulcao")
-        self.assertEqual(self.areia.tema_atual(), "vulcao")
-        self.areia.jogo("barco")
+        self.areia.jogo("vulcao")   # o próprio jogo escurece a areia e pinta a lava
         self.assertEqual(self.areia.tema_atual(), "oceano")
-        self.areia.jogo("vulcao")
-        self.areia.para_tudo()
-        self.assertEqual(self.areia.tema_atual(), "oceano")
-        self.areia.jogo("vulcao")
-        self.areia.escolhe_tema("marte")   # escolheu outro tema no meio: fica o dele
-        self.areia.jogo_fim()
-        self.assertEqual(self.areia.tema_atual(), "marte")
+        self.assertEqual(self.cmds()[-1], "cmd jogo vulcao 2")
 
     def test_comando_de_terminal(self):
         import importlib
@@ -459,7 +454,7 @@ class JogosDeAgua(Ambiente):
             ab.jogo(["placar"])
             ab.jogo(["parar"])
         out = saida.getvalue()
-        self.assertIn("resgate", out)
+        self.assertIn("vulcao", out)
         self.assertIn("Vulcão em erupção ligado", out)
         self.assertIn("cmd jogo vulcao 1", self.cmds())
         self.assertEqual(self.cmds()[-1], "cmd jogoFim")

@@ -99,8 +99,8 @@ class Extras
 	/* Jogos de água (Jogos.cpp): como o labirinto, a água é a da simulação do SARndbox e a GPU mede
 	   quanta água há em cada peça (casa, planta, portão...) duas vezes por segundo. */
 	enum Jogo {SEM_JOGO=0,CORRIDA=1,VILA=2,FAZENDA=3,ROTA=4,LAGO=5,VULCAO=6,BARCO=7,RESGATE=8,NUM_JOGOS=9};
-	enum TipoPeca {P_NADA=0,P_NASCENTE=1,P_ALVO=2,P_CASA=3,P_PLANTA=4,P_PORTAO=5,P_LAGO=6,P_BARCO=7,P_PORTO=8,P_PEIXE=9};
-	enum {MAX_PECAS=10,MAX_FONTES=4};
+	enum TipoPeca {P_NADA=0,P_NASCENTE=1,P_ALVO=2,P_CASA=3,P_PLANTA=4,P_PORTAO=5,P_LAGO=6,P_BARCO=7,P_PORTO=8,P_PEIXE=9,P_PLACAR=10};
+	enum {MAX_PECAS=16,MAX_FONTES=4};
 	struct Peca
 		{
 		int tipo;
@@ -154,6 +154,8 @@ class Extras
 	float aleatorio(void); // 0..1
 	bool agua(float x,float y) const;
 	bool dentro(float x,float y,float margem) const;
+	bool aguaLarga(float x,float y,float raio) const; // água no ponto e em volta (cabe o peixe)
+	bool chaoLivre(float x,float y,float raio) const; // chão firme no ponto e em volta (cabe o carrinho)
 	bool sorteiaPonto(bool queAgua,float& x,float& y);
 	void nasce(int i);
 	};

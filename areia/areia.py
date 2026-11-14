@@ -643,59 +643,42 @@ def labirinto_fim():
 JOGOS = {
     "corrida": ("Corrida de rios", "Dois times, duas nascentes e duas bandeiras.",
                 "Cada time cava o canal da sua nascente até a sua bandeira (azul ou vermelha). "
-                "Ganha quem fizer a água chegar primeiro. Dá para atrapalhar o outro time com diques!"),
-    "vila": ("Salve a vila", "Uma chuva forte cai de um lado; proteja as casinhas.",
-             "Casinhas aparecem nos lugares baixos e a água desce de uma borda. Levantem diques e "
-             "cavem valas para desviar a enchente. Ao fim do tempo, contam-se as casas secas."),
-    "fazenda": ("Irrigue a fazenda", "Plantações secam aos poucos; leve água até elas.",
-                "Cada plantação tem um anel que mostra a água que resta. Cavem canais da nascente "
-                "até as plantas antes que elas sequem. Vence quem manter mais plantas vivas por 90 s."),
+                "A água é pouca e não chega sozinha: ganha quem abrir o melhor caminho. "
+                "Dá para atrapalhar o outro time com diques!"),
+    "vila": ("Salve a vila", "A enchente vem de três lados; proteja as casinhas.",
+             "Há 10 segundos para se preparar. Depois a água desce de três bordas diferentes: "
+             "levantem diques e cavem valas em volta das casas. No canto da areia, uma fila de "
+             "casinhas mostra quantas continuam de pé (branca) e quantas alagaram (vermelha)."),
     "rota": ("Rota com paradas", "A água tem que passar pelos portões 1, 2, 3… na ordem.",
              "O portão que pisca amarelo é o próximo. Façam um caminho que leve a água por todos "
              "os portões, na ordem, até a bandeira. Pular um portão não vale."),
-    "lago": ("Encha o lago na medida", "Água limitada: encha o lago até a faixa certa.",
-             "A nascente joga água só por alguns segundos. O contorno do lago fica azul (falta), "
-             "verde (na medida) ou vermelho (transbordou). Afundem ou levantem as margens para acertar."),
     "vulcao": ("Vulcão em erupção", "A lava desce do pico mais alto; muralhas salvam as casas.",
-               "O tema vira vulcão e a lava sai do ponto mais alto da areia. Construam muralhas e "
-               "valas para desviar a lava das casinhas até o fim da erupção."),
-    "barco": ("Barquinho", "O barquinho segue a correnteza até o porto.",
-              "Cavem um rio da nascente até o porto. O barco só anda onde tem água e vai para onde "
-              "a correnteza leva; se o rio ficar raso, ele encalha."),
-    "resgate": ("Resgate dos peixes", "Peixes presos em poças que secam.",
-                "Cada peixe tem um anel com o ar que resta. Levem a água da nascente até as poças "
-                "antes que sequem. Peixe salvo nada e brilha."),
+               "A areia escurece e só a lava brilha, saindo do ponto mais alto. Construam muralhas e "
+               "valas para desviar a lava das casinhas. A fila de casinhas no canto mostra as que "
+               "estão a salvo (brancas) e as perdidas (vermelhas)."),
 }
+# Tirados em 14/11/2026 a pedido do Victor (repetitivos): fazenda, lago, barco e resgate.
 NIVEIS_JOGO = {"facil": 1, "normal": 2, "dificil": 3, "1": 1, "2": 2, "3": 3, "medio": 2}
 
 
 def jogo(nome, nivel="normal"):
-    """Começa um jogo de água. Devolve (nome, nível 1-3). O vulcão troca o tema para vulcão (lava)."""
+    """Começa um jogo de água. Devolve (nome, nível 1-3)."""
     n = _chave_tema(str(nome or ""))
     n = {"corrida-de-rios": "corrida", "rios": "corrida", "salve-a-vila": "vila", "enchente": "vila",
-         "irrigar": "fazenda", "irrigue": "fazenda", "portoes": "rota", "paradas": "rota",
-         "lava": "vulcao", "barquinho": "barco", "peixes": "resgate"}.get(n, n)
+         "portoes": "rota", "paradas": "rota", "lava": "vulcao", "erupcao": "vulcao"}.get(n, n)
     if n not in JOGOS:
         raise Erro("jogo: " + ", ".join(JOGOS))
     lv = NIVEIS_JOGO.get(_chave_tema(str(nivel or "normal")))
     if lv is None:
         raise Erro("nível: facil, normal ou dificil")
+    # (o vulcão não troca mais o tema: o próprio jogo escurece a areia e pinta a água de lava)
     _brincadeira(f"jogo {n} {lv}")
-    if n == "vulcao" and tema_atual() != "vulcao":
-        antes = tema_atual()
-        try:
-            escolhe_tema("vulcao")  # a água vira lava no tema vulcão
-            e = estado()
-            e["tema_antes_do_vulcao"] = antes
-            salva(e)
-        except Erro:
-            pass
     return n, lv
 
 
 def jogo_situacao():
     """Dicionário com o jogo atual: nome, fase (correndo, fim ou nenhum), rodadas, último aviso."""
-    vazio = {"jogo": None, "fase": "nenhum", "rodadas": 0, "aviso": ""}
+    vazio = {"jogo": None, "fase": "nenhum", "rodadas": 0, "aviso": "", "casas": 0, "perdidas": 0}
     if qual() != "rosto":
         return vazio
     linhas = _registro_caca()
@@ -711,7 +694,16 @@ def jogo_situacao():
     avisos = [l[len("Jogo: "):] for l in depois if l.startswith("Jogo: ") and not l.startswith("Jogo: teste")]
     ult = avisos[-1] if avisos else ""
     fase = "fim" if ult.startswith("fim da rodada") else "correndo"
-    return {"jogo": nome, "fase": fase, "rodadas": rodadas, "aviso": ult.replace("fim da rodada; ", "")}
+    # vila e vulcão: casas da rodada atual e quantas já foram perdidas
+    casas = perdidas = 0
+    for l in depois:
+        m = re.search(r"\((\d+) casas\)", l)
+        if m and l.startswith("Jogo: "):
+            casas, perdidas = int(m.group(1)), 0   # começo de rodada
+        elif l.startswith(("Jogo: uma casa alagou", "Jogo: a lava pegou uma casa")):
+            perdidas += 1
+    return {"jogo": nome, "fase": fase, "rodadas": rodadas, "aviso": ult.replace("fim da rodada; ", ""),
+            "casas": casas, "perdidas": min(perdidas, casas)}
 
 
 def jogo_novo():

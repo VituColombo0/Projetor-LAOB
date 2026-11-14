@@ -120,6 +120,32 @@ bool Extras::agua(float x,float y) const
 	return h>SEM+1.0f&&h<nivelAgua&&dentro(x,y,1.0f);
 	}
 
+bool Extras::aguaLarga(float x,float y,float raio) const
+	{
+	/* água no ponto e em volta dele: o peixe inteiro (uns 4,5 cm) cabe, sem a cauda na margem */
+	if(!agua(x,y))
+		return false;
+	for(int k=0;k<6;++k)
+		if(!agua(x+raio*std::cos(k*PI/3.0f),y+raio*std::sin(k*PI/3.0f)))
+			return false;
+	return true;
+	}
+
+bool Extras::chaoLivre(float x,float y,float raio) const
+	{
+	/* chão firme no ponto e em volta: areia medida, fora do lago e longe da borda iluminada
+	   (antes só o centro do carrinho era conferido e metade dele entrava no lago ou saía da areia) */
+	if(!dentro(x,y,raio+1.0f)||altura(x,y)<SEM+1.0f||agua(x,y))
+		return false;
+	for(int k=0;k<6;++k)
+		{
+		float px=x+raio*std::cos(k*PI/3.0f),py=y+raio*std::sin(k*PI/3.0f);
+		if(altura(px,py)<SEM+1.0f||agua(px,py))
+			return false;
+		}
+	return true;
+	}
+
 float Extras::aleatorio(void)
 	{
 	semente=semente*1664525u+1013904223u;
@@ -135,7 +161,7 @@ bool Extras::sorteiaPonto(bool queAgua,float& x,float& y)
 		float h=altura(x,y);
 		if(h<SEM+1.0f)
 			continue;
-		bool ok=queAgua?agua(x,y):(nivelAgua<SEM+1.0f||h>=nivelAgua+0.5f);
+		bool ok=queAgua?agua(x,y):((nivelAgua<SEM+1.0f||h>=nivelAgua+0.5f)&&chaoLivre(x,y,3.0f));
 		if(ok&&queAgua)
 			for(int k=0;k<8&&ok;++k) // lago de pelo menos uns 7 cm, não uma poça
 				ok=agua(x+3.5f*std::cos(k*PI/4.0f),y+3.5f*std::sin(k*PI/4.0f));
@@ -343,6 +369,7 @@ void Extras::passo(float dt)
 		float c0=std::cos(ang[i]),s0=std::sin(ang[i]);
 		if(peixe)
 			{
+			bool folgado=aguaLarga(ax[i],ay[i],1.8f);
 			if(!agua(ax[i],ay[i])) // o lago secou embaixo dele: reaparece em outro lugar
 				{
 				nasce(i);
@@ -384,16 +411,19 @@ void Extras::passo(float dt)
 			/* Desvia das margens: a primeira direção livre perto da desejada */
 			const float desvios[]={0.0f,0.4f,-0.4f,0.8f,-0.8f,1.3f,-1.3f,1.9f,-1.9f,2.6f,-2.6f,PI};
 			bool livre=false;
-			for(int k=0;k<12;++k)
-				{
-				float a=desejo+desvios[k];
-				if(agua(ax[i]+std::cos(a)*3.0f,ay[i]+std::sin(a)*3.0f)&&agua(ax[i]+std::cos(a)*1.5f,ay[i]+std::sin(a)*1.5f))
+			for(int passada=0;passada<2&&!livre;++passada) // 1ª: com folga da margem; 2ª (encostado): qualquer água
+				for(int k=0;k<12;++k)
 					{
-					desejo=a;
-					livre=true;
-					break;
+					float a=desejo+desvios[k];
+					float x1=ax[i]+std::cos(a)*1.5f,y1=ay[i]+std::sin(a)*1.5f;
+					float x3=ax[i]+std::cos(a)*3.5f,y3=ay[i]+std::sin(a)*3.5f;
+					if(passada==0?(aguaLarga(x3,y3,1.8f)&&aguaLarga(x1,y1,1.8f)):(agua(x3,y3)&&agua(x1,y1)))
+						{
+						desejo=a;
+						livre=true;
+						break;
+						}
 					}
-				}
 			float giro=livre?difAng(desejo-ang[i]):2.0f;
 			ang[i]=difAng(ang[i]+std::max(-2.8f*dt,std::min(2.8f*dt,giro)));
 			/* Nadadas: acelera e desacelera de leve, mais devagar quando está virando */
@@ -401,13 +431,17 @@ void Extras::passo(float dt)
 			vel[i]+=(alvoVel-vel[i])*std::min(1.0f,2.0f*dt);
 			vel[i]=std::max(vel[i],0.5f);
 			float nx=ax[i]+std::cos(ang[i])*vel[i]*dt,ny=ay[i]+std::sin(ang[i])*vel[i]*dt;
-			if(agua(nx,ny))
+			/* só avança se o corpo inteiro continuar na água (encostado na margem, qualquer água serve
+			   para ele conseguir sair dali) */
+			if(aguaLarga(nx,ny,1.8f)||(!folgado&&agua(nx,ny)))
 				{
 				ax[i]=nx;
 				ay[i]=ny;
-				parado[i]=0.0f;
+				parado[i]=folgado?0.0f:parado[i]+dt;
 				}
-			else if((parado[i]+=dt)>4.0f) // preso numa poça: some e aparece num lago de verdade
+			else
+				parado[i]+=dt;
+			if(parado[i]>4.0f) // preso numa poça ou espremido na margem: aparece num lago de verdade
 				nasce(i);
 			}
 		else
@@ -415,6 +449,11 @@ void Extras::passo(float dt)
 			/* Carrinho: entre as direções possíveis, a que segue mais baixo (o vale), sem subir
 			   rampa íngreme, sem entrar no lago e sem sair da área iluminada: */
 			float h0=altura(ax[i],ay[i]);
+			if(h0<SEM+1.0f||agua(ax[i],ay[i])||!dentro(ax[i],ay[i],1.0f))
+				{
+				nasce(i); // cavaram um lago embaixo dele (ou a areia sumiu dali): aparece em chão firme
+				continue;
+				}
 			const float desvios[]={0.0f,0.35f,-0.35f,0.7f,-0.7f,1.1f,-1.1f};
 			float melhor=1e9f,escolha=PI,hEscolha=h0;
 			for(int k=0;k<7;++k)
@@ -422,7 +461,9 @@ void Extras::passo(float dt)
 				float a=ang[i]+desvios[k];
 				float px=ax[i]+std::cos(a)*4.0f,py=ay[i]+std::sin(a)*4.0f;
 				float h=altura(px,py);
-				if(h<SEM+1.0f||!dentro(px,py,2.0f)||agua(px,py)||(h0>SEM+1.0f&&h-h0>2.0f))
+				/* à frente tem que caber o carrinho inteiro em chão firme, sem paredão nem barranco */
+				if(!chaoLivre(px,py,2.2f)||!chaoLivre(ax[i]+std::cos(a)*2.0f,ay[i]+std::sin(a)*2.0f,2.2f)
+				   ||h-h0>2.0f||h0-h>3.0f)
 					continue;
 				/* vale: baixo, mas sem despencar (segue a curva de nível); longe dos outros carros */
 				float nota=0.35f*h+0.6f*std::abs(h-h0)+0.8f*std::abs(desvios[k]);
@@ -471,7 +512,7 @@ void Extras::passo(float dt)
 			vel[i]+=(alvoVel-vel[i])*std::min(1.0f,2.5f*dt);
 			vel[i]=std::max(vel[i],0.05f); // 0 é "escondido"
 			float nx=ax[i]+std::cos(ang[i])*vel[i]*dt,ny=ay[i]+std::sin(ang[i])*vel[i]*dt;
-			bool andou=dentro(nx,ny,1.5f)&&!agua(nx,ny);
+			bool andou=chaoLivre(nx,ny,2.2f)||(!chaoLivre(ax[i],ay[i],2.2f)&&dentro(nx,ny,1.5f)&&!agua(nx,ny)&&altura(nx,ny)>SEM+1.0f);
 			if(andou)
 				{
 				ax[i]=nx;
@@ -487,7 +528,7 @@ void Extras::passo(float dt)
 					{
 					float d=std::sqrt(d2),empurra=std::min(0.5f,(4.5f-d)*0.25f);
 					float px=ax[i]+dx/d*empurra,py=ay[i]+dy/d*empurra;
-					if(dentro(px,py,1.5f)&&!agua(px,py))
+					if(chaoLivre(px,py,2.2f))
 						{
 						ax[i]=px;
 						ay[i]=py;
@@ -527,7 +568,7 @@ uniform vec4 extrasInfo;     // tempo (s), achou, tesouro ligado, nível do lago
 uniform vec4 extrasEfeito;   // efeito do tema (0 nenhum, 1 lava, 2 neve, 3 poeira, 4 areia, 5 ondas, 6 brilho, 7 chuva), altura média da areia (cm)
 uniform vec4 extrasLab;      // labirinto: nascente (x, y) e alvo (x, y), cm
 uniform vec4 extrasLab2;     // labirinto: raio do alvo, estado (0 desligado, 1 correndo, 2 chegou), segundos no estado
-uniform vec4 extrasJogo[20]; // jogos de água: por peça (x, y, raio, tipo) e (estado, nível, ordem, time ou ângulo)
+uniform vec4 extrasJogo[32]; // jogos de água: por peça (x, y, raio, tipo) e (estado, nível, ordem, time ou ângulo)
 uniform vec4 extrasJogoInfo; // jogo (0 nenhum), fase, segundos na fase, vencedor ou próximo portão
 float exCaixa(vec2 p,vec2 metade,float raio)
 	{
@@ -565,7 +606,14 @@ const char* Extras::glslFragmentMain=R"GLSL(
 	float et=extrasInfo.x;
 	float ef=extrasEfeito.x;
 	float ref=extrasEfeito.y;
-	if(ef>0.5&&ef<1.5)
+	if(extrasEfeito.w>0.5)
+		{
+		/* Jogo do vulcão: nada de lava de enfeite (não dava para ver onde estava a lava de
+		   verdade); o relevo fica escuro, como rocha à noite, e só a lava do jogo brilha */
+		float cinza=dot(baseColor.rgb,vec3(0.3,0.5,0.2));
+		baseColor=vec4(mix(vec3(cinza),baseColor.rgb,0.45)*0.5,1.0);
+		}
+	else if(ef>0.5&&ef<1.5)
 		{
 		/* Lava: faixas incandescentes que descem dos morros (a fase acompanha a altura) */
 		float n=exRuido(ep.xy*0.5+vec2(0.0,et*0.25));
@@ -781,8 +829,23 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					pc=cor*0.75+vec3(0.08);                                       // cauda e nadadeiras
 				baseColor=vec4(pc,1.0);
 				}
-			else if(sombra<1.0)
-				baseColor.rgb*=0.72;
+			else
+				{
+				if(sombra<1.0)
+					baseColor.rgb*=0.72;
+				/* rastro em V atrás da cauda e bolhinhas que saem da boca e somem */
+				float rastro=smoothstep(0.2,0.0,abs(abs(l.y)-(-l.x-3.2)*0.42))*smoothstep(-6.4,-3.6,l.x)*step(l.x,-3.4)
+				             *(0.5+0.5*sin(l.x*3.0+et*8.0+fase));
+				float bolhas=0.0;
+				for(int k=0;k<3;++k)
+					{
+					float ph=fract(et*0.45+fase*0.13+float(k)/3.0);
+					vec2 pb=vec2(2.7+ph*2.4,(float(k)-1.0)*0.55+0.3*sin(ph*6.0+float(k)*2.0));
+					float rb=0.14+0.22*ph;
+					bolhas=max(bolhas,smoothstep(0.1,0.0,abs(distance(l,pb)-rb))*(1.0-ph));
+					}
+				baseColor.rgb=mix(baseColor.rgb,vec3(0.9,0.97,1.0),clamp(rastro*0.35+bolhas*0.8,0.0,1.0));
+				}
 			}
 		else
 			{
@@ -818,6 +881,16 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				if(sombra<0.0)
 					baseColor.rgb*=0.7;
 				baseColor.rgb+=vec3(1.0,0.95,0.6)*facho*0.35;
+				/* poeira levantada atrás: três nuvenzinhas que crescem e somem */
+				float poeira=0.0;
+				for(int k=0;k<3;++k)
+					{
+					float ph=fract(et*1.4+float(i)*0.37+float(k)/3.0);
+					vec2 pp=vec2(-2.7-ph*2.8,(float(k)-1.0)*0.45*(1.0+ph));
+					float rp=0.35+0.75*ph;
+					poeira=max(poeira,smoothstep(rp,rp*0.3,distance(l,pp))*(1.0-ph));
+					}
+				baseColor.rgb=mix(baseColor.rgb,vec3(0.9,0.85,0.74),poeira*0.5);
 				}
 			}
 		}
@@ -863,7 +936,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 		float jfase=extrasJogoInfo.y;
 		float jt=extrasJogoInfo.z;
 		float jaux=extrasJogoInfo.w; // corrida/outros: vencedor (-1 nenhum); rota: próximo portão
-		for(int i=0;i<10;++i)
+		for(int i=0;i<16;++i)
 			{
 			vec4 a=extrasJogo[2*i];
 			vec4 b=extrasJogo[2*i+1];
@@ -993,6 +1066,20 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					c=mix(vec3(0.62,0.42,0.22),vec3(0.35,0.22,0.1),linhas);
 				c=mix(c,est>0.5?vec3(1.0,0.82,0.2):vec3(0.85,0.65,0.4),anel);
 				}
+			else if(tipo>9.5)
+				{
+				/* placar: casinha pequena; branca = de pé, vermelha com X = perdida, verde = salva */
+				vec2 p=q/(r/1.3);
+				bool corpo=abs(p.x)<0.8&&p.y>-0.9&&p.y<0.15;
+				bool telhado=p.y>=0.15&&p.y<1.0&&abs(p.x)<(1.0-p.y)*1.25;
+				vec3 cor=est>1.5?vec3(0.95,0.15,0.1):(est>0.5?vec3(0.25,0.95,0.4):vec3(0.97));
+				if(d<r*1.25)
+					c=mix(c,vec3(0.0),0.75);
+				if(corpo||telhado)
+					c=cor;
+				if(est>1.5&&abs(abs(p.x)-abs(p.y+0.2))<0.16&&abs(p.x)<0.9)
+					c=vec3(0.1,0.0,0.0);
+				}
 			else
 				{
 				/* peixe preso na poça: anel = ar que resta; salvo = nada e brilha; perdido = cinza parado */
@@ -1032,7 +1119,8 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 	glUniform4fvARB(locations[1],MAX_AGENTES,ag);
 	glUniform4fARB(locations[2],tx,ty,traio,tz);
 	glUniform4fARB(locations[3],GLfloat(tempo),achado?1.0f:0.0f,tesouro?GLfloat(tipoTesouro):0.0f,nivelAgua);
-	glUniform4fARB(locations[4],GLfloat(efeito),referencia,GLfloat(tipoTesouro),0.0f);
+	glUniform4fARB(locations[4],GLfloat(efeito),referencia,GLfloat(tipoTesouro),
+	               jogo==VULCAO&&jogoFase>0?1.0f:0.0f); // .w: jogo do vulcão (a água é lava; sem lava de enfeite)
 	glUniform4fARB(locations[5],lsx,lsy,ltx,lty);
 	glUniform4fARB(locations[6],lraio,labirinto?GLfloat(labEstado):0.0f,
 	               labEstado==2?GLfloat(tempo-labChegou):GLfloat(tempo-labInicio),0.0f);

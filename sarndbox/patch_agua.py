@@ -15,7 +15,9 @@ uniform vec4 extrasEfeito; // Projetor-LAOB: efeito do tema (0 = água normal)
 """)
     s = rep(s, "\t\tvec4 waterColor=vec4(colorW,colorW,1.0,1.0); // Water\n", """\t\tvec4 waterColor=vec4(colorW,colorW,1.0,1.0); // Water
 		float efA=extrasEfeito.x;
-		if(efA>0.5&&efA<1.5)
+		if(extrasEfeito.w>0.5)
+			waterColor=vec4(1.0,0.5+0.5*colorW,0.08+0.3*colorW,1.0); // jogo do vulcão: lava bem clara, em qualquer tema
+		else if(efA>0.5&&efA<1.5)
 			waterColor=vec4(1.0,0.3+0.55*colorW,0.0,1.0); // vulcão: lava
 		else if(efA>1.5&&efA<2.5)
 			waterColor=vec4(0.92+0.08*colorW,0.95+0.05*colorW,1.0,1.0); // inverno: neve

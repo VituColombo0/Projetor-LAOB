@@ -37,9 +37,12 @@ std::string fmt(const char* f,int a=0,int b=0)
 
 int Extras::jogoDoNome(const char* nome)
 	{
-	for(int j=1;j<NUM_JOGOS;++j)
-		if(std::string(nome)==NOMES[j])
-			return j;
+	/* Em 14/11/2026 o Victor tirou fazenda, lago, barquinho e resgate (repetitivos); o código
+	   deles continua aqui, mas só estes quatro podem ser pedidos: */
+	static const int ATIVOS[]={CORRIDA,VILA,ROTA,VULCAO};
+	for(int k=0;k<4;++k)
+		if(std::string(nome)==NOMES[ATIVOS[k]])
+			return ATIVOS[k];
 	return -1;
 	}
 
@@ -165,7 +168,8 @@ void Extras::novoJogo(void)
 				float sx,sy,bx,by;
 				naBorda(l,f,sx,sy);
 				naBorda(o,f,bx,by);
-				addFonte(sx,sy,n==3?0.6f:0.9f);
+				/* pouca água: com 0,9 ela atravessava a caixa sozinha e a rodada acabava em segundos */
+				addFonte(sx,sy,n==1?0.4f:n==2?0.32f:0.25f);
 				addPeca(P_ALVO,sx+(bx-sx)*lev,sy+(by-sy)*lev,n==1?5.0f:4.0f,t);
 				}
 			jogoDuracao=240.0f; // sem vencedor em 4 min: empate (a água não enche a caixa para sempre)
@@ -194,21 +198,22 @@ void Extras::novoJogo(void)
 				addFonte(px,py,n==1?0.9f:n==2?1.3f:1.7f);
 				jogoDuracao=n==1?40.0f:n==2?55.0f:70.0f;
 				for(int i=0;i<casas;++i)
-					if(pontoLivre(x,y,4.0f,12.0f,r-4.0f,r+0.5f))
+					if(pontoLivre(x,y,7.0f,12.0f,r-4.0f,r+0.5f))
 						addPeca(P_CASA,x,y,2.6f);
 				anuncia(fmt("Jogo: vulcão em erupção (%d casas); a lava sai em %d s",casas,int(PREPARO)));
 				}
 			else
 				{
-				/* chuva forte de um lado: três "nuvens" ao longo da borda */
+				/* a enchente vem de três lados diferentes (o quarto, sorteado, fica seco): com as três
+				   nascentes na mesma borda bastava uma barreira só para vencer */
 				for(int k=0;k<3;++k)
 					{
-					naBorda(lado,0.2f+0.3f*k,x,y);
-					addFonte(x,y,n==1?0.6f:n==2?0.8f:1.0f);
+					naBorda((lado+1+k)%4,0.25f+0.5f*aleatorio(),x,y);
+					addFonte(x,y,n==1?0.3f:n==2?0.4f:0.55f); // de três lados, cada uma mais fraca
 					}
 				jogoDuracao=n==1?40.0f:n==2?55.0f:70.0f;
 				for(int i=0;i<casas;++i)
-					if(pontoLivre(x,y,6.0f,12.0f,r-3.0f,r+1.0f))
+					if(pontoLivre(x,y,7.0f,12.0f,r-1.0f,r+2.0f) /* altura média: no fundo do vale alagavam em segundos */)
 						addPeca(P_CASA,x,y,2.6f);
 				anuncia(fmt("Jogo: salve a vila (%d casas); a chuva começa em %d s",casas,int(PREPARO)));
 				}
@@ -301,9 +306,37 @@ void Extras::novoJogo(void)
 			jogoFase=0;
 			return;
 		}
+	if(jogo==VILA||jogo==VULCAO)
+		{
+		/* placar: uma casinha pequena para cada casa, em fila num canto; fica vermelha quando a
+		   casa é perdida e verde quando termina a salvo */
+		int casas=nPecas,k=0;
+		/* no canto mais longe das nascentes (a água ou a lava cobririam o placar) */
+		float melhorD=-1.0f,px0=bmin[0]+4.0f,py0=bmin[1]+3.5f,dir=1.0f;
+		for(int c=0;c<4;++c)
+			{
+			float cx=(c&1)?bmax[0]-4.0f:bmin[0]+4.0f,cy=(c&2)?bmax[1]-3.5f:bmin[1]+3.5f;
+			float dmin=1e9f;
+			for(int f=0;f<nFontes;++f)
+				dmin=std::min(dmin,(fontes[f].x-cx)*(fontes[f].x-cx)+(fontes[f].y-cy)*(fontes[f].y-cy));
+			if(dmin>melhorD)
+				{
+				melhorD=dmin;
+				px0=cx;
+				py0=cy;
+				dir=(c&1)?-1.0f:1.0f;
+				}
+			}
+		for(int i=0;i<casas;++i)
+			if(pecas[i].tipo==P_CASA)
+				{
+				addPeca(P_PLACAR,px0+dir*4.2f*float(k),py0,1.6f,0,i);
+				++k;
+				}
+		}
 	jogoTotal=0;
 	for(int i=0;i<nPecas;++i)
-		if(pecas[i].tipo!=P_NASCENTE)
+		if(pecas[i].tipo!=P_NASCENTE&&pecas[i].tipo!=P_PLACAR)
 			++jogoTotal;
 	}
 
@@ -393,6 +426,9 @@ void Extras::jogoPasso(float dt)
 			novoJogo();
 		return;
 		}
+	for(int i=0;i<nPecas;++i)
+		if(pecas[i].tipo==P_PLACAR&&pecas[i].ordem>=0&&pecas[i].ordem<nPecas)
+			pecas[i].estado=pecas[pecas[i].ordem].estado;
 	if(jogoFase==2)
 		{
 		if(tempo-jogoFim>20.0) // 20 s de comemoração e começa outra rodada
