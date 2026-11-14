@@ -541,7 +541,7 @@ class MundoLaob(MembrosNaAreia):
             self.areia.mundo_rosto("Victor")
         self.status(["Victor"])
         self.assertEqual(self.areia.mundo(), (["GAZZIRO", "VICTOR"], ["VICTOR"]))
-        self.assertEqual(self.cmds()[-1], f"cmd mundo 0 2 {self.areia.PAINEL_ROSTOS} 6 GAZZIRO VICTOR+")
+        self.assertEqual(self.cmds()[-1], f"cmd mundo 0 2 {self.areia.PAINEL_ROSTOS} 8 GAZZIRO VICTOR+")
         self.assertIn("cmd jogoFim", self.cmds()[-5:])
         log = os.path.join(self.D, "sandbox.log")
         escreve(log, "Mundo: VICTOR está em casa\nAnimais: mundo (2)\nMundo: cidade montada\n"
@@ -557,7 +557,7 @@ class MundoLaob(MembrosNaAreia):
             self.areia.mundo_rosto("Fulano")
         self.status(["Victor", "Gazziro"])                              # Gazziro chegou ao laboratório
         self.assertTrue(self.areia.membros_atualiza())
-        self.assertEqual(self.cmds()[-1], "cmd mundo 0 2 - 6 GAZZIRO+ VICTOR+")
+        self.assertEqual(self.cmds()[-1], "cmd mundo 0 2 - 8 GAZZIRO+ VICTOR+")
         self.assertFalse(self.areia.membros_atualiza())
 
 

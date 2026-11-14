@@ -180,6 +180,22 @@ void SurfaceRenderer::setDemDistScale(""")
 			extras->uploadUniforms(el);
 			}
 """)
+    # cidade LAOB: sem as linhas de relevo por cima das ruas e das casas (a luz do relevo continua)
+    c = rep(c, """			fragmentMain+="\\
+				/* Modulate the base color by contour line color: */\\n\\
+				addContourLines(gl_FragCoord.xy,baseColor);\\n\\
+				\\n";
+""", """			if(extras!=0)
+				fragmentMain+="\\
+				if(extrasMundo.w<0.5)\\n\\
+					addContourLines(gl_FragCoord.xy,baseColor);\\n\\
+				\\n";
+			else
+				fragmentMain+="\\
+				/* Modulate the base color by contour line color: */\\n\\
+				addContourLines(gl_FragCoord.xy,baseColor);\\n\\
+				\\n";
+""")
     c = rep(c, "void SurfaceRenderer::setFaceImage(FaceImage* newFaceImage)", """void SurfaceRenderer::setExtras(const Extras* newExtras)
 	{
 	/* Ligar/desligar o tesouro ou os animais muda o shader: */

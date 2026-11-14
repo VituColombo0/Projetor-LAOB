@@ -145,7 +145,7 @@ class Painel(Ambiente):
         r = self.post("/brincar", json={"acao": "mundo"})
         self.assertEqual(r.status_code, 200, r.get_json())
         self.assertIn("Mundo LAOB", r.get_json()["msg"])
-        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd mundo 0 0 - 6")
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd mundo 0 0 - 8")
         self.assertEqual(self.get("/estado").get_json()["mundo"], [])    # sem fotos nem Willbert nos testes
 
     def test_fossil_pelo_painel(self):

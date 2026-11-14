@@ -695,7 +695,7 @@ def membros_atualiza():
 
 # ---------- mundo LAOB: os membros vivendo numa cidadezinha na areia (Mundo.cpp) ----------
 
-MORADORES_DO_MUNDO = 6   # bonecos sem nome, para a cidade ter movimento
+MORADORES_DO_MUNDO = 8   # bonecos sem nome, para a cidade ter movimento
 
 
 def _comando_mundo(nomes, n_fotos, presentes, com_painel):
@@ -704,8 +704,9 @@ def _comando_mundo(nomes, n_fotos, presentes, com_painel):
 
 
 def mundo():
-    """Liga o mundo LAOB: casas, laboratório, praça, café, parque e campinho, com os membros (e
-    alguns moradores sem nome) indo de um lugar para o outro. Devolve (nomes, presentes)."""
+    """Liga o mundo LAOB: uma cidade de três telas (bairro das casas, centro com laboratório, café,
+    mercado e praça, e lazer com parque, campinho e lago), com os membros e alguns moradores sem
+    nome indo de um lugar para o outro. Devolve (nomes, presentes)."""
     membros_com_foto()   # refaz o painel de rostos se a pasta mudou
     nomes, n_fotos, presentes = membros_lista()
     _brincadeira(_comando_mundo(nomes, n_fotos, presentes, True))

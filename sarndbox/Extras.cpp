@@ -36,8 +36,13 @@ Extras::Extras(void)
 		}
 	nNomes=giroNomes=nFotos=0;
 	mundoPedido=false;
+	camX=camAlvo=0.0f;
+	camTroca=0.0;
 	for(int i=0;i<MAX_AGENTES;++i)
 		{
+		wpN[i]=wpI[i]=wpCarro[i]=0;
+		for(int k=0;k<4;++k)
+			wpX[i][k]=wpY[i][k]=0.0f;
 		alvoX[i]=alvoY[i]=mAte[i]=mTroca[i]=0.0f;
 		temAlvo[i]=escondido[i]=false;
 		mEstado[i]=0;
@@ -465,7 +470,10 @@ void Extras::passo(float dt)
 		return;
 	dt=std::min(dt,0.1f);
 	if(modo==MUNDO)
-		mundoPasso(dt); // rotina de cada boneco: aonde vai, se entra, se vai de carro
+		{
+		mundoPasso(dt); // a cidade tem ruas e rotina próprias (Mundo.cpp): não usa o movimento pelo relevo
+		return;
+		}
 	for(int i=0;i<quantos;++i)
 		{
 		if(tipo[i]<0.5f)
@@ -679,7 +687,7 @@ void Extras::passo(float dt)
 /* ----------------------------------------------------------------- shader */
 
 const char* Extras::nomesUniforms[NUM_UNIFORMS]={"extrasCaixa","extrasAg","extrasTesouro","extrasInfo","extrasEfeito",
-	"extrasLab","extrasLab2","extrasJogo","extrasJogoInfo","extrasNomes","extrasNomesCfg","extrasRostos"};
+	"extrasLab","extrasLab2","extrasJogo","extrasJogoInfo","extrasNomes","extrasNomesCfg","extrasRostos","extrasMundo","extrasMundo2"};
 
 const char* Extras::glslVertexUniforms=R"GLSL(
 uniform mat4 extrasCaixa; // espaço da câmera -> caixa (cm)
@@ -701,6 +709,8 @@ uniform vec4 extrasJogo[32]; // jogos de água: por peça (x, y, raio, tipo) e (
 uniform vec4 extrasJogoInfo; // jogo (0 nenhum), fase, segundos na fase, vencedor ou próximo portão
 uniform float extrasNomes[72]; // membros: por pessoa, nº de letras e 8 letras (desenho 3x5 em bits)
 uniform vec4 extrasNomesCfg;  // quantos nomes, giro do texto (quartos de volta), quantos têm rosto no painel
+uniform vec4 extrasMundo;   // cidade LAOB: deslocamento da imagem (cm), largura e altura da caixa, ligada (1)
+uniform vec4 extrasMundo2;  // canto da caixa (x, y)
 uniform sampler2D extrasRostos; // painel de rostos dos membros (8 quadros lado a lado, com transparência)
 float exCaixa(vec2 p,vec2 metade,float raio)
 	{
@@ -914,6 +924,109 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				}
 			}
 		}
+	/* Cidade LAOB: o chão deixa de ser o relevo colorido e vira cidade (medidas iguais às do Mundo.cpp):
+	   avenida no meio, ruas transversais a cada terço de tela, calçadas, quarteirões gramados (os do
+	   centro calçados), árvores nos cantos e o caminho da porta até a calçada. */
+	if(extrasMundo.w>0.5)
+		{
+		vec2 u=vec2(ep.x-extrasMundo2.x+extrasMundo.x,ep.y-extrasMundo2.y);
+		float mw=extrasMundo.y;
+		float mh=extrasMundo.z;
+		float cw=mw/3.0;
+		float RA=2.4;
+		float RV=1.6;
+		float CAL=1.1;
+		float da=abs(u.y-mh*0.5);
+		float dv=abs(u.x-floor(u.x/cw+0.5)*cw);
+		float n=exRuido(u*0.8)*0.6+exRuido(u*2.9)*0.4;
+		float bairro=floor(u.x/mw);
+		vec3 g=mix(vec3(0.27,0.58,0.25),vec3(0.36,0.7,0.3),n);            // grama
+		if(bairro>0.5&&bairro<1.5)
+			g=mix(vec3(0.8,0.78,0.72),vec3(0.73,0.71,0.65),step(0.5,fract(u.x/1.6))*step(0.5,fract(u.y/1.6))
+			      +(1.0-step(0.5,fract(u.x/1.6)))*(1.0-step(0.5,fract(u.y/1.6))));  // centro: piso
+		bool rua=da<RA||dv<RV;
+		if(rua)
+			{
+			g=vec3(0.25,0.26,0.29)*(0.9+0.12*n);
+			if(da<RA&&dv>RV+2.4&&da<0.13&&fract(u.x/2.6)<0.55)
+				g=vec3(0.95,0.82,0.25);                                     // faixa amarela da avenida
+			if(da<RA&&dv>RV+0.5&&dv<RV+2.2&&fract(u.y/0.8)<0.5)
+				g=vec3(0.93);                                               // faixa de pedestres
+			if(dv<RV&&da>RA+0.6&&dv<0.09&&fract(u.y/2.2)<0.5)
+				g=vec3(0.85);                                               // tracejado das ruas
+			}
+		else if(da<RA+CAL||dv<RV+CAL*0.8)
+			g=mix(vec3(0.76,0.75,0.72),vec3(0.68,0.67,0.64),step(0.5,fract((u.x+u.y)/1.3)));  // calçada
+		else
+			{
+			/* dentro do quarteirão */
+			float alt=mh*0.5-(RA+CAL)-0.8;
+			vec2 q=vec2(u.x-(floor(u.x/cw)+0.5)*cw,da-(RA+CAL+alt*0.5));
+			float col=floor(u.x/cw);
+			bool cimaL=u.y>mh*0.5;
+			/* quarteirões sem construção (traçado fixo): estacionamento, jardins, bosque e horta */
+			float enfeite=(col>2.5&&col<3.5&&!cimaL)?1.0:((col>4.5&&col<5.5&&!cimaL)||(col>5.5&&col<6.5&&!cimaL))?2.0:
+			              (col>6.5&&col<7.5&&cimaL)?3.0:(col>7.5&&!cimaL)?4.0:0.0;
+			if(enfeite<0.5)
+				{
+				if(abs(q.x)<0.8&&q.y<0.0)
+					g=vec3(0.84,0.76,0.58);                                 // caminho da porta até a calçada
+				}
+			else if(enfeite<1.5)
+				{
+				/* estacionamento: asfalto, vagas pintadas e alguns carros parados */
+				if(abs(q.x)<cw*0.5-RV-CAL-2.6&&abs(q.y)<alt*0.5-2.8)
+					{
+					g=vec3(0.3,0.31,0.34);
+					float vaga=fract(q.x/2.6);
+					if(vaga<0.06&&abs(abs(q.y)-2.6)<2.0)
+						g=vec3(0.9);
+					float idx=floor(q.x/2.6)+(q.y>0.0?7.0:0.0);
+					if(exHash(vec2(idx,3.0))>0.45&&vaga>0.2&&vaga<0.85&&abs(abs(q.y)-2.7)<1.5)
+						g=(vec3(0.55)+0.45*cos(6.2832*(vec3(exHash(vec2(idx,9.0)))+vec3(0.0,0.33,0.67))))
+						  *(abs(abs(q.y)-2.7)<0.6?0.75:1.0);
+					}
+				}
+			else if(enfeite<2.5)
+				{
+				/* jardim: canteiros de flores e um caminho em cruz */
+				if(abs(q.x)<0.6||abs(q.y)<0.6)
+					g=vec3(0.84,0.76,0.58);
+				else
+					{
+					vec2 cel=floor(u/1.1);
+					float hf=exHash(cel);
+					if(hf>0.55&&distance(fract(u/1.1),vec2(0.5))<0.3)
+						g=vec3(0.55)+0.45*cos(6.2832*(vec3(hf*7.0)+vec3(0.0,0.33,0.67)));
+					}
+				}
+			else if(enfeite<3.5)
+				{
+				/* bosque: muitas árvores */
+				vec2 cel=floor(u/3.0);
+				vec2 pa=(cel+vec2(0.3)+0.4*vec2(exHash(cel),exHash(cel+vec2(5.0,1.0))))*3.0+vec2(0.1*sin(et*1.3+cel.x),0.0);
+				float dB=distance(u,pa);
+				if(dB<1.35)
+					g=mix(vec3(0.06,0.32,0.1),vec3(0.26,0.64,0.22),smoothstep(1.35,0.2,distance(u,pa+vec2(0.3))));
+				}
+			else
+				{
+				/* horta: canteiros em fileiras */
+				if(abs(q.x)<cw*0.5-RV-CAL-2.8&&abs(q.y)<alt*0.5-2.8)
+					g=fract(q.y/1.3)<0.55?mix(vec3(0.42,0.28,0.16),vec3(0.2,0.6,0.2),step(0.5,fract(q.x/0.8+floor(q.y/1.3)*0.37))):vec3(0.5,0.36,0.22);
+				}
+			vec2 canto=vec2(cw*0.5-RV-CAL-1.7,alt*0.5-1.6);
+			vec2 arv=vec2(abs(q.x),abs(q.y))-canto+vec2(0.12*sin(et*1.4+u.x),0.0);
+			float dA=length(arv);
+			if(dA<1.9)
+				g=mix(g,vec3(0.0),0.25*smoothstep(1.9,1.2,dA));              // sombra da árvore
+			if(dA<1.45)
+				g=mix(vec3(0.08,0.36,0.12),vec3(0.3,0.7,0.24),smoothstep(1.45,0.2,length(arv-vec2(0.3,0.3))));
+			if(bairro<0.5&&abs(abs(q.x)-(cw*0.5-RV-CAL-0.25))<0.12&&fract(u.y/0.7)<0.6)
+				g=vec3(0.93,0.9,0.82);                                      // cerquinha das casas
+			}
+		baseColor=vec4(g,1.0);
+		}
 	/* (as peças vêm antes dos bonecos: no mundo LAOB eles andam por cima da praça e do campinho) */
 	/* Jogos de água (Jogos.cpp): peças desenhadas sobre o relevo */
 	if(extrasJogoInfo.x>0.5)
@@ -1053,6 +1166,48 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				if(tabuas)
 					c=mix(vec3(0.62,0.42,0.22),vec3(0.35,0.22,0.1),linhas);
 				c=mix(c,est>0.5?vec3(1.0,0.82,0.2):vec3(0.85,0.65,0.4),anel);
+				}
+			else if(tipo>18.5)
+				{
+				/* lago de pesca: água com ondinhas, margem de areia, um píer e peixinhos passando */
+				if(d<r*1.12)
+					c=mix(c,vec3(0.86,0.8,0.6),smoothstep(r*1.12,r*1.02,d));
+				if(d<r)
+					{
+					float onda=0.5+0.5*sin(d*4.0-et*2.0+sin(ang*3.0)*1.5);
+					c=mix(vec3(0.1,0.42,0.78),vec3(0.3,0.66,0.95),onda*0.6+0.2*smoothstep(r,0.0,d));
+					for(int k=0;k<3;++k)
+						{
+						float fk=float(k);
+						vec2 pf=vec2(cos(et*0.5+fk*2.1),sin(et*0.7+fk*1.3))*r*(0.3+0.15*fk);
+						if(distance(q,pf)<0.3)
+							c=vec3(1.0,0.6,0.2);
+						}
+					}
+				if(abs(q.x)<0.75&&q.y>r*0.25&&q.y<r*1.12)
+					c=mix(vec3(0.6,0.42,0.22),vec3(0.42,0.28,0.14),step(0.75,fract(q.y*1.4)));
+				}
+			else if(tipo>17.5)
+				{
+				/* mercado: prédio com toldo verde, vitrine e caixas de frutas na frente */
+				bool corpoM=abs(q.x)<r*0.9&&q.y>-r*0.55&&q.y<r*0.6;
+				if(corpoM)
+					{
+					c=vec3(0.95,0.93,0.86);
+					if(q.y<-r*0.12)
+						c=mix(vec3(0.15,0.6,0.3),vec3(0.98),step(0.0,sin(q.x*4.0)));
+					else if(abs(q.x)<r*0.6&&abs(q.y-r*0.2)<r*0.18)
+						c=mix(vec3(0.3,0.38,0.48),vec3(1.0,0.9,0.5),b.y);
+					if(q.y>r*0.47)
+						c=vec3(0.8,0.3,0.2);
+					c*=mix(1.0,0.75,smoothstep(r*0.8,r*0.9,abs(q.x)));
+					}
+				for(int k=0;k<3;++k)
+					{
+					vec2 cx2=vec2((float(k)-1.0)*r*0.5,-r*0.78);
+					if(abs(q.x-cx2.x)<0.7&&abs(q.y-cx2.y)<0.5)
+						c=k==0?vec3(0.9,0.2,0.15):(k==1?vec3(0.95,0.75,0.1):vec3(0.3,0.7,0.2));
+					}
 				}
 			else if(tipo>16.5)
 				{
@@ -1434,7 +1589,7 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 	for(int i=0;i<MAX_AGENTES;++i)
 		{
 		bool visivel=i<quantos&&tipo[i]>0.5f&&vel[i]!=0.0f&&!(modo==MUNDO&&(escondido[i]||nPecas==0));
-		ag[i*4+0]=ax[i];
+		ag[i*4+0]=ax[i]-(modo==MUNDO?camX:0.0f); // na cidade, a imagem desliza
 		ag[i*4+1]=ay[i];
 		ag[i*4+2]=ang[i];
 		ag[i*4+3]=visivel?tipo[i]:0.0f;
@@ -1473,6 +1628,9 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 	bool comNomes=modo==MEMBROS||modo==MUNDO;
 	glUniform4fARB(locations[10],comNomes?GLfloat(nNomes):0.0f,GLfloat(giroNomes),
 	               comNomes?GLfloat(nFotos):0.0f,0.0f);
+	bool cidade=modo==MUNDO&&nPecas>0;
+	glUniform4fARB(locations[12],camX,bmax[0]-bmin[0],bmax[1]-bmin[1],cidade?1.0f:0.0f);
+	glUniform4fARB(locations[13],bmin[0],bmin[1],0.0f,0.0f);
 	/* painel de rostos na unidade de textura 6 (a 5 é a foto do modo Foto). O número da unidade vai
 	   sempre: um sampler2D deixado na unidade 0 (das texturas retangulares) invalidaria o desenho. */
 	glUniform1iARB(locations[11],6);
@@ -1503,7 +1661,7 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 		const Peca& p=pecas[i];
 		bool vale=(jogo!=SEM_JOGO||labirinto||modo==MUNDO)&&i<nPecas;
 		GLfloat* v=jg+i*8;
-		v[0]=p.x; v[1]=p.y; v[2]=p.raio; v[3]=vale?GLfloat(p.tipo):0.0f;
+		v[0]=p.x-(modo==MUNDO?camX:0.0f); v[1]=p.y; v[2]=p.raio; v[3]=vale?GLfloat(p.tipo):0.0f;
 		v[4]=GLfloat(p.estado); v[5]=p.nivel; v[6]=GLfloat(p.ordem);
 		v[7]=p.tipo==P_BARCO?p.ang:GLfloat(p.time);
 		}

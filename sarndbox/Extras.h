@@ -24,7 +24,7 @@ class Extras
 	public:
 	enum {MAX_AGENTES=24};
 	enum Modo {NADA=0,PEIXES=1,CARROS=2,TODOS=3,PESSOAS=4,MEMBROS=5,MUNDO=6}; // MUNDO: a cidade LAOB (Mundo.cpp) // TODOS = peixes, carrinhos e pessoas
-	enum {NUM_UNIFORMS=12};
+	enum {NUM_UNIFORMS=14};
 	enum {MAX_NOMES=8,MAX_LETRAS=8}; // membros do laboratório andando na areia, com o nome em cima
 	/* Efeito animado de cada tema de cor: */
 	enum Efeito {SEM_EFEITO=0,LAVA=1,NEVE=2,POEIRA=3,AREIA=4,ONDAS=5,BRILHO=6,CHUVA=7};
@@ -100,7 +100,7 @@ class Extras
 	/* Jogos de água (Jogos.cpp): como o labirinto, a água é a da simulação do SARndbox e a GPU mede
 	   quanta água há em cada peça (casa, planta, portão...) duas vezes por segundo. */
 	enum Jogo {SEM_JOGO=0,CORRIDA=1,VILA=2,FAZENDA=3,ROTA=4,LAGO=5,VULCAO=6,BARCO=7,RESGATE=8,NUM_JOGOS=9};
-	enum TipoPeca {P_NADA=0,P_NASCENTE=1,P_ALVO=2,P_CASA=3,P_PLANTA=4,P_PORTAO=5,P_LAGO=6,P_BARCO=7,P_PORTO=8,P_PEIXE=9,P_PLACAR=10,P_AVISO=11,P_PERIGO=12,P_LAB=13,P_PRACA=14,P_CAFE=15,P_PARQUE=16,P_CAMPO=17};
+	enum TipoPeca {P_NADA=0,P_NASCENTE=1,P_ALVO=2,P_CASA=3,P_PLANTA=4,P_PORTAO=5,P_LAGO=6,P_BARCO=7,P_PORTO=8,P_PEIXE=9,P_PLACAR=10,P_AVISO=11,P_PERIGO=12,P_LAB=13,P_PRACA=14,P_CAFE=15,P_PARQUE=16,P_CAMPO=17,P_MERCADO=18,P_PESCA=19};
 	enum {MAX_PECAS=16,MAX_FONTES=4};
 	struct Peca
 		{
@@ -145,6 +145,8 @@ class Extras
 	bool temAlvo[MAX_AGENTES],escondido[MAX_AGENTES];
 	int mEstado[MAX_AGENTES],mLugar[MAX_AGENTES],mCasa[MAX_AGENTES]; // 0 no lugar / 1 a caminho; peça atual ou destino; casa
 	double rostoAte[MAX_NOMES]; // até quando mostrar o rosto no balão
+	float wpX[MAX_AGENTES][4],wpY[MAX_AGENTES][4]; int wpN[MAX_AGENTES],wpI[MAX_AGENTES],wpCarro[MAX_AGENTES]; // pontos de passagem
+	float camX,camAlvo; double camTroca; // a cidade tem 3 telas de largura: deslocamento da imagem (cm)
 	bool mundoPedido;
 	void mundo(const std::vector<std::string>& lista,int giro,int fotos,int moradores);
 	void mundoMonta(void);

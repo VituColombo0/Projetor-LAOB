@@ -487,7 +487,7 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
 
   <section class="card" id="sec-laob">
     <h2>LAOB <span class="extra" id="laob-estado"></span></h2>
-    <p class="hint" id="laob-dica">Os membros do laboratório vivendo numa cidadezinha na areia: casas, laboratório, café, praça, parque e campinho.</p>
+    <p class="hint" id="laob-dica">Os membros do laboratório vivendo numa cidade de três bairros: casas, centro e lazer.</p>
     <div class="moradores" id="moradores"></div>
     <div class="grid" style="margin-top:12px">
       <button class="primary" id="laob-ligar">🏙️ Abrir o mundo LAOB</button>
@@ -578,7 +578,7 @@ const OUTROS = [
   {id: 'pessoas', ic: '🚶', t: 'Pessoas andando', c: 'Pessoinhas passeando pela areia.', tag: 'Animação',
    d: 'Pessoas vistas de cima caminham pela areia, desviam umas das outras, dos morros íngremes e dos lagos. Mudem o relevo e elas escolhem outro caminho.'},
   {id: 'mundo', ic: '🏙️', t: 'LAOB', c: 'Os membros vivendo numa cidadezinha.', tag: 'Mundo',
-   d: 'Cada membro do laboratório tem uma casa e uma rotina: vai ao laboratório, ao café, à praça, ao parque e ao campinho, a pé ou de carro quando é longe. Quem o Willbert está vendo no laboratório de verdade fica mais no laboratório da areia. Toque no nome de alguém, na seção LAOB, para ver o rosto num balão.'},
+   d: 'Uma cidade com três bairros: o das casas, o centro (laboratório, café, mercado e praça) e o de lazer (parque, campinho e lago de pesca). Cada membro tem casa e rotina, anda pelas calçadas e vai de carro pela avenida quando é longe. A imagem desliza para o bairro onde eles estão. O rosto aparece num balão quando o membro chega a um lugar, ou quando você toca no nome dele na seção LAOB.'},
   {id: 'todos', ic: '🐠', t: 'Tudo junto', c: 'Peixes, carrinhos e pessoas.', tag: 'Animação',
    d: 'Peixes no lago, carrinhos nos vales e pessoas passeando, tudo ao mesmo tempo.'},
 ];
@@ -713,9 +713,9 @@ async function carrega() {
     $('#laob-estado').textContent = ligado ? 'aberto' : '';
     $('#laob-ligar').hidden = ligado;
     $('#laob-dica').textContent = ligado
-      ? (mundo.length ? 'Toque num nome para ver o rosto num balão acima do boneco. Bolinha verde: está no laboratório de verdade agora.'
+      ? (mundo.length ? 'Toque num nome: a imagem vai até o bairro onde ele está e o rosto aparece num balão. Bolinha verde: está no laboratório de verdade agora.'
                       : 'Mundo aberto só com moradores sem nome: não há fotos de membros na pasta do projetor.')
-      : 'Os membros do laboratório vivendo numa cidadezinha na areia: casas, laboratório, café, praça, parque e campinho.';
+      : 'Os membros do laboratório vivendo numa cidade de três bairros: casas, centro e lazer.';
     const chaveM = JSON.stringify(mundo);
     if (M.dataset.chave !== chaveM) {
       M.dataset.chave = chaveM;
