@@ -1,6 +1,6 @@
 #!/bin/bash
 # Testes automáticos (não tocam no projetor nem no Kinect): bash testes/rodar.sh [python]
-# O python precisa de numpy, opencv e flask (no lab2: ~/SARndbox-rosto/venv/bin/python).
+# O python precisa de numpy, opencv e flask (no laob: ~/SARndbox-rosto/venv/bin/python).
 set -uo pipefail
 R=$(cd "$(dirname "$0")/.." && pwd)
 PY=${1:-$HOME/SARndbox-rosto/venv/bin/python}

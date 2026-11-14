@@ -1,9 +1,9 @@
 #!/bin/bash
-# Instala o Projetor-LAOB num PC que já roda o AR Sandbox (SARndbox 2.8) calibrado, como o lab2.
+# Instala o Projetor-LAOB num PC que já roda o AR Sandbox (SARndbox 2.8) calibrado, como o laob.
 #   bash instalar.sh              instala/atualiza tudo em ~/SARndbox-rosto (sem sudo)
 #   bash instalar.sh --compilar DIR   só monta e compila a versão com modo Foto em DIR (teste)
 # Variáveis: SARNDBOX_ORIG (padrão ~/SARndbox-2.8) e SARNDBOX_CALIB (pasta com BoxLayout.txt e
-# ProjectorMatrix.dat; padrão /root/etc/SARndbox-2.8, a que o SARndbox do lab2 usa).
+# ProjectorMatrix.dat; padrão /root/etc/SARndbox-2.8, a que o SARndbox do laob usa).
 # O SARndbox original nunca é alterado. Pode rodar de novo para atualizar.
 set -euo pipefail
 REPO=$(cd "$(dirname "$0")" && pwd)

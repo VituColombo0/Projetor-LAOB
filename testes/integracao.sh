@@ -1,5 +1,5 @@
 #!/bin/bash
-# Teste no PC de verdade (lab2), depois do instalar.sh. Usa o projetor por ~1 minuto e termina
+# Teste no PC de verdade (laob), depois do instalar.sh. Usa o projetor por ~1 minuto e termina
 # na topografia; o estado (última imagem, giro, ajustes) volta a ser o de antes.
 #   bash testes/integracao.sh
 set -uo pipefail

@@ -92,7 +92,7 @@ def recorta(img, rosto, borda=cv2.BORDER_REPLICATE):
 
 
 def mascara_pessoa(img):
-    """0..1 onde há pessoa (U²-Net de pessoas, ~3 s na CPU do lab2)."""
+    """0..1 onde há pessoa (U²-Net de pessoas, ~3 s na CPU do laob)."""
     net = cv2.dnn.readNetFromONNX(U2NET)
     rgb = cv2.cvtColor(cv2.resize(img, (320, 320), interpolation=cv2.INTER_LANCZOS4), cv2.COLOR_BGR2RGB)
     rgb = rgb.astype(np.float32) / max(float(rgb.max()), 1.0)

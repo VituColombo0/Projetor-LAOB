@@ -14,7 +14,7 @@ from base import AREIA_SRC, DADOS, escreve, imagem
 os.environ["AREIA_CALIB"] = DADOS
 import rosto  # noqa: E402
 
-# o que o Sandbox.cpp do lab2 imprime ao abrir ("área iluminada x -34.5358..24.7993 y -28.8498..13.0744")
+# o que o Sandbox.cpp do laob imprime ao abrir ("área iluminada x -34.5358..24.7993 y -28.8498..13.0744")
 AREA_CPP = (-34.5358, 24.7993, -28.8498, 13.0744)
 
 

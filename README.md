@@ -13,7 +13,7 @@
 
 ## Sobre
 
-Roda no PC **lab2**, junto ao AR Sandbox (SARndbox 2.8, Kinect v1 e projetor). Ao ligar o PC
+Roda no PC **laob**, junto ao AR Sandbox (SARndbox 2.8, Kinect v1 e projetor). Ao ligar o PC
 abre a **topografia** de sempre; por comando, atalho, painel do celular ou pelo
 [Willbert-LAOB](https://github.com/VituColombo0/Willbert-LAOB), a caixa passa a mostrar uma
 **foto** que se deforma conforme mexem na areia, ou uma das brincadeiras. Tudo roda localmente
@@ -36,7 +36,7 @@ abre a **topografia** de sempre; por comando, atalho, painel do celular ou pelo
 ```mermaid
 flowchart LR
     K[Kinect v1] --> SB
-    subgraph PC[lab2]
+    subgraph PC[laob]
         SB["SARndbox-rosto<br/>(cópia com modo Foto e Extras)"]
         ORIG["SARndbox-2.8 original<br/>(topografia)"]
         AR["areia.py<br/>comandos areia-*"]
@@ -55,7 +55,7 @@ flowchart LR
 
 - PC Ubuntu com o **SARndbox 2.8 compilado e calibrado** em `~/SARndbox-2.8`.
 - Kinect v1 e projetor (tela cheia no HDMI-0).
-- Placa NVIDIA com driver (no lab2: GTX 750 Ti, driver 535, kernel fixado com `kernel-com-driver.sh` do Willbert).
+- Placa NVIDIA com driver (no laob: GTX 750 Ti, driver 535, kernel fixado com `kernel-com-driver.sh` do Willbert).
 - Não precisa de sudo; o `instalar.sh` cria o Python próprio e baixa os modelos (YuNet e U²-Net, 176 MB).
 
 ## Instalação
@@ -78,7 +78,7 @@ Trabalho (e leva fotos de versões antigas para `Imagens/Fotos na areia`), troca
 `bash instalar.sh --compilar /tmp/teste` só testa a compilação.
 
 > [!WARNING]
-> Antes de reinstalar no lab2, compare o lab2 com o repositório: mudanças feitas direto na
+> Antes de reinstalar no laob, compare o laob com o repositório: mudanças feitas direto na
 > máquina se perdem com o `instalar.sh`.
 
 ## Uso
@@ -102,8 +102,8 @@ O jeito normal é o painel (`http://localhost:8090`, atalho na Área de Trabalho
 | `areia-labirinto [facil\|normal\|dificil\|nova\|placar\|parar]` | Labirinto de água |
 | `areia-vigia pausa` / `liga` | Pausa ou religa o vigia da topografia |
 
-**Painel do celular:** `http://<IP-DO-LAB2>:8090` — selfie, foto salva ou câmera do laboratório,
-modo, cores, brincadeiras e girar. O endereço aparece no canto do papel de parede do lab2
+**Painel do celular:** `http://<IP-DO-LAOB>:8090` — selfie, foto salva ou câmera do laboratório,
+modo, cores, brincadeiras e girar. O endereço aparece no canto do papel de parede do laob
 (`atualizar_papel_parede.py`, a cada minuto) e no atalho "Abrir painel da caixa de areia".
 
 ## Configuração
@@ -128,7 +128,7 @@ painel e sintaxe/shellcheck dos scripts):
 bash testes/rodar.sh
 ```
 
-No lab2, depois do `instalar.sh` (~1 min; compila, confere a instalação, o painel e o projetor de
+No laob, depois do `instalar.sh` (~1 min; compila, confere a instalação, o painel e o projetor de
 verdade, terminando na topografia):
 
 ```bash
@@ -145,7 +145,7 @@ recorte com U²-Net de pessoas (~3 s); a preparação (~5 s) fica em `fotos/cach
 trocar para uma já usada leva ~1 s.
 
 **Temas:** a topografia abre com `-uhm temas/atual.cpt -cp topografia.fifo`; `areia-tema` troca na
-hora pelo `colorMap` do SARndbox (~0,1 s). Pontos ajustados aos morros de ~8–10 cm do lab2.
+hora pelo `colorMap` do SARndbox (~0,1 s). Pontos ajustados aos morros de ~8–10 cm do laob.
 
 **Extras** (`sarndbox/Extras.*`): mapa de alturas de 1,5 cm por célula, 2× por segundo, simulação
 na CPU e desenho no shader. Comandos: `tesouro [cm]`, `tesouroFim`, `animais peixes|carros|todos|nada [n]`,
@@ -180,7 +180,7 @@ Projetor-LAOB/
 ├── areia/               # areia.py, comandos areia-*, painel.py, rosto.py, temas/
 ├── area-de-trabalho/    # atalho .desktop do painel
 ├── sistema/             # serviços e timers de usuário (painel, vigia, papel de parede)
-└── testes/              # rodar.sh (automático) e integracao.sh (no lab2)
+└── testes/              # rodar.sh (automático) e integracao.sh (no laob)
 ```
 
 No PC, tudo fica em `~/SARndbox-rosto` (cópia do SARndbox + estes arquivos, `venv/`, `modelos/`).
