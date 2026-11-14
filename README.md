@@ -2,7 +2,7 @@
 
 > Caixa de areia de realidade aumentada do Laboratório LAOB: projeta relevo colorido, fotos que se deformam com a areia e brincadeiras e jogos de água (tesouro, fósseis, peixes, labirinto, corrida de rios, vila, vulcão) a partir de um Kinect e um projetor.
 
-![SARndbox](https://img.shields.io/badge/base-SARndbox%202.8-blue) ![Kinect](https://img.shields.io/badge/sensor-Kinect%20v1-lightgrey) ![Testes](https://img.shields.io/badge/testes-72-brightgreen) ![Licença GPL-2.0](https://img.shields.io/badge/licença-GPL--2.0-orange)
+![SARndbox](https://img.shields.io/badge/base-SARndbox%202.8-blue) ![Kinect](https://img.shields.io/badge/sensor-Kinect%20v1-lightgrey) ![Testes](https://img.shields.io/badge/testes-73-brightgreen) ![Licença GPL-2.0](https://img.shields.io/badge/licença-GPL--2.0-orange)
 
 ## Sumário
 
@@ -26,7 +26,7 @@ abre a **topografia** de sempre; por comando, atalho, painel do celular ou pelo
 - **Esculpir:** o rosto vira relevo-alvo; o projetor pinta onde falta areia (vermelho) e onde sobra (azul).
 - **Caça ao tesouro** e **fósseis de dinossauro** (T-Rex, Triceratops, Pterodáctilo, pegada): cave para achar.
 - **Peixes, carrinhos e pessoas:** peixes em cardume nos lagos, carrinhos seguindo os vales e pessoas passeando pela areia.
-- **Membros do laboratório:** uma pessoinha com o nome em cima para cada membro que o Willbert está vendo no laboratório; quem chega aparece, quem sai some.
+- **Membros do laboratório:** cada membro anda pela areia com o próprio rosto num círculo e o nome embaixo; todos aparecem sempre, e quem o Willbert está vendo no laboratório ganha uma bolinha verde.
 - **Labirinto de água:** leve a água da nascente até o alvo sem encostar nas armadilhas do caminho (encostou, recomeça), com placar.
 - **Jogos de água** (fácil, normal, difícil; nova rodada 20 s após o fim):
 
@@ -110,7 +110,7 @@ O jeito normal é o painel (`http://localhost:8090`, atalho na Área de Trabalho
 | `areia-tesouro [facil\|normal\|dificil\|achou\|parar]` | Caça ao tesouro |
 | `areia-fossil trex [facil\|dificil]` | Fóssil: `trex`, `triceratops`, `pterodactilo`, `pegada` (também `achou`, `parar`) |
 | `areia-animais todos [n]` | `peixes`, `carros`, `pessoas` ou `todos` (também `parar`) |
-| `areia-animais membros` | Pessoinhas com o nome de quem o Willbert vê no laboratório |
+| `areia-animais membros` | Membros andando com rosto e nome (fotos `Nome.jpg` em `~/SARndbox-rosto/membros/`) |
 | `areia-labirinto [facil\|normal\|dificil\|nova\|placar\|parar]` | Labirinto de água |
 | `areia-jogo <jogo> [facil\|normal\|dificil]` | Jogo de água: `corrida`, `vila`, `rota`, `vulcao` (também `placar`, `nova`, `parar`, `ajuda`) |
 | `areia-vigia pausa` / `liga` | Pausa ou religa o vigia da topografia |
@@ -170,7 +170,7 @@ na CPU e desenho no shader. Comandos: `tesouro [cm]`, `tesouroFim`, `animais pei
 - **Peixes:** água = 1,5 cm abaixo da mediana; só nadam onde o corpo inteiro cabe na água (1,8 cm de folga da margem), com rastro e bolhas; cardume com separação de ~5,5 cm, curvas suaves (até 2,8 rad/s); preso numa poça por 4 s, reaparece num lago de verdade.
 - **Carrinhos:** só andam onde cabem inteiros em chão firme (2,2 cm de folga do lago e da borda), levantam poeira; seguem a curva de nível dos vales, evitam rampas e lagos, freiam só para o de número menor; travado 3 s, dá meia-volta.
 - **Pessoas:** mesmo movimento dos carrinhos com corpo menor (1,7 cm de folga) e passo lento; desenhadas de cima (sapatos, ombros, braços, cabeça).
-- **Membros:** o painel lê `present` do `status.json` que o Willbert publica em `/dev/shm/visao/` (a cada 5 s) e manda `membros <giro> NOME…`; quem já estava continua de onde estava. O nome é desenhado no shader com letras de 3×5 pontos (um número por letra); a cor da camisa sai do nome.
+- **Membros:** `membros.py` acha o rosto de cada foto de `membros/` (YuNet), recorta em círculo e monta `fotos/membros.rgba` (8 quadros de 128 px, RGBA); o Sandbox lê esse arquivo e o shader desenha o quadro de cada um (textura na unidade 6) e o nome em letras de 3×5 pontos. O painel lê `present` do `status.json` que o Willbert publica em `/dev/shm/visao/` (a cada 5 s) e manda `membros <giro> <n com rosto> <painel> NOME[+]…` (`+` = presente). As fotos ficam só na máquina, fora do repositório.
 - **Labirinto:** de 2 a 4 armadilhas (`P_PERIGO`) perto da reta nascente-alvo, medidas como as peças dos jogos; a nascente (disco de 2 cm) usa a água do próprio SARndbox (`addWater`); 2× por segundo mede a profundidade no alvo (`glGetTexImage`); com 0,25 cm escreve "Labirinto: a água chegou!", e após 20 s começa rodada nova.
 - **Jogos de água** (`sarndbox/Jogos.cpp`): até 4 nascentes e 16 peças (casa, portão, bandeira, placar) desenhadas no shader; fazenda, lago, barquinho e resgate foram retirados em 14/11/2026 (o código continua, sem comando). 2× por segundo a GPU devolve a água (`glGetTexImage` do nível e do fundo) e mede a maior e a média da profundidade em cada peça; com 0,3 cm conta como molhada. No vulcão, `extrasEfeito.w` escurece o relevo e pinta a água de lava em qualquer tema. Os avisos vão para o `sandbox.log` como linhas `Jogo: …`, que o painel e `areia-jogo placar` leem.
 - **Fluidez:** grade de água em 320×240 (`-wts 320 240`; 640×480 não dava conta na GTX 750 Ti). O log mostra `Desempenho: N quadros/s` a cada 30 s.
