@@ -29,7 +29,7 @@ PADRAO = {"modo": "original", "giro": 0, "espelho": False, "imagem": None, "fund
 MANTER_NO_CACHE = 40
 PASTA_FOTOS = "Fotos na areia"  # na pasta Imagens (antes: "2 - Fotos na areia" na Área de Trabalho)
 DIFICULDADE = {"facil": 4.0, "normal": 5.5, "dificil": 7.0}  # cm de areia em cima do tesouro
-ANIMAIS = ("peixes", "carros", "todos")
+ANIMAIS = ("peixes", "carros", "pessoas", "todos")
 TEMAS = os.path.join(D, "temas")
 TEMA_ATUAL = os.path.join(TEMAS, "atual.cpt")
 NOMES_TEMAS = {"classico": "Clássico", "vulcao": "Vulcão", "inverno": "Inverno", "marte": "Marte",
@@ -562,10 +562,11 @@ def fossil_fim():
 
 def animais(tipo, quantidade=None):
     t = _chave_tema(str(tipo))
-    t = {"peixe": "peixes", "carro": "carros", "carrinhos": "carros", "carrinho": "carros", "tudo": "todos"}.get(t, t)
+    t = {"peixe": "peixes", "carro": "carros", "carrinhos": "carros", "carrinho": "carros", "tudo": "todos",
+         "pessoa": "pessoas", "gente": "pessoas", "pessoinhas": "pessoas", "bonecos": "pessoas"}.get(t, t)
     if t not in ANIMAIS:
-        raise Erro("escolha: peixes, carros ou todos")
-    n = int(quantidade) if quantidade else (14 if t == "todos" else 10)
+        raise Erro("escolha: peixes, carros, pessoas ou todos")
+    n = int(quantidade) if quantidade else (15 if t == "todos" else 10)
     if not 1 <= n <= 24:
         raise Erro("quantidade: de 1 a 24")
     _brincadeira(f"animais {t} {n}")
@@ -573,7 +574,7 @@ def animais(tipo, quantidade=None):
 
 
 def animais_situacao():
-    """peixes, carros, todos ou nada (último pedido no registro; outra brincadeira tira os animais)."""
+    """peixes, carros, pessoas, todos ou nada (último pedido no registro; outra brincadeira tira os animais)."""
     if qual() != "rosto":
         return "nada"
     linhas = [l for l in _registro_caca() if l.startswith(("Animais", "Tesouro: escondendo", "Fossil: escondendo",
@@ -591,7 +592,8 @@ def animais_fim():
 
 # ---------- labirinto de água: uma nascente joga água; cavem canais até ela chegar ao alvo ----------
 
-LABIRINTO = {"facil": "Fácil (alvo perto)", "normal": "Normal (lados opostos)", "dificil": "Difícil (cantos opostos, menos água)"}
+LABIRINTO = {"facil": "Fácil (alvo perto, 2 armadilhas)", "normal": "Normal (lados opostos, 3 armadilhas)",
+             "dificil": "Difícil (cantos opostos, menos água, 4 armadilhas)"}
 _APELIDOS_LABIRINTO = {"1": "facil", "2": "normal", "3": "dificil", "medio": "normal"}
 
 
@@ -650,12 +652,14 @@ JOGOS = {
              "levantem diques e cavem valas em volta das casas. No canto da areia, uma fila de "
              "casinhas mostra quantas continuam de pé (branca) e quantas alagaram (vermelha)."),
     "rota": ("Rota com paradas", "A água tem que passar pelos portões 1, 2, 3… na ordem.",
-             "O portão que pisca amarelo é o próximo. Façam um caminho que leve a água por todos "
-             "os portões, na ordem, até a bandeira. Pular um portão não vale."),
-    "vulcao": ("Vulcão em erupção", "A lava desce do pico mais alto; muralhas salvam as casas.",
-               "A areia escurece e só a lava brilha, saindo do ponto mais alto. Construam muralhas e "
-               "valas para desviar a lava das casinhas. A fila de casinhas no canto mostra as que "
-               "estão a salvo (brancas) e as perdidas (vermelhas)."),
+             "Os portões ficam espalhados pela areia toda, em ordem sorteada: o caminho vira um "
+             "zigue-zague. O que pisca amarelo é o próximo. Levem a água por todos, na ordem, até a "
+             "bandeira. Pular um portão não vale."),
+    "vulcao": ("Vulcão em erupção", "Erupções em pulsos e bocas de lava que abrem de surpresa.",
+               "É um jogo de reagir: a cratera, no ponto mais alto, cospe lava em pulsos, e durante a "
+               "erupção abrem bocas novas em lugares sorteados. Um aviso piscando mostra onde a próxima "
+               "vai abrir, 6 segundos antes: corram para proteger as casas daquele lado. A fila de "
+               "casinhas no canto mostra as que estão de pé (brancas) e as perdidas (vermelhas)."),
 }
 # Tirados em 14/11/2026 a pedido do Victor (repetitivos): fazenda, lago, barco e resgate.
 NIVEIS_JOGO = {"facil": 1, "normal": 2, "dificil": 3, "1": 1, "2": 2, "3": 3, "medio": 2}

@@ -531,8 +531,8 @@ const $$ = s => document.querySelectorAll(s);
 let E = {}, NIVEL = 'normal';
 const AGUA = __JOGOS__;
 const OUTROS = [
-  {id: 'labirinto', ic: '🌊', t: 'Labirinto de água', c: 'Leve a água da nascente até a bandeira.', tag: 'Água',
-   d: 'Uma nascente joga água de verdade. Cavem canais e levantem paredes de areia para a água chegar à bandeira. Quando chega, o alvo fica dourado e outra rodada começa em 20 s.'},
+  {id: 'labirinto', ic: '🌊', t: 'Labirinto de água', c: 'Leve a água até a bandeira sem tocar nas armadilhas.', tag: 'Água',
+   d: 'No caminho reto entre a nascente e a bandeira há armadilhas vermelhas. Cavem um canal que dê a volta nelas: se a água encostar em uma, some tudo e recomeça. Quando chega à bandeira, o alvo fica dourado e outra rodada começa em 20 s.'},
   {id: 'tesouro', ic: '💰', t: 'Caça ao tesouro', c: 'Um baú escondido embaixo da areia.', tag: 'Escavar',
    d: 'O baú fica enterrado num lugar sorteado. Cavem procurando: quanto mais perto, mais o sinal brilha. Achou? Ele reaparece em outro lugar depois de 20 s. O nível muda a profundidade.'},
   {id: 'trex', ic: '🦖', t: 'Fóssil de dinossauro', c: 'Escavação de um esqueleto de T-Rex.', tag: 'Escavar',
@@ -541,8 +541,10 @@ const OUTROS = [
    d: 'Os peixes nadam onde a areia está mais funda (o lago). Cavem um lago novo ou abram um canal e eles vão atrás.'},
   {id: 'carros', ic: '🚗', t: 'Carrinhos', c: 'Carrinhos andam pelos vales.', tag: 'Animação',
    d: 'Os carrinhos andam pelos lugares planos e desviam de montanhas. Façam estradas na areia para eles passarem.'},
-  {id: 'todos', ic: '🐠', t: 'Peixes e carrinhos', c: 'Os dois juntos na areia.', tag: 'Animação',
-   d: 'Peixes no lago e carrinhos nos vales ao mesmo tempo.'},
+  {id: 'pessoas', ic: '🚶', t: 'Pessoas andando', c: 'Pessoinhas passeando pela areia.', tag: 'Animação',
+   d: 'Pessoas vistas de cima caminham pela areia, desviam umas das outras, dos morros íngremes e dos lagos. Mudem o relevo e elas escolhem outro caminho.'},
+  {id: 'todos', ic: '🐠', t: 'Tudo junto', c: 'Peixes, carrinhos e pessoas.', tag: 'Animação',
+   d: 'Peixes no lago, carrinhos nos vales e pessoas passeando, tudo ao mesmo tempo.'},
 ];
 const ICONES = {corrida: '🏁', vila: '🏘️', rota: '🚩', vulcao: '🌋'};
 const TODOS = [...AGUA.map(j => ({id: j[0], ic: ICONES[j[0]] || '💧', t: j[1], c: j[2], d: j[3], tag: 'Jogo de água'})), ...OUTROS];

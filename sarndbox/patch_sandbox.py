@@ -7,7 +7,7 @@
                                                            em outro lugar depois dos segundos (20)
    fossil [trex|triceratops|pterodactilo|pegada] [cm] [s]   escavação de fóssil (mesmo mecanismo do tesouro)
    fossilFim                                               encerra a escavação
-   animais peixes|carros|todos|nada [quantidade]           peixes no lago e carrinhos nos vales
+   animais peixes|carros|pessoas|todos|nada [quantidade]   peixes no lago, carrinhos e pessoas andando
    efeito <tema>                                           animação do tema (lava, neve, poeira...)
    labirinto [facil|normal|dificil] / labirintoNovo / labirintoFim (labirintoTeste: alvo na nascente)
                                                            labirinto de água: uma nascente joga água de
@@ -344,9 +344,10 @@ void Sandbox::toggleDEM(DEM* dem)
 					int m=-1;
 					if(tokens.size()>=2)
 						m=isToken(tokens[1],"peixes")?Extras::PEIXES:isToken(tokens[1],"carros")?Extras::CARROS:
+						  isToken(tokens[1],"pessoas")?Extras::PESSOAS:
 						  isToken(tokens[1],"todos")?Extras::TODOS:isToken(tokens[1],"nada")?Extras::NADA:-1;
 					if(m<0)
-						std::cerr<<"uso: animais peixes|carros|todos|nada [quantidade]"<<std::endl;
+						std::cerr<<"uso: animais peixes|carros|pessoas|todos|nada [quantidade]"<<std::endl;
 					else
 						{
 						int n=tokens.size()>=3?atoi(tokens[2].c_str()):(m==Extras::TODOS?14:10);
@@ -738,6 +739,8 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
 			labLeitura=Vrui::getApplicationTime();
 			if(extras.aguaNoAlvo(medeAguaNoAlvo(contextData)))
 				std::cout<<"Labirinto: a água chegou! ("<<extras.labRodadas<<" rodadas vencidas, "<<int(extras.labChegou-extras.labInicio)<<" s)"<<std::endl;
+			else if(extras.nPecas>0)
+				medeJogo(contextData); // armadilhas: a água não pode encostar nelas
 			}
 		if(extras.jogo!=Extras::SEM_JOGO&&extras.jogoFase==1&&Vrui::getApplicationTime()-labLeitura>0.5)
 			{

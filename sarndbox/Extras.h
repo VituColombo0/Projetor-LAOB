@@ -23,7 +23,7 @@ class Extras
 	{
 	public:
 	enum {MAX_AGENTES=24};
-	enum Modo {NADA=0,PEIXES=1,CARROS=2,TODOS=3};
+	enum Modo {NADA=0,PEIXES=1,CARROS=2,TODOS=3,PESSOAS=4}; // TODOS = peixes, carrinhos e pessoas
 	enum {NUM_UNIFORMS=9};
 	/* Efeito animado de cada tema de cor: */
 	enum Efeito {SEM_EFEITO=0,LAVA=1,NEVE=2,POEIRA=3,AREIA=4,ONDAS=5,BRILHO=6,CHUVA=7};
@@ -99,7 +99,7 @@ class Extras
 	/* Jogos de água (Jogos.cpp): como o labirinto, a água é a da simulação do SARndbox e a GPU mede
 	   quanta água há em cada peça (casa, planta, portão...) duas vezes por segundo. */
 	enum Jogo {SEM_JOGO=0,CORRIDA=1,VILA=2,FAZENDA=3,ROTA=4,LAGO=5,VULCAO=6,BARCO=7,RESGATE=8,NUM_JOGOS=9};
-	enum TipoPeca {P_NADA=0,P_NASCENTE=1,P_ALVO=2,P_CASA=3,P_PLANTA=4,P_PORTAO=5,P_LAGO=6,P_BARCO=7,P_PORTO=8,P_PEIXE=9,P_PLACAR=10};
+	enum TipoPeca {P_NADA=0,P_NASCENTE=1,P_ALVO=2,P_CASA=3,P_PLANTA=4,P_PORTAO=5,P_LAGO=6,P_BARCO=7,P_PORTO=8,P_PEIXE=9,P_PLACAR=10,P_AVISO=11,P_PERIGO=12};
 	enum {MAX_PECAS=16,MAX_FONTES=4};
 	struct Peca
 		{
@@ -132,6 +132,7 @@ class Extras
 	void jogoLeitura(const float* maxima,const float* media,float vx,float vy);
 	bool jogoPrecisaVelocidade(void) const {return jogo==BARCO&&jogoFase==1;}
 	void jogoPasso(float dt);
+	void armadilhasDoLabirinto(void); // peças P_PERIGO entre a nascente e o alvo
 	float vbx,vby; // última velocidade da água no barco
  // relógios, plantas secando, ar dos peixes, barco andando
 	void passo(float dt);

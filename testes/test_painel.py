@@ -131,7 +131,10 @@ class Painel(Ambiente):
         self.assertEqual(self.post("/brincar", json={"acao": "barco"}).status_code, 400)   # jogo retirado
         e = self.get("/estado").get_json()
         self.assertIn("casas", e["jogo"])
-        self.assertIn(e["animais"], ("nada", "peixes", "carros", "todos"))
+        self.assertIn(e["animais"], ("nada", "peixes", "carros", "pessoas", "todos"))
+        r = self.post("/brincar", json={"acao": "pessoas"})
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd animais pessoas 10")
         self.assertEqual(self.post("/brincar", json={"acao": "jogoNovo"}).status_code in (200, 400), True)
 
     def test_fossil_pelo_painel(self):

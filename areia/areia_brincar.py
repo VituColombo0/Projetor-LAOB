@@ -8,7 +8,8 @@
 
   areia-animais peixes       peixes nadando no lago (cave um buraco e ele vira lago)
   areia-animais carros       carrinhos andando pelos vales
-  areia-animais todos        os dois juntos (pode pôr a quantidade: areia-animais peixes 15)
+  areia-animais pessoas      pessoinhas passeando pela areia
+  areia-animais todos        tudo junto (pode pôr a quantidade: areia-animais peixes 15)
   areia-animais parar        tira os animais
 
   areia-fossil               enterra um fóssil de T-Rex (3 cm); achado, outro aparece em 30 s
@@ -63,7 +64,8 @@ def animais(args):
         print("Soltando os animais...")
         t, n = areia.animais(pedido, args[1] if len(args) > 1 else None)
         dica = " Cavem um buraco para fazer um lago: os peixes nadam nele." if t in ("peixes", "todos") else ""
-        print(f"{n} {'peixes' if t == 'peixes' else 'carrinhos' if t == 'carros' else 'peixes e carrinhos'} na areia!{dica}")
+        nome = {"peixes": "peixes", "carros": "carrinhos", "pessoas": "pessoas"}.get(t, "peixes, carrinhos e pessoas")
+        print(f"{n} {nome} na areia!{dica}")
     return 0
 
 
@@ -108,7 +110,8 @@ def labirinto(args):
         d = areia.labirinto(pedido)
         print(f"Labirinto de água ligado ({areia.LABIRINTO[d]})!\n"
               "A água nasce nas ondas azuis. Cavem canais e levantem paredes de areia\n"
-              "para levar a água até a bandeira vermelha. Quando chegar, o alvo fica dourado.")
+              "para levar a água até a bandeira vermelha SEM encostar nas armadilhas vermelhas\n"
+              "(se encostar, a água some e recomeça). Quando chegar, o alvo fica dourado.")
     return 0
 
 

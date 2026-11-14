@@ -235,22 +235,22 @@ void Extras::novoJogo(void)
 			{
 			float sx,sy,bx,by;
 			naBorda(lado,0.2f+0.6f*aleatorio(),sx,sy);
-			naBorda(oposto[lado],0.2f+0.6f*aleatorio(),bx,by);
 			addFonte(sx,sy,0.9f);
 			int portoes=n==1?2:n==2?3:4;
-			/* portões espalhados entre a nascente e a bandeira, com desvio lateral sorteado */
+			/* portões sorteados pela caixa inteira, longe uns dos outros e da nascente, em ordem
+			   também sorteada: o caminho vira um zigue-zague (antes ficavam em fila entre a nascente
+			   e a bandeira e bastava um canal reto) */
 			for(int k=1;k<=portoes;++k)
 				{
-				float f=float(k)/float(portoes+1);
-				float px=sx+(bx-sx)*f,py=sy+(by-sy)*f;
-				float nx=-(by-sy),ny=bx-sx,nl=std::sqrt(nx*nx+ny*ny)+1e-6f;
-				float desvio=(aleatorio()-0.5f)*(n==3?24.0f:16.0f);
-				px+=nx/nl*desvio;
-				py+=ny/nl*desvio;
-				px=std::max(bmin[0]+m,std::min(bmax[0]-m,px));
-				py=std::max(bmin[1]+m,std::min(bmax[1]-m,py));
-				addPeca(P_PORTAO,px,py,3.2f,0,k);
+				if(!pontoLivre(x,y,7.0f,16.0f,-1e9f,1e9f)&&!pontoLivre(x,y,6.0f,10.0f,-1e9f,1e9f))
+					{
+					x=bmin[0]+m+aleatorio()*(w-2.0f*m);
+					y=bmin[1]+m+aleatorio()*(h-2.0f*m);
+					}
+				addPeca(P_PORTAO,x,y,3.2f,0,k);
 				}
+			if(!pontoLivre(bx,by,6.0f,16.0f,-1e9f,1e9f))
+				naBorda(oposto[lado],0.2f+0.6f*aleatorio(),bx,by);
 			addPeca(P_ALVO,bx,by,4.0f,2);
 			jogoDuracao=n==1?180.0f:n==2?240.0f:300.0f;
 			anuncia(fmt("Jogo: rota com %d paradas",portoes));
@@ -355,7 +355,22 @@ void Extras::terminaRodada(const std::string& resultado,int vencedor)
 
 void Extras::jogoLeitura(const float* maxima,const float* media,float vx,float vy)
 	{
-	if(jogo==SEM_JOGO||jogoFase!=1)
+	if(jogo==SEM_JOGO)
+		{
+		/* Labirinto: a água não pode encostar nas armadilhas (senão recomeça do zero) */
+		if(labirinto&&labEstado==1&&tempo-labInicio>1.5)
+			for(int i=0;i<nPecas;++i)
+				if(pecas[i].tipo==P_PERIGO&&maxima[i]>=MOLHADO)
+					{
+					pecas[i].estado=1; // pisca forte por 2 s
+					labZerarAgua=true;
+					labInicio=tempo;
+					anuncia("Labirinto: a água tocou numa armadilha! Começa de novo");
+					break;
+					}
+		return;
+		}
+	if(jogoFase!=1)
 		return;
 	vbx=vx;
 	vby=vy;
@@ -416,10 +431,37 @@ void Extras::jogoLeitura(const float* maxima,const float* media,float vx,float v
 		}
 	}
 
+void Extras::armadilhasDoLabirinto(void)
+	{
+	/* Armadilhas no caminho reto entre a nascente e o alvo (2, 3 ou 4), com um desvio pequeno
+	   para um lado e para o outro: a água tem que dar a volta. É o que diferencia o labirinto
+	   da rota com paradas (lá a água TEM que passar pelos portões; aqui ela NÃO pode encostar). */
+	nPecas=0;
+	int quantas=labDificuldade+1;
+	float dx=ltx-lsx,dy=lty-lsy,dl=std::sqrt(dx*dx+dy*dy)+1e-6f;
+	float nx=-dy/dl,ny=dx/dl;
+	for(int k=0;k<quantas;++k)
+		{
+		float f=(float(k)+1.0f)/(float(quantas)+1.0f);
+		float lateral=((k&1)?-1.0f:1.0f)*(1.0f+3.0f*aleatorio());
+		float x=lsx+dx*f+nx*lateral,y=lsy+dy*f+ny*lateral;
+		float ds=(x-lsx)*(x-lsx)+(y-lsy)*(y-lsy),dt2=(x-ltx)*(x-ltx)+(y-lty)*(y-lty);
+		if(ds<64.0f||dt2<64.0f||!dentro(x,y,3.0f))
+			continue; // colada na nascente, no alvo ou fora da areia: não põe
+		addPeca(P_PERIGO,x,y,3.2f);
+		}
+	}
+
 void Extras::jogoPasso(float dt)
 	{
 	if(jogo==SEM_JOGO)
+		{
+		if(labirinto)
+			for(int i=0;i<nPecas;++i)
+				if(pecas[i].tipo==P_PERIGO&&pecas[i].estado==1&&tempo-labInicio>2.0)
+					pecas[i].estado=0;
 		return;
+		}
 	if(jogoPedido)
 		{
 		if(mapaOk)
@@ -460,8 +502,45 @@ void Extras::jogoPasso(float dt)
 		case VILA:
 		case VULCAO:
 			{
-			for(int k=0;k<nFontes;++k)
-				fontes[k].ativa=t>=PREPARO;
+			if(jogo==VILA)
+				for(int k=0;k<nFontes;++k)
+					fontes[k].ativa=t>=PREPARO; // chuva constante: dá para planejar tudo antes
+			else
+				{
+				/* Vulcão: é de reagir. A cratera cospe lava em pulsos (9 s sim, 5 s não) e, durante a
+				   erupção, abrem bocas novas em lugares sorteados: 6 s antes aparece o aviso piscando. */
+				float te=float(t)-PREPARO;
+				fontes[0].ativa=te>=0.0f&&std::fmod(te,14.0f)<9.0f;
+				for(int k=1;k<nFontes;++k)
+					fontes[k].ativa=true;
+				int bocas=jogoNivel; // 1, 2 ou 3 bocas extras
+				int abertas=nFontes-1;
+				Peca* aviso=std::find_if(pecas,pecas+nPecas,[](const Peca& q){return q.tipo==P_AVISO;});
+				float quando=12.0f+16.0f*float(abertas); // segundos de erupção até a próxima boca abrir
+				if(abertas<bocas&&nFontes<MAX_FONTES)
+					{
+					if(aviso==pecas+nPecas&&te>=quando-6.0f&&nPecas<MAX_PECAS)
+						{
+						float vx,vy;
+						if(pontoLivre(vx,vy,8.0f,9.0f,referencia-1.0f,1e9f,300))
+							{
+							addPeca(P_AVISO,vx,vy,3.0f);
+							anuncia("Jogo: a terra tremeu! Uma boca de lava vai abrir");
+							}
+						}
+					else if(aviso!=pecas+nPecas&&te>=quando)
+						{
+						/* o aviso vira nascente (sem criar outra peça) */
+						fontes[nFontes].x=aviso->x;
+						fontes[nFontes].y=aviso->y;
+						fontes[nFontes].vazao=0.6f;
+						fontes[nFontes].ativa=true;
+						++nFontes;
+						aviso->tipo=P_NASCENTE;
+						anuncia("Jogo: abriu uma boca de lava!");
+						}
+					}
+				}
 			int casas=contaEstado(P_CASA,0)+contaEstado(P_CASA,2);
 			if(t>=PREPARO+jogoDuracao)
 				{

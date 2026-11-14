@@ -69,7 +69,7 @@ class UmaBrincadeiraPorVez(Ambiente):
         e["modo"] = "rosto"
         self.areia.aplica(e)
         c = self.cmds()
-        self.assertIn("cmd animais nada", c[c.index("cmd animais todos 14"):])
+        self.assertIn("cmd animais nada", c[c.index("cmd animais todos 15"):])
         self.assertTrue(c[-2].startswith("cmd rosto "))
 
 
@@ -265,7 +265,9 @@ class Brincadeiras(Ambiente):
         self.assertEqual(self.areia.animais("Peixes"), ("peixes", 10))
         self.assertEqual(self.comandos()[-1], "cmd animais peixes 10")
         self.assertEqual(self.areia.animais("carrinhos", "5"), ("carros", 5))
-        self.assertEqual(self.areia.animais("todos"), ("todos", 14))
+        self.assertEqual(self.areia.animais("todos"), ("todos", 15))
+        self.assertEqual(self.areia.animais("gente", 6), ("pessoas", 6))
+        self.assertEqual(self.comandos()[-1], "cmd animais pessoas 6")
         for t, n in (("gatos", None), ("peixes", "99")):
             with self.assertRaises(self.areia.Erro):
                 self.areia.animais(t, n)

@@ -285,6 +285,7 @@ void Extras::novoLabirinto(int dificuldade)
 	labEstado=1;
 	labInicio=tempo;
 	labZerarAgua=true;
+	armadilhasDoLabirinto();
 	}
 
 bool Extras::aguaNoAlvo(float nivel)
@@ -316,7 +317,7 @@ void Extras::nasce(int i)
 	ax[i]=x;
 	ay[i]=y;
 	ang[i]=aleatorio()*2.0f*PI;
-	vb[i]=peixe?(4.0f+aleatorio()*3.0f):(6.0f+aleatorio()*4.0f);
+	vb[i]=peixe?(4.0f+aleatorio()*3.0f):tipo[i]>=3.0f?(2.2f+aleatorio()*1.4f):(6.0f+aleatorio()*4.0f); // pessoa anda devagar
 	vel[i]=vb[i];
 	parado[i]=0.0f;
 	}
@@ -335,8 +336,9 @@ void Extras::povoa(int novoModo,int quantidade)
 		vel[i]=0.0f;
 		if(i>=quantos||modo==NADA)
 			continue;
-		bool peixe=(modo==PEIXES)||(modo==TODOS&&i%2==0);
-		tipo[i]=(peixe?1.0f:2.0f)+0.05f+0.9f*aleatorio(); // a fração é a cor
+		bool peixe=(modo==PEIXES)||(modo==TODOS&&i%3==0);
+		bool pessoa=(modo==PESSOAS)||(modo==TODOS&&i%3==2);
+		tipo[i]=(peixe?1.0f:pessoa?3.0f:2.0f)+0.05f+0.9f*aleatorio(); // a fração é a cor
 		if(mapaOk)
 			nasce(i);
 		}
@@ -455,24 +457,30 @@ void Extras::passo(float dt)
 				continue;
 				}
 			const float desvios[]={0.0f,0.35f,-0.35f,0.7f,-0.7f,1.1f,-1.1f};
+			/* Pessoa (tipo 3): mesmo jeito de andar do carrinho, com corpo menor, passo curto e um
+			   vai-e-vem de quem passeia */
+			const bool pessoa=tipo[i]>=3.0f;
+			const float rc=pessoa?1.7f:2.2f,olha=pessoa?3.5f:4.0f,perto=pessoa?5.5f:7.0f;
 			float melhor=1e9f,escolha=PI,hEscolha=h0;
 			for(int k=0;k<7;++k)
 				{
 				float a=ang[i]+desvios[k];
-				float px=ax[i]+std::cos(a)*4.0f,py=ay[i]+std::sin(a)*4.0f;
+				float px=ax[i]+std::cos(a)*olha,py=ay[i]+std::sin(a)*olha;
 				float h=altura(px,py);
 				/* à frente tem que caber o carrinho inteiro em chão firme, sem paredão nem barranco */
-				if(!chaoLivre(px,py,2.2f)||!chaoLivre(ax[i]+std::cos(a)*2.0f,ay[i]+std::sin(a)*2.0f,2.2f)
+				if(!chaoLivre(px,py,rc)||!chaoLivre(ax[i]+std::cos(a)*olha*0.5f,ay[i]+std::sin(a)*olha*0.5f,rc)
 				   ||h-h0>2.0f||h0-h>3.0f)
 					continue;
 				/* vale: baixo, mas sem despencar (segue a curva de nível); longe dos outros carros */
 				float nota=0.35f*h+0.6f*std::abs(h-h0)+0.8f*std::abs(desvios[k]);
+				if(pessoa) // passeia: de tempos em tempos prefere virar para um lado
+					nota=0.5f*std::abs(h-h0)+0.6f*std::abs(desvios[k]-0.7f*std::sin(float(tempo)*0.35f+float(i)*2.3f));
 				for(int j=0;j<quantos;++j)
 					if(j!=i&&tipo[j]>=2.0f&&vel[j]!=0.0f)
 						{
 						float d=std::sqrt((ax[j]-px)*(ax[j]-px)+(ay[j]-py)*(ay[j]-py));
-						if(d<7.0f)
-							nota+=2.5f*(1.0f-d/7.0f);
+						if(d<perto)
+							nota+=2.5f*(1.0f-d/perto);
 						}
 				if(nota<melhor)
 					{
@@ -490,7 +498,7 @@ void Extras::passo(float dt)
 					continue;
 				float dx=ax[j]-ax[i],dy=ay[j]-ay[i];
 				float adiante=dx*c0+dy*s0,lado=-dx*s0+dy*c0;
-				if(adiante>0.0f&&adiante<7.0f&&std::abs(lado)<3.0f)
+				if(adiante>0.0f&&adiante<perto&&std::abs(lado)<(pessoa?1.8f:3.0f))
 					{
 					frente=std::min(frente,adiante);
 					if(escolha!=PI)
@@ -507,12 +515,12 @@ void Extras::passo(float dt)
 			/* Desce mais rápido, sobe devagar; curva e carro à frente freiam */
 			float rampa=h0>SEM+1.0f?(hEscolha-h0):0.0f;
 			float alvoVel=vb[i]*std::max(0.45f,std::min(1.35f,1.0f-0.25f*rampa))*(1.0f-0.3f*std::min(1.0f,std::abs(escolha)));
-			if(frente<7.0f)
-				alvoVel*=std::max(0.0f,(frente-3.0f)/4.0f);
+			if(frente<perto)
+				alvoVel*=std::max(0.0f,(frente-perto*0.43f)/(perto*0.57f));
 			vel[i]+=(alvoVel-vel[i])*std::min(1.0f,2.5f*dt);
 			vel[i]=std::max(vel[i],0.05f); // 0 é "escondido"
 			float nx=ax[i]+std::cos(ang[i])*vel[i]*dt,ny=ay[i]+std::sin(ang[i])*vel[i]*dt;
-			bool andou=chaoLivre(nx,ny,2.2f)||(!chaoLivre(ax[i],ay[i],2.2f)&&dentro(nx,ny,1.5f)&&!agua(nx,ny)&&altura(nx,ny)>SEM+1.0f);
+			bool andou=chaoLivre(nx,ny,rc)||(!chaoLivre(ax[i],ay[i],rc)&&dentro(nx,ny,1.5f)&&!agua(nx,ny)&&altura(nx,ny)>SEM+1.0f);
 			if(andou)
 				{
 				ax[i]=nx;
@@ -524,11 +532,12 @@ void Extras::passo(float dt)
 				if(j==i||tipo[j]<2.0f||vel[j]==0.0f)
 					continue;
 				float dx=ax[i]-ax[j],dy=ay[i]-ay[j],d2=dx*dx+dy*dy;
-				if(d2<20.0f&&d2>1e-4f) // ~4,5 cm (um carrinho tem ~4,3 x 2,1 cm)
+				float junto=(pessoa&&tipo[j]>=3.0f)?3.8f:4.5f; // duas pessoas chegam mais perto que dois carros
+				if(d2<junto*junto&&d2>1e-4f) // ~4,5 cm (um carrinho tem ~4,3 x 2,1 cm)
 					{
-					float d=std::sqrt(d2),empurra=std::min(0.5f,(4.5f-d)*0.25f);
+					float d=std::sqrt(d2),empurra=std::min(0.5f,(junto-d)*0.25f);
 					float px=ax[i]+dx/d*empurra,py=ay[i]+dy/d*empurra;
-					if(chaoLivre(px,py,2.2f))
+					if(chaoLivre(px,py,rc))
 						{
 						ax[i]=px;
 						ay[i]=py;
@@ -847,6 +856,32 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				baseColor.rgb=mix(baseColor.rgb,vec3(0.9,0.97,1.0),clamp(rastro*0.35+bolhas*0.8,0.0,1.0));
 				}
 			}
+		else if(a.w>=3.0)
+			{
+			/* Pessoa vista de cima: sapatos que alternam, ombros com a camisa, braços balançando e cabeça */
+			vec2 pl=l/1.6;
+			vec2 pls=ls/1.6;
+			float passo=sin(et*7.0+float(i)*1.3);
+			vec3 pele=mix(vec3(0.96,0.80,0.66),vec3(0.52,0.34,0.22),fract(hue*7.3));
+			vec3 cabelo=mix(vec3(0.1,0.07,0.05),vec3(0.55,0.38,0.18),fract(hue*3.7));
+			float peE=length((pl-vec2(0.55*passo,0.38))/vec2(0.5,0.24));
+			float peD=length((pl-vec2(-0.55*passo,-0.38))/vec2(0.5,0.24));
+			float ombros=length(pl/vec2(0.55,1.0));
+			float bracoE=length(pl-vec2(-0.45*passo,0.98));
+			float bracoD=length(pl-vec2(0.45*passo,-0.98));
+			float cabeca=length(pl-vec2(0.08,0.0));
+			float sombra=length(pls/vec2(0.75,1.1));
+			if(cabeca<0.52)
+				baseColor=vec4(pl.x>0.3?pele:cabelo*(0.85+0.3*smoothstep(0.5,0.0,cabeca)),1.0);
+			else if(ombros<1.0)
+				baseColor=vec4(cor*mix(1.15,0.7,smoothstep(0.3,1.0,ombros)),1.0);
+			else if(bracoE<0.27||bracoD<0.27)
+				baseColor=vec4(pele*0.95,1.0);
+			else if(peE<1.0||peD<1.0)
+				baseColor=vec4(0.12,0.1,0.1,1.0);
+			else if(sombra<1.0)
+				baseColor.rgb*=0.72;
+			}
 		else
 			{
 			/* Carrinho: carroceria arredondada, cabine, vidros, rodas, faróis com facho e lanternas */
@@ -1066,6 +1101,26 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					c=mix(vec3(0.62,0.42,0.22),vec3(0.35,0.22,0.1),linhas);
 				c=mix(c,est>0.5?vec3(1.0,0.82,0.2):vec3(0.85,0.65,0.4),anel);
 				}
+			else if(tipo>11.5)
+				{
+				/* armadilha do labirinto: disco vermelho com espinhos girando; ao ser tocada, pisca */
+				float espinhos=r*(0.78+0.22*abs(sin(ang*5.0+et*1.5)));
+				float dentroA=smoothstep(espinhos,espinhos-0.5,d);
+				float xis=smoothstep(0.35,0.1,abs(abs(q.x)-abs(q.y)))*step(d,r*0.55);
+				vec3 cor=mix(vec3(0.75,0.05,0.05),vec3(1.0,0.35,0.1),0.5+0.5*sin(et*3.0));
+				if(est>0.5)
+					cor=mix(cor,vec3(1.0),0.5+0.5*sin(et*25.0));
+				c=mix(c,cor,dentroA*0.85);
+				c=mix(c,vec3(1.0,0.95,0.6),xis*dentroA);
+				}
+			else if(tipo>10.5)
+				{
+				/* aviso do vulcão: aqui vai abrir uma boca de lava (anéis que fecham, piscando) */
+				float pisca=0.5+0.5*sin(et*12.0);
+				float anel=smoothstep(0.5,0.0,abs(d-r*(1.6-fract(et*1.2))));
+				float miolo=smoothstep(r*0.5,0.0,d);
+				c=mix(c,mix(vec3(1.0,0.9,0.1),vec3(1.0,0.2,0.0),pisca),clamp(anel+miolo*pisca,0.0,1.0)*0.9);
+				}
 			else if(tipo>9.5)
 				{
 				/* placar: casinha pequena; branca = de pé, vermelha com X = perdida, verde = salva */
@@ -1128,14 +1183,14 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 	for(int i=0;i<MAX_PECAS;++i)
 		{
 		const Peca& p=pecas[i];
-		bool vale=jogo!=SEM_JOGO&&i<nPecas;
+		bool vale=(jogo!=SEM_JOGO||labirinto)&&i<nPecas;
 		GLfloat* v=jg+i*8;
 		v[0]=p.x; v[1]=p.y; v[2]=p.raio; v[3]=vale?GLfloat(p.tipo):0.0f;
 		v[4]=GLfloat(p.estado); v[5]=p.nivel; v[6]=GLfloat(p.ordem);
 		v[7]=p.tipo==P_BARCO?p.ang:GLfloat(p.time);
 		}
 	glUniform4fvARB(locations[7],MAX_PECAS*2,jg);
-	glUniform4fARB(locations[8],GLfloat(jogo!=SEM_JOGO&&jogoFase>0?jogo:0),GLfloat(jogoFase),
+	glUniform4fARB(locations[8],GLfloat(jogo!=SEM_JOGO&&jogoFase>0?jogo:(labirinto&&nPecas>0?99:0)),GLfloat(jogoFase),
 	               GLfloat(jogoFase==2?tempo-jogoFim:tempo-jogoInicio),
 	               jogo==ROTA?GLfloat(proximoPortao):GLfloat(jogoVencedor));
 	}
