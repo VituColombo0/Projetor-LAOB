@@ -25,6 +25,7 @@ for f in BoxLayout.txt ProjectorMatrix.dat HeightColorMap.cpt SARndbox.cfg; do
 done
 
 echo "[2/8] modo Foto: patches e compilação"
+PROGRAMA_ANTES=$(md5sum "$DEST/bin/SARndbox" 2>/dev/null | cut -d" " -f1 || true)
 cp "$REPO"/sarndbox/{FaceImage.h,FaceImage.cpp,Extras.h,Extras.cpp,Jogos.cpp,patch_surface.py,patch_sandbox.py,patch_agua.py,projetor.cfg} "$DEST/"
 S=share/SARndbox-2.8/Shaders/SurfaceAddWaterColor.fs
 mkdir -p "$DEST/$(dirname "$S")" && cp "$ORIG/$S" "$DEST/$S"   # sempre do original, antes do patch
@@ -116,6 +117,15 @@ mkdir -p "$HOME/Pictures"
 cp "$REPO/sistema/atualizar-papel-parede.service" "$REPO/sistema/atualizar-papel-parede.timer" "$HOME/.config/systemd/user/"
 systemctl --user daemon-reload
 systemctl --user enable --now atualizar-papel-parede.timer >/dev/null 2>&1 || true
+
+# A areia aberta continua sendo o programa antigo até fechar (em 14/11/2026 os jogos novos
+# "não existiam" depois de instalar): se o programa mudou e ela está aberta, reabre agora.
+if [ "$PROGRAMA_ANTES" != "$(md5sum "$DEST/bin/SARndbox" | cut -d" " -f1)" ] \
+   && [ "$("$DEST/sandbox.sh" estado 2>/dev/null)" = rosto ]; then
+  echo "o programa da areia mudou: reabrindo a areia (uns 15 s)"
+  "$DEST/sandbox.sh" original >/dev/null 2>&1 || true
+  "$DEST/areia-topografia" >/dev/null 2>&1 || echo "  a areia não reabriu sozinha: use o botão 'Reabrir a areia' do painel"
+fi
 
 echo
 echo "Pronto. Tudo pelo painel: http://localhost:8090 (atalho na Área de Trabalho). Teste completo: bash testes/integracao.sh"
