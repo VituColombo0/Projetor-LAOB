@@ -462,6 +462,51 @@ class JogosDeAgua(Ambiente):
         self.assertEqual(self.cmds()[-1], "cmd jogoFim")
 
 
+class MembrosNaAreia(Ambiente):
+    def cmds(self):
+        return [c for c in self.comandos() if c.startswith("cmd")]
+
+    def status(self, presentes, idade=0):
+        import time
+        escreve(self.areia.STATUS_WILLBERT, json.dumps(
+            {"ts": time.time() - idade, "present": [{"name": n, "since": i} for i, n in enumerate(presentes)]}))
+
+    def setUp(self):
+        super().setUp()
+        self.areia.STATUS_WILLBERT = os.path.join(self.D, "status-willbert.json")
+        self.areia._membros_mandados[0] = None
+
+    def test_nomes_de_quem_esta_presente(self):
+        self.assertEqual(self.areia.membros_presentes(), [])            # Willbert desligado
+        self.status(["Victor Vieira", "Gazziro", "João-Pedro", "Maria Antonieta", "Victor"])
+        self.assertEqual(self.areia.membros_presentes(), ["VICTOR", "GAZZIRO", "JOAOPEDR", "MARIA"])
+        self.status(["Victor"], idade=600)                              # Willbert parou de publicar
+        self.assertEqual(self.areia.membros_presentes(), [])
+        escreve(self.areia.STATUS_WILLBERT, "{ quebrado")
+        self.assertEqual(self.areia.membros_presentes(), [])
+
+    def test_liga_e_acompanha_quem_chega_e_sai(self):
+        self.status(["Victor", "Lucas"])
+        self.assertEqual(self.areia.membros(), ["VICTOR", "LUCAS"])
+        self.assertEqual(self.cmds()[-1], "cmd membros 0 VICTOR LUCAS")
+        self.assertIn("cmd jogoFim", self.cmds()[-5:])                  # uma brincadeira por vez
+        log = os.path.join(self.D, "sandbox.log")
+        escreve(log, "Animais: membros (2)\n")
+        self.assertEqual(self.areia.animais_situacao(), "membros")
+        n = len(self.cmds())
+        self.assertFalse(self.areia.membros_atualiza())                 # ninguém chegou nem saiu
+        self.assertEqual(len(self.cmds()), n)
+        self.status(["Victor", "Lucas", "Mario"])
+        self.assertTrue(self.areia.membros_atualiza())
+        self.assertEqual(self.cmds()[-1], "cmd membros 0 VICTOR LUCAS MARIO")
+        self.status([])
+        self.assertTrue(self.areia.membros_atualiza())
+        self.assertEqual(self.cmds()[-1], "cmd membros 0")
+        escreve(log, "Animais: membros (0)\nTesouro: escondendo a 4 cm\n")   # outra brincadeira entrou
+        self.status(["Victor"])
+        self.assertFalse(self.areia.membros_atualiza())
+
+
 class Labirinto(Ambiente):
     def cmds(self):
         return [c for c in self.comandos() if c.startswith("cmd")]

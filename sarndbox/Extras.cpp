@@ -98,7 +98,7 @@ void Extras::fechaMapa(void)
 	referencia=todas[todas.size()/2];
 	mapaOk=true;
 	/* O lago dos peixes: tudo 1,5 cm abaixo da areia "normal" (cavar um buraco cria um lago): */
-	nivelAgua=(modo&PEIXES)?referencia-1.5f:SEM;
+	nivelAgua=(modo==PEIXES||modo==TODOS)?referencia-1.5f:SEM;
 	}
 
 float Extras::altura(float x,float y) const
@@ -325,8 +325,9 @@ void Extras::nasce(int i)
 void Extras::povoa(int novoModo,int quantidade)
 	{
 	modo=novoModo;
+	nNomes=0;
 	quantos=std::max(0,std::min(int(MAX_AGENTES),quantidade));
-	if(modo&PEIXES)
+	if(modo==PEIXES||modo==TODOS)
 		nivelAgua=referencia-1.5f;
 	else
 		nivelAgua=SEM;
@@ -341,6 +342,68 @@ void Extras::povoa(int novoModo,int quantidade)
 		tipo[i]=(peixe?1.0f:pessoa?3.0f:2.0f)+0.05f+0.9f*aleatorio(); // a fração é a cor
 		if(mapaOk)
 			nasce(i);
+		}
+	}
+
+void Extras::membros(const std::vector<std::string>& lista,int giro)
+	{
+	/* Uma pessoinha para cada membro presente (o painel manda a lista de quem o Willbert está
+	   vendo no laboratório). Quem já estava continua andando de onde estava; quem chegou nasce
+	   num lugar livre; quem saiu some. A cor da camisa sai do nome: é sempre a mesma. */
+	int n=std::min(int(lista.size()),int(MAX_NOMES));
+	float nx[MAX_NOMES],ny[MAX_NOMES],na[MAX_NOMES],nv[MAX_NOMES],nb[MAX_NOMES],nt[MAX_NOMES];
+	bool novo[MAX_NOMES];
+	char nn[MAX_NOMES][MAX_LETRAS+1];
+	for(int i=0;i<n;++i)
+		{
+		int k=0;
+		unsigned int soma=7u;
+		for(size_t c=0;c<lista[i].size()&&k<MAX_LETRAS;++c)
+			{
+			char ch=lista[i][c];
+			if(ch>='a'&&ch<='z')
+				ch=char(ch-'a'+'A');
+			if(ch>='A'&&ch<='Z')
+				{
+				nn[i][k++]=ch;
+				soma=soma*31u+(unsigned int)ch;
+				}
+			}
+		nn[i][k]=0;
+		novo[i]=true;
+		nt[i]=3.05f+0.9f*float(soma%97u)/97.0f;
+		nx[i]=ny[i]=na[i]=nv[i]=nb[i]=0.0f;
+		if(modo==MEMBROS)
+			for(int j=0;j<nNomes&&j<quantos;++j)
+				if(std::string(nomes[j])==nn[i])
+					{
+					nx[i]=ax[j]; ny[i]=ay[j]; na[i]=ang[j]; nv[i]=vel[j]; nb[i]=vb[j];
+					novo[i]=false;
+					}
+		}
+	modo=MEMBROS;
+	nivelAgua=SEM;
+	giroNomes=((giro%4)+4)%4;
+	nNomes=quantos=n;
+	for(int i=0;i<MAX_AGENTES;++i)
+		{
+		tipo[i]=0.0f;
+		vel[i]=0.0f;
+		parado[i]=0.0f;
+		if(i>=n)
+			continue;
+		for(int c=0;c<=MAX_LETRAS;++c)
+			nomes[i][c]=nn[i][c];
+		tipo[i]=nt[i];
+		if(novo[i])
+			{
+			if(mapaOk)
+				nasce(i);
+			}
+		else
+			{
+			ax[i]=nx[i]; ay[i]=ny[i]; ang[i]=na[i]; vel[i]=nv[i]; vb[i]=nb[i];
+			}
 		}
 	}
 
@@ -468,6 +531,8 @@ void Extras::passo(float dt)
 				float px=ax[i]+std::cos(a)*olha,py=ay[i]+std::sin(a)*olha;
 				float h=altura(px,py);
 				/* à frente tem que caber o carrinho inteiro em chão firme, sem paredão nem barranco */
+				if(modo==MEMBROS&&!dentro(px,py,6.0f)&&dentro(ax[i],ay[i],6.0f))
+					continue; // membro: longe da beirada, para a plaquinha do nome caber inteira
 				if(!chaoLivre(px,py,rc)||!chaoLivre(ax[i]+std::cos(a)*olha*0.5f,ay[i]+std::sin(a)*olha*0.5f,rc)
 				   ||h-h0>2.0f||h0-h>3.0f)
 					continue;
@@ -559,7 +624,7 @@ void Extras::passo(float dt)
 /* ----------------------------------------------------------------- shader */
 
 const char* Extras::nomesUniforms[NUM_UNIFORMS]={"extrasCaixa","extrasAg","extrasTesouro","extrasInfo","extrasEfeito",
-	"extrasLab","extrasLab2","extrasJogo","extrasJogoInfo"};
+	"extrasLab","extrasLab2","extrasJogo","extrasJogoInfo","extrasNomes","extrasNomesCfg"};
 
 const char* Extras::glslVertexUniforms=R"GLSL(
 uniform mat4 extrasCaixa; // espaço da câmera -> caixa (cm)
@@ -579,6 +644,8 @@ uniform vec4 extrasLab;      // labirinto: nascente (x, y) e alvo (x, y), cm
 uniform vec4 extrasLab2;     // labirinto: raio do alvo, estado (0 desligado, 1 correndo, 2 chegou), segundos no estado
 uniform vec4 extrasJogo[32]; // jogos de água: por peça (x, y, raio, tipo) e (estado, nível, ordem, time ou ângulo)
 uniform vec4 extrasJogoInfo; // jogo (0 nenhum), fase, segundos na fase, vencedor ou próximo portão
+uniform float extrasNomes[72]; // membros: por pessoa, nº de letras e 8 letras (desenho 3x5 em bits)
+uniform vec4 extrasNomesCfg;  // quantos nomes, giro do texto (quartos de volta)
 float exCaixa(vec2 p,vec2 metade,float raio)
 	{
 	vec2 q=abs(p)-metade+vec2(raio);
@@ -929,6 +996,36 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				}
 			}
 		}
+	/* Membros do laboratório: o nome de cada um numa plaquinha acima da pessoinha (letras 3x5) */
+	for(int i=0;i<8;++i)
+		{
+		if(float(i)>=extrasNomesCfg.x-0.5)
+			break;
+		vec4 a=extrasAg[i];
+		float len=extrasNomes[i*9];
+		if(a.w<0.5||len<0.5)
+			continue;
+		float gr=extrasNomesCfg.y;
+		vec2 cima=gr<0.5?vec2(0.0,1.0):(gr<1.5?vec2(-1.0,0.0):(gr<2.5?vec2(0.0,-1.0):vec2(1.0,0.0)));
+		vec2 dir=vec2(cima.y,-cima.x);
+		vec2 rel=ep.xy-(a.xy+cima*3.7);
+		vec2 t=vec2(dot(rel,dir),dot(rel,cima));
+		float px=0.27;
+		float cw=4.0*px;
+		float larg=len*cw-px;
+		if(abs(t.x)>larg*0.5+0.5||abs(t.y)>2.5*px+0.45)
+			continue;
+		baseColor.rgb=mix(baseColor.rgb,vec3(0.04,0.06,0.1),0.8);
+		float cx=(t.x+larg*0.5)/cw;
+		float k=floor(cx);
+		float colf=floor(fract(cx)*4.0);
+		float rowf=floor((2.5*px-t.y)/px);
+		if(k<0.0||k>len-0.5||colf>2.5||rowf<0.0||rowf>4.5)
+			continue;
+		float g=extrasNomes[i*9+1+int(k)];
+		if(floor(mod(g/exp2(rowf*3.0+colf),2.0))>0.5)
+			baseColor.rgb=vec3(1.0);
+		}
 	/* Labirinto de água: nascente (ondas azuis) e alvo (bandeira que gira; comemora ao chegar) */
 	if(extrasLab2.y>0.5)
 		{
@@ -1179,6 +1276,29 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 	glUniform4fARB(locations[5],lsx,lsy,ltx,lty);
 	glUniform4fARB(locations[6],lraio,labirinto?GLfloat(labEstado):0.0f,
 	               labEstado==2?GLfloat(tempo-labChegou):GLfloat(tempo-labInicio),0.0f);
+	/* nomes dos membros: cada letra é um desenho de 3x5 pontos (bit = linha*3 + coluna, de cima para baixo) */
+	static const unsigned short LETRAS[26]={
+		0x5BEA,0x3AEB,0x624E,0x3B6B,0x72CF,0x12CF,0x6B4E,0x5BED,0x7497,0x2B24,0x5AED,0x7249,0x5BFD,
+		0x5B6F,0x2B6A,0x12EB,0x4D6A,0x5AEB,0x388E,0x2497,0x7B6D,0x2B6D,0x5FED,0x5AAD,0x24AD,0x72A7};
+	GLfloat nm[MAX_NOMES*9];
+	for(int i=0;i<MAX_NOMES;++i)
+		{
+		int len=0;
+		for(int c=0;c<MAX_LETRAS;++c)
+			{
+			char ch=(modo==MEMBROS&&i<nNomes&&len==c)?nomes[i][c]:0;
+			if(ch>='A'&&ch<='Z')
+				{
+				nm[i*9+1+c]=GLfloat(LETRAS[ch-'A']);
+				len=c+1;
+				}
+			else
+				nm[i*9+1+c]=0.0f;
+			}
+		nm[i*9]=GLfloat(len);
+		}
+	glUniform1fvARB(locations[9],MAX_NOMES*9,nm);
+	glUniform4fARB(locations[10],modo==MEMBROS?GLfloat(nNomes):0.0f,GLfloat(giroNomes),0.0f,0.0f);
 	GLfloat jg[MAX_PECAS*8];
 	for(int i=0;i<MAX_PECAS;++i)
 		{

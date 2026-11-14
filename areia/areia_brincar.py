@@ -9,6 +9,7 @@
   areia-animais peixes       peixes nadando no lago (cave um buraco e ele vira lago)
   areia-animais carros       carrinhos andando pelos vales
   areia-animais pessoas      pessoinhas passeando pela areia
+  areia-animais membros      quem o Willbert vê no laboratório, com o nome em cima
   areia-animais todos        tudo junto (pode pôr a quantidade: areia-animais peixes 15)
   areia-animais parar        tira os animais
 
@@ -60,6 +61,10 @@ def animais(args):
     elif pedido in ("parar", "tirar", "nada", "fim"):
         areia.animais_fim()
         print("Animais removidos.")
+    elif pedido in ("membros", "membro", "laboratorio", "lab"):
+        nomes = areia.membros()
+        print("Na areia: " + ", ".join(n.capitalize() for n in nomes) + ". O painel atualiza quando alguém chega ou sai."
+              if nomes else "Ninguém presente agora (o Willbert está ligado?). As pessoinhas aparecem quando ele reconhecer alguém.")
     else:
         print("Soltando os animais...")
         t, n = areia.animais(pedido, args[1] if len(args) > 1 else None)

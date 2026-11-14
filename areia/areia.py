@@ -392,6 +392,7 @@ PARAR_BRINCADEIRAS = {"tesouro": ("fossilFim", "labirintoFim", "jogoFim", "anima
                       "labirinto": ("tesouroFim", "fossilFim", "jogoFim", "animais nada"),
                       "jogo": ("tesouroFim", "fossilFim", "labirintoFim", "animais nada"),
                       "animais": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim"),
+                      "membros": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim"),
                       "foto": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim", "animais nada")}
 
 
@@ -578,11 +579,70 @@ def animais_situacao():
     if qual() != "rosto":
         return "nada"
     linhas = [l for l in _registro_caca() if l.startswith(("Animais", "Tesouro: escondendo", "Fossil: escondendo",
-                                                          "Labirinto: nascente", "Jogo pedido", "Modo Rosto:"))]
+                                                          "Labirinto: nascente", "Jogo pedido", "Modo Rosto:",
+                                                          "Modo Esculpir:"))]
     if not linhas or not linhas[-1].startswith("Animais: "):
         return "nada"
     t = linhas[-1].split()[1]
-    return t if t in ANIMAIS else "nada"
+    return t if t in ANIMAIS or t == "membros" else "nada"
+
+
+# ---------- membros do laboratório andando na areia (quem o Willbert está vendo) ----------
+
+STATUS_WILLBERT = os.environ.get("AREIA_WILLBERT_STATUS") or "/dev/shm/visao/status.json"
+_membros_mandados = [None]
+
+
+def _nome_curto(nome):
+    """Primeiro nome, sem acento, em maiúsculas, só letras, até 8 (o que cabe na plaquinha)."""
+    t = unicodedata.normalize("NFKD", str(nome)).encode("ascii", "ignore").decode().upper()
+    t = re.sub(r"[^A-Z ]", "", t).split()
+    return t[0][:8] if t else ""
+
+
+def membros_presentes():
+    """Nomes de quem o Willbert considera presente agora (na ordem de chegada). Lista vazia se o
+    Willbert está desligado, parado há mais de 90 s ou não viu ninguém."""
+    try:
+        with open(STATUS_WILLBERT) as f:
+            st = json.load(f)
+        if time.time() - float(st.get("ts") or 0) > 90:
+            return []
+        pres = sorted(st.get("present") or [], key=lambda p: p.get("since") or 0)
+    except (OSError, ValueError, TypeError, AttributeError):
+        return []
+    nomes = []
+    for p in pres:
+        n = _nome_curto(p.get("name") or "") if isinstance(p, dict) else ""
+        if n and n not in nomes:
+            nomes.append(n)
+    return nomes[:8]
+
+
+def _comando_membros(nomes):
+    return " ".join(["membros", str(estado()["giro"] // 90), *nomes])
+
+
+def membros():
+    """Liga as pessoinhas dos membros presentes (cada uma com o nome em cima). Devolve os nomes."""
+    nomes = membros_presentes()
+    _brincadeira(_comando_membros(nomes))
+    _membros_mandados[0] = nomes
+    return nomes
+
+
+def membros_atualiza():
+    """Chamado de tempos em tempos (painel): se está no modo membros e mudou quem está presente,
+    manda a lista nova (quem chegou aparece, quem saiu some). Devolve True se mandou."""
+    if animais_situacao() != "membros":
+        _membros_mandados[0] = None
+        return False
+    nomes = membros_presentes()
+    if nomes == _membros_mandados[0]:
+        return False
+    _comando(_comando_membros(nomes))
+    _membros_mandados[0] = nomes
+    return True
 
 
 def animais_fim():

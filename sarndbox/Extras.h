@@ -23,8 +23,9 @@ class Extras
 	{
 	public:
 	enum {MAX_AGENTES=24};
-	enum Modo {NADA=0,PEIXES=1,CARROS=2,TODOS=3,PESSOAS=4}; // TODOS = peixes, carrinhos e pessoas
-	enum {NUM_UNIFORMS=9};
+	enum Modo {NADA=0,PEIXES=1,CARROS=2,TODOS=3,PESSOAS=4,MEMBROS=5}; // TODOS = peixes, carrinhos e pessoas
+	enum {NUM_UNIFORMS=11};
+	enum {MAX_NOMES=8,MAX_LETRAS=8}; // membros do laboratório andando na areia, com o nome em cima
 	/* Efeito animado de cada tema de cor: */
 	enum Efeito {SEM_EFEITO=0,LAVA=1,NEVE=2,POEIRA=3,AREIA=4,ONDAS=5,BRILHO=6,CHUVA=7};
 	int efeito;
@@ -132,6 +133,8 @@ class Extras
 	void jogoLeitura(const float* maxima,const float* media,float vx,float vy);
 	bool jogoPrecisaVelocidade(void) const {return jogo==BARCO&&jogoFase==1;}
 	void jogoPasso(float dt);
+	char nomes[MAX_NOMES][MAX_LETRAS+1]; int nNomes,giroNomes;
+	void membros(const std::vector<std::string>& lista,int giro); // uma pessoinha por nome (mantém quem já estava)
 	void armadilhasDoLabirinto(void); // peças P_PERIGO entre a nascente e o alvo
 	float vbx,vby; // última velocidade da água no barco
  // relógios, plantas secando, ar dos peixes, barco andando

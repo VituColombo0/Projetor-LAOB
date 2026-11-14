@@ -72,6 +72,7 @@ def ver_estado():
     e["labirinto"], e["labirinto_rodadas"] = areia.labirinto_situacao()
     e["jogo"] = areia.jogo_situacao()
     e["animais"] = areia.animais_situacao()
+    e["membros"] = [n.capitalize() for n in areia.membros_presentes()] if e["animais"] == "membros" else []
     e["tema"] = areia.tema_atual()
     e["temas"] = [[t, areia.NOMES_TEMAS.get(t, t)] for t in areia.temas()]
     e["fotos_salvas"] = [os.path.basename(f) for f in areia.imagens()]
@@ -168,6 +169,11 @@ def brincar():
         if acao == "jogoNovo":
             areia.jogo_novo()
             return "Nova rodada iniciada"
+        if acao == "membros":
+            nomes = areia.membros()
+            if not nomes:
+                return "Ninguém presente agora: as pessoinhas aparecem quando o Willbert reconhecer alguém"
+            return "Na areia: " + ", ".join(n.capitalize() for n in nomes)
         if acao in areia.ANIMAIS:
             t, n = areia.animais(acao)
             return f"{n} {t} na areia"
@@ -543,6 +549,8 @@ const OUTROS = [
    d: 'Os carrinhos andam pelos lugares planos e desviam de montanhas. Façam estradas na areia para eles passarem.'},
   {id: 'pessoas', ic: '🚶', t: 'Pessoas andando', c: 'Pessoinhas passeando pela areia.', tag: 'Animação',
    d: 'Pessoas vistas de cima caminham pela areia, desviam umas das outras, dos morros íngremes e dos lagos. Mudem o relevo e elas escolhem outro caminho.'},
+  {id: 'membros', ic: '🧑‍🤝‍🧑', t: 'Membros do laboratório', c: 'Quem está no lab anda na areia, com o nome.', tag: 'Animação',
+   d: 'Uma pessoinha para cada membro que o Willbert está vendo no laboratório, com o nome numa plaquinha em cima e sempre a mesma cor de camisa. Quem chega aparece; quem vai embora some uns 30 minutos depois. Precisa do Willbert ligado.'},
   {id: 'todos', ic: '🐠', t: 'Tudo junto', c: 'Peixes, carrinhos e pessoas.', tag: 'Animação',
    d: 'Peixes no lago, carrinhos nos vales e pessoas passeando, tudo ao mesmo tempo.'},
 ];
@@ -628,6 +636,7 @@ function situacao(a) {
   if (a === 'labirinto') return E.labirinto === 'chegou' ? 'A água chegou!' : 'Labirinto · água correndo';
   if (a === 'tesouro') return E.tesouro === 'achado' ? 'Tesouro achado!' : 'Tesouro enterrado';
   if (a === 'trex') return E.fossil === 'achado' ? 'Fóssil escavado!' : 'Fóssil enterrado';
+  if (a === 'membros') return (E.membros && E.membros.length) ? 'Na areia: ' + E.membros.join(', ') : 'Membros: ninguém presente';
   return 'Animação na areia';
 }
 
@@ -753,7 +762,19 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) carr
 </html>""".replace(
     "__JOGOS__", json.dumps([[k, *v] for k, v in areia.JOGOS.items()], ensure_ascii=False))
 
+def _vigia_membros():
+    """No modo membros, confere a cada 5 s quem o Willbert vê e atualiza as pessoinhas."""
+    while True:
+        time.sleep(5)
+        try:
+            with trava:
+                areia.membros_atualiza()
+        except Exception:  # areia fechada, comando recusado...: tenta de novo na próxima
+            pass
+
+
 if __name__ == "__main__":
+    threading.Thread(target=_vigia_membros, daemon=True, name="membros").start()
     try:  # papel de parede com o endereço do painel (o timer atualizar-papel-parede repete a cada minuto)
         from atualizar_papel_parede import atualizar as atualiza_papel_parede
         atualiza_papel_parede()

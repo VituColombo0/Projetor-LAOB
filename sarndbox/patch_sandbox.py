@@ -8,6 +8,7 @@
    fossil [trex|triceratops|pterodactilo|pegada] [cm] [s]   escavação de fóssil (mesmo mecanismo do tesouro)
    fossilFim                                               encerra a escavação
    animais peixes|carros|pessoas|todos|nada [quantidade]   peixes no lago, carrinhos e pessoas andando
+   membros <giro> [nomes]                                  pessoinhas com nome: quem o Willbert vê no laboratório
    efeito <tema>                                           animação do tema (lava, neve, poeira...)
    labirinto [facil|normal|dificil] / labirintoNovo / labirintoFim (labirintoTeste: alvo na nascente)
                                                            labirinto de água: uma nascente joga água de
@@ -338,6 +339,18 @@ void Sandbox::toggleDEM(DEM* dem)
 					extras.tipoTesouro=1;
 					tesouroPedido=-1.0f;
 					std::cout<<"Fossil desligado"<<std::endl;
+					}
+				else if(isToken(tokens[0],"membros"))
+					{
+					/* membros <giro 0-3> [nome...]: uma pessoinha com o nome em cima para cada membro presente */
+					std::vector<std::string> lista;
+					for(size_t i=2;i<tokens.size();++i)
+						lista.push_back(tokens[i]);
+					bool ja=extras.modo==Extras::MEMBROS;
+					if(!ja)
+						setFaceMode(0,0);
+					extras.membros(lista,tokens.size()>=2?atoi(tokens[1].c_str()):0);
+					std::cout<<"Animais: membros ("<<lista.size()<<")"<<std::endl;
 					}
 				else if(isToken(tokens[0],"animais"))
 					{

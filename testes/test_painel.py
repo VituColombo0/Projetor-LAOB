@@ -137,6 +137,14 @@ class Painel(Ambiente):
         self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd animais pessoas 10")
         self.assertEqual(self.post("/brincar", json={"acao": "jogoNovo"}).status_code in (200, 400), True)
 
+    def test_membros_pelo_painel(self):
+        r = self.post("/brincar", json={"acao": "membros"})
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertIn("Ninguém presente", r.get_json()["msg"])           # sem Willbert nos testes
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd membros 0")
+        self.assertIn("membros", self.get("/estado").get_json())
+        self.assertIn("Membros do laboratório", self.get("/").get_data(as_text=True))
+
     def test_fossil_pelo_painel(self):
         r = self.post("/brincar", json={"acao": "triceratops"})
         self.assertEqual(r.status_code, 200, r.get_json())

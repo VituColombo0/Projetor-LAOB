@@ -69,8 +69,11 @@ class Ambiente(unittest.TestCase):
         with open(sb, "w") as f:
             f.write(SANDBOX_FALSO)
         os.chmod(sb, 0o755)
-        self.amb_antigo = {k: os.environ.get(k) for k in ("AREIA_DIR", "AREIA_PASTA", "AREIA_SANDBOX", "AREIA_CALIB")}
-        os.environ.update(AREIA_DIR=self.D, AREIA_PASTA=self.PASTA, AREIA_SANDBOX=sb, AREIA_CALIB=DADOS)
+        self.amb_antigo = {k: os.environ.get(k) for k in ("AREIA_DIR", "AREIA_PASTA", "AREIA_SANDBOX", "AREIA_CALIB",
+                                                               "AREIA_WILLBERT_STATUS")}
+        # os testes não leem o Willbert de verdade da máquina (no laob ele está ligado)
+        os.environ.update(AREIA_DIR=self.D, AREIA_PASTA=self.PASTA, AREIA_SANDBOX=sb, AREIA_CALIB=DADOS,
+                          AREIA_WILLBERT_STATUS=os.path.join(self.D, "status-willbert.json"))
         import areia
         self.areia = importlib.reload(areia)
 
