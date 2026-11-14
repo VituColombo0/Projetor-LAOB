@@ -24,13 +24,9 @@ confere "comandos no PATH" "for c in areia-foto areia-topografia areia-tema arei
 confere "ao ligar abre a topografia" "grep -q '^Exec=.*areia-topografia' '$HOME/.config/autostart/SARndbox.desktop'"
 confere "modelos presentes" "[ -s '$D/modelos/u2net_human_seg.onnx' ] && [ -s '$D/modelos/face_detection_yunet_2023mar.onnx' ]"
 MESA=$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")
-for pasta in "1 - Topografia (ligar e consertar)" "2 - Fotos na areia" "3 - Cores do relevo" "4 - Caça ao tesouro" "5 - Peixes e carrinhos"; do
-  confere "Área de Trabalho: '$pasta' com o manual" "[ -s \"$MESA/$pasta/COMO USAR.txt\" ]"
-done
-confere "pasta '7 - Fósseis de dinossauro' com o manual" "[ -s \"$MESA/7 - Fósseis de dinossauro/COMO USAR.txt\" ]"
-confere "pasta '8 - Labirinto de água' com o manual" "[ -s \"$MESA/8 - Labirinto de água/COMO USAR.txt\" ]"
-confere "atalhos de dois cliques: executáveis e liberados" "n=0; for a in \"$MESA\"/[1-8]\\ -\\ */*.desktop; do [ -x \"\$a\" ] && gio info -a metadata::trusted \"\$a\" | grep -q 'trusted: true' || exit 1; n=\$((n+1)); done; [ \$n -ge 20 ]"
-confere "atalhos apontam para programas que existem" "for a in \"$MESA\"/[1-8]\\ -\\ */*.desktop; do e=\$(sed -n 's/^Exec=//p' \"\$a\" | cut -d' ' -f1); [ \"\${e#xdg-open}\" != \"\$e\" ] || [ -x \"\$e\" ] || exit 1; done"
+confere "Área de Trabalho sem as pastas antigas (tudo pelo painel)" "! ls -d \"$MESA\"/[1-8]\\ -\\ * >/dev/null 2>&1"
+confere "atalho do painel na Área de Trabalho" "[ -x \"$MESA/Abrir painel da caixa de areia.desktop\" ]"
+confere "fotos em Imagens/Fotos na areia" "[ -d \"\$(xdg-user-dir PICTURES)/Fotos na areia\" ]"
 confere "sem sobras da organização antiga" "[ ! -e '$MESA/Areia' ] && [ ! -e '$MESA/SE A AREIA NÃO ABRIR.txt' ]"
 
 echo "== painel do celular"
@@ -38,7 +34,7 @@ confere "serviço ativo" "systemctl --user is-active -q sandbox-painel"
 confere "vigia da areia agendado" "systemctl --user is-active -q areia-vigia.timer && [ \"\$(areia-vigia estado)\" = vigiando ]"
 confere "responde na própria máquina" "curl -sf -m 5 http://127.0.0.1:8090/estado | grep -q '\"sandbox\"'"
 LAN=$(ip -4 -o addr show scope global | awk '!/tailscale/ {sub(/\/.*/,"",$4); print $4; exit}')
-confere "recusa a rede local ($LAN)" "[ \"\$(curl -s -o /dev/null -w '%{http_code}' -m 5 http://$LAN:8090/estado)\" = 403 ]"
+confere "responde na rede local do laboratório ($LAN)" "curl -sf -m 5 http://$LAN:8090/estado >/dev/null"
 TS=$(tailscale ip -4 2>/dev/null | head -1)
 [ -n "$TS" ] && confere "responde no Tailscale ($TS)" "curl -sf -m 5 http://$TS:8090/estado >/dev/null"
 
@@ -66,7 +62,6 @@ fi
 confere "caça ao tesouro esconde o baú" "areia-tesouro facil >/dev/null && sleep 2 && grep -q 'Tesouro escondido' '$D/sandbox.log'"
 confere "tesouro: situação" "areia-tesouro achou | grep -qiE 'escondido|acharam'"
 confere "escavação de fóssil" "areia-fossil triceratops facil >/dev/null && sleep 2 && grep -q 'Fossil escondido' '$D/sandbox.log' && areia-fossil achou | grep -qiE 'enterrado|escavado'"
-confere "atalho com janela (gui-rodar) roda o comando" "DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/\$(id -u)/bus '$D/gui-rodar.sh' Teste dialog-information areia-fossil parar >/dev/null"
 confere "peixes e carrinhos" "areia-animais todos 12 >/dev/null && grep -q 'Animais: todos (12)' '$D/sandbox.log'"
 confere "labirinto de água liga" "areia-labirinto facil >/dev/null && sleep 1 && grep -q '^Labirinto: nascente' '$D/sandbox.log' && areia-labirinto placar | grep -qiE 'correndo|chegou'"
 confere "labirinto: a água chega ao alvo e é medida" "'$D/sandbox.sh' cmd labirintoTeste >/dev/null && for _ in \$(seq 1 40); do grep -q '^Labirinto: a água chegou' '$D/sandbox.log' && break; sleep 0.5; done; grep -q '^Labirinto: a água chegou' '$D/sandbox.log' && areia-labirinto placar | grep -q 'chegou'"

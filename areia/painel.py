@@ -6,6 +6,7 @@ Rodar com o venv da pasta:  venv/bin/python painel.py
 import ipaddress
 import os
 import re
+import subprocess
 import tempfile
 import threading
 import time
@@ -57,6 +58,7 @@ def ver_estado():
     e["tesouro"] = areia.tesouro_situacao()
     e["tesouros_achados"] = areia.tesouro_achados()
     e["fossil"] = areia.fossil_situacao()
+    e["willbert"] = willbert_estado()
     e["labirinto"], e["labirinto_rodadas"] = areia.labirinto_situacao()
     e["tema"] = areia.tema_atual()
     e["temas"] = [[t, areia.NOMES_TEMAS.get(t, t)] for t in areia.temas()]
@@ -131,15 +133,19 @@ def modo():
 @app.post("/brincar")
 def brincar():
     def faz():
-        acao = (request.get_json(silent=True) or {}).get("acao")
+        dados = request.get_json(silent=True) or {}
+        acao = dados.get("acao")
+        nivel = str(dados.get("nivel") or "normal")
+        if nivel not in ("facil", "normal", "dificil"):
+            raise areia.Erro("nível: facil, normal ou dificil")
         if acao == "fossil" or acao in areia.FOSSEIS:
-            nome, prof = areia.fossil("trex" if acao == "fossil" else acao, "normal")
+            nome, prof = areia.fossil("trex" if acao == "fossil" else acao, nivel)
             return f"Fóssil de {nome} enterrado a {prof:g} cm"
         if acao == "tesouro":
-            prof = areia.tesouro("normal")
+            prof = areia.tesouro(nivel)
             return f"Tesouro escondido a {prof:g} cm"
         if acao == "labirinto":
-            d = areia.labirinto("normal")
+            d = areia.labirinto(nivel)
             return f"Labirinto de água ({areia.LABIRINTO[d].split()[0]})"
         if acao == "labirintoNovo":
             areia.labirinto_novo()
@@ -148,12 +154,52 @@ def brincar():
             t, n = areia.animais(acao)
             return f"{n} {t} na areia"
         if acao == "parar":
-            areia.tesouro_fim()
-            areia.fossil_fim()
-            areia.animais_fim()
-            areia.labirinto_fim()
+            areia.para_tudo()
             return "Brincadeiras paradas"
         raise areia.Erro("brincadeira inválida")
+    return resposta(faz)
+
+
+WILLBERT = ["sudo", "-n", "/usr/local/sbin/willbert-controle"]
+_willbert_cache = [0.0, None]
+
+
+def willbert_estado():
+    """'ligado', 'desligado' ou None (sem o Willbert nesta máquina); guarda 10 s (o painel pergunta a cada 5 s)."""
+    agora = time.time()
+    if agora - _willbert_cache[0] < 10:
+        return _willbert_cache[1]
+    try:
+        out = subprocess.run(WILLBERT + ["estado"], capture_output=True, text=True, timeout=10).stdout
+        est = "ligado" if "visao-detector=active" in out else ("desligado" if "visao-detector=" in out else None)
+    except (OSError, subprocess.SubprocessError):
+        est = None
+    _willbert_cache[:] = [agora, est]
+    return est
+
+
+@app.post("/willbert")
+def willbert():
+    def faz():
+        acao = (request.get_json(silent=True) or {}).get("acao")
+        if acao not in ("ligar", "desligar"):
+            raise areia.Erro("use ligar ou desligar")
+        try:
+            r = subprocess.run(WILLBERT + [acao], capture_output=True, text=True, timeout=90)
+        except (OSError, subprocess.SubprocessError) as e:
+            raise areia.Erro(f"não consegui {acao} o Willbert ({e})")
+        if r.returncode != 0:
+            raise areia.Erro(f"não consegui {acao} o Willbert: {(r.stdout + r.stderr).strip()[:200]}")
+        _willbert_cache[0] = 0.0
+        return "Willbert ligado (pronto em uns 30 s)" if acao == "ligar" else "Willbert desligado"
+    return resposta(faz)
+
+
+@app.post("/reabrir")
+def reabrir():
+    def faz():
+        areia.reabre()
+        return "Areia reaberta na topografia"
     return resposta(faz)
 
 
@@ -287,6 +333,9 @@ h1 {
 .btn-grid-4 {
   grid-template-columns: repeat(4, 1fr);
 }
+.btn-grid-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
 .full-width {
   grid-column: 1 / -1;
 }
@@ -399,7 +448,8 @@ img#prev {
       <button id="cam" class="primary-btn full-width">Tirar foto pela câmera</button>
       <label class="btn">Tirar foto no aparelho<input id="selfie" type="file" accept="image/*" capture="user"></label>
       <label class="btn">Escolher arquivo<input id="galeria" type="file" accept="image/*"></label>
-      <button id="girar" class="full-width">Girar imagem 90°</button>
+      <button id="girar">Girar imagem 90°</button>
+      <button id="espelhar">Espelhar imagem</button>
     </div>
     <div id="box-fotos" class="saved-photos" style="display:none">
       <div class="saved-label">Fotos salvas</div>
@@ -438,6 +488,29 @@ img#prev {
       <button data-b="labirintoNovo">Nova rodada</button>
       <button data-b="parar" class="danger-btn full-width">Parar brincadeiras</button>
     </div>
+    <div class="saved-label" style="margin-top:12px">Nível do tesouro, fóssil e labirinto</div>
+    <div class="btn-grid btn-grid-3" id="niveis">
+      <button data-n="facil">Fácil</button>
+      <button data-n="normal" class="active">Normal</button>
+      <button data-n="dificil">Difícil</button>
+    </div>
+  </div>
+
+  <!-- TÓPICO 5: WILLBERT -->
+  <div class="card">
+    <div class="card-header">Willbert <span id="wb" class="saved-label"></span></div>
+    <p class="saved-label">Para a foto na areia: as duas mãos abertas ao lado do rosto, perto da câmera.</p>
+    <div class="btn-grid">
+      <button data-w="ligar">Ligar Willbert</button>
+      <button data-w="desligar">Desligar Willbert</button>
+    </div>
+  </div>
+
+  <!-- TÓPICO 6: SE ALGO TRAVAR -->
+  <div class="card">
+    <div class="card-header">Se a areia travar</div>
+    <p class="saved-label">A imagem parou ou não responde aos botões? Este botão fecha e abre a areia de novo (uns 10 s).</p>
+    <button id="reabrir" class="danger-btn full-width">Reabrir a areia</button>
   </div>
 </main>
 
@@ -494,13 +567,14 @@ async function carrega() {
 
     let sit = 'Normal';
     if (E.tesouro === 'achado') sit = 'Tesouro achado!';
-    else if (E.tesouro === 'escondido') sit = 'Tesouro enterrado (5.5 cm)';
+    else if (E.tesouro === 'escondido') sit = 'Tesouro enterrado';
     else if (E.fossil === 'achado') sit = 'Fóssil escavado!';
-    else if (E.fossil === 'escondido') sit = 'T-Rex enterrado (5.5 cm)';
+    else if (E.fossil === 'escondido') sit = 'Fóssil enterrado';
     else if (E.labirinto === 'chegou') sit = 'Água chegou' + (E.labirinto_rodadas ? ' (' + E.labirinto_rodadas + ')' : '');
     else if (E.labirinto === 'correndo') sit = 'Água correndo';
 
     $('#tes').textContent = sit;
+    $('#wb').textContent = E.willbert ? '· ' + E.willbert : '';
 
     const T = $('#temas');
     if (T && !T.children.length && E.temas) {
@@ -550,7 +624,15 @@ function envia(inp) {
 envia($('#selfie'));
 envia($('#galeria'));
 $('#cam').onclick = () => post('/foto', new FormData(), true);
-document.querySelectorAll('[data-b]').forEach(b => b.onclick = () => post('/brincar', {acao: b.dataset.b}));
+let NIVEL = 'normal';
+document.querySelectorAll('[data-n]').forEach(b => b.onclick = () => {
+  NIVEL = b.dataset.n;
+  document.querySelectorAll('[data-n]').forEach(x => x.classList.toggle('active', x === b));
+});
+document.querySelectorAll('[data-b]').forEach(b => b.onclick = () => post('/brincar', {acao: b.dataset.b, nivel: NIVEL}));
+document.querySelectorAll('[data-w]').forEach(b => b.onclick = () => post('/willbert', {acao: b.dataset.w}));
+$('#reabrir').onclick = () => post('/reabrir', {});
+$('#espelhar').onclick = () => post('/ajuste', {espelho: !E.espelho});
 document.querySelectorAll('[data-m]').forEach(b => b.onclick = () => post('/modo', {modo: b.dataset.m}));
 $('#girar').onclick = () => post('/ajuste', {giro: (E.giro + 90) % 360});
 

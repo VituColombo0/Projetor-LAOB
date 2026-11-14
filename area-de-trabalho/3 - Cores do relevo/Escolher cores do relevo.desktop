@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Escolher cores do relevo
-Comment=Escolhe o tema de cores e a animação da topografia
-Exec=/home/laob/SARndbox-rosto/gui-tema.sh
-Icon=preferences-desktop-theme
-Terminal=false

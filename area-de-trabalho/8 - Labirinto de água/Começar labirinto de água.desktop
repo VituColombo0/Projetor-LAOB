@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Começar labirinto de água
-Comment=Liga a nascente e o alvo (nível normal)
-Exec=/home/laob/SARndbox-rosto/gui-rodar.sh "Labirinto de água" weather-showers areia-labirinto normal
-Icon=weather-showers
-Terminal=false

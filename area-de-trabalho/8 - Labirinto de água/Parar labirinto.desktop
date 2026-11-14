@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Parar labirinto
-Comment=Encerra o labirinto e a água vai embora
-Exec=/home/laob/SARndbox-rosto/gui-rodar.sh "Labirinto de água" process-stop areia-labirinto parar
-Icon=process-stop
-Terminal=false

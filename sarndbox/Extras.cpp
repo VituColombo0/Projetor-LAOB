@@ -186,7 +186,7 @@ bool Extras::confereTesouro(void)
 int Extras::efeitoDoTema(const char* nome)
 	{
 	static const struct {const char* tema;int efeito;} tabela[]={
-		{"classico",CHUVA},{"vulcao",LAVA},{"inverno",NEVE},{"marte",POEIRA},{"deserto",AREIA},
+		{"classico",SEM_EFEITO},{"vulcao",LAVA},{"inverno",NEVE},{"marte",POEIRA},{"deserto",AREIA},
 		{"oceano",ONDAS},{"arco-iris",BRILHO},{"mapa",SEM_EFEITO},{"nada",SEM_EFEITO}};
 	for(unsigned i=0;i<sizeof(tabela)/sizeof(tabela[0]);++i)
 		if(std::strcmp(nome,tabela[i].tema)==0)

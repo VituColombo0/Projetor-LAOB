@@ -17,6 +17,35 @@ case "${1:-}" in
   *) echo "uso: areia-vigia [pausa|liga|estado]"; exit 2 ;;
 esac
 [ -e "$PAUSA" ] && exit 0
+U=$(id -u)
+export DISPLAY=${DISPLAY:-:0} DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-unix:path=/run/user/$U/bus}
+registra() { echo "$(date '+%F %T') vigia: $*" >> "$LOG"; }
+
+# 1) GNOME travado (13/11/2026: o gnome-shell congelou e a tela parou de ser redesenhada; a areia
+#    "travava" e não respondia aos botões). Duas perguntas sem resposta seguidas = travado:
+#    fecha à força e o systemd reabre o GNOME na hora (Restart=always). No máximo 1x a cada 15 min.
+gnome_responde() { timeout 10 gdbus introspect --session --dest org.gnome.Shell --object-path /org/gnome/Shell >/dev/null 2>&1; }
+MARCA=$D/.vigia-gnome
+if pgrep -u "$U" -x gnome-shell >/dev/null && ! gnome_responde; then
+  sleep 15
+  if ! gnome_responde && [ -z "$(find "$MARCA" -mmin -15 2>/dev/null)" ]; then
+    registra "o GNOME não responde; reiniciando o GNOME e a areia"
+    touch "$MARCA"
+    pkill -KILL -u "$U" -x gnome-shell
+    sleep 15
+    "$D/sandbox.sh" original >/dev/null 2>&1   # a janela antiga ficou presa ao GNOME travado
+    exec "$D/areia-topografia"
+  fi
+fi
+
+# 2) Areia aberta mas parada: o programa escreve "Desempenho" no registro a cada 30 s; sem nada
+#    há mais de 2 min, não está desenhando (Kinect ou tela presos). Fecha e abre de novo.
+if [ "$("$D/sandbox.sh" estado)" = rosto ] && [ -z "$(find "$D/sandbox.log" -mmin -2 2>/dev/null)" ]; then
+  registra "a areia está aberta mas parada há mais de 2 min; reabrindo"
+  "$D/sandbox.sh" original >/dev/null 2>&1
+  exec "$D/areia-topografia"
+fi
+
 [ "$("$D/sandbox.sh" estado)" = nenhum ] || exit 0
 # pode ser uma troca em andamento (o sandbox.sh fecha um e abre o outro): confere de novo
 sleep 20

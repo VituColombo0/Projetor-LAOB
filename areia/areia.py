@@ -26,7 +26,7 @@ FUNDOS = ("", "--com-fundo", "--sem-fundo")
 AJUSTE = {"zoom": 0.03, "desloc": 0.0, "mistura": 0.0, "sombra": 1.0}
 PADRAO = {"modo": "original", "giro": 0, "espelho": False, "imagem": None, "fundo": "", "ajuste": AJUSTE}
 MANTER_NO_CACHE = 40
-PASTA_FOTOS = "2 - Fotos na areia"  # na Área de Trabalho (antes se chamava "Areia")
+PASTA_FOTOS = "Fotos na areia"  # na pasta Imagens (antes: "2 - Fotos na areia" na Área de Trabalho)
 DIFICULDADE = {"facil": 4.0, "normal": 5.5, "dificil": 7.0}  # cm de areia em cima do tesouro
 ANIMAIS = ("peixes", "carros", "todos")
 TEMAS = os.path.join(D, "temas")
@@ -45,16 +45,17 @@ PASTA_WILLBERT = "Fotos do Willbert"
 
 
 def pasta():
-    """A pasta das fotos, na Área de Trabalho (criada se não existir)."""
+    """A pasta das fotos, dentro da pasta Imagens do usuário (criada se não existir).
+    Desde 13/11/2026 tudo é feito pelo painel; a Área de Trabalho não tem mais as pastas."""
     p = os.environ.get("AREIA_PASTA")
     if not p:
         try:
-            mesa = subprocess.run(["xdg-user-dir", "DESKTOP"], capture_output=True, text=True,
+            imgs = subprocess.run(["xdg-user-dir", "PICTURES"], capture_output=True, text=True,
                                   timeout=5).stdout.strip()
         except (OSError, subprocess.SubprocessError):
-            mesa = ""
+            imgs = ""
         casa = os.path.expanduser("~")
-        p = os.path.join(mesa if mesa and mesa != casa else os.path.join(casa, "Desktop"), PASTA_FOTOS)
+        p = os.path.join(imgs if imgs and imgs != casa else os.path.join(casa, "Pictures"), PASTA_FOTOS)
     os.makedirs(p, exist_ok=True)
     return p
 
@@ -240,8 +241,9 @@ def qual():
     return _sandbox("estado", timeout=10)[1] or "nenhum"
 
 
-def _comando(texto):
-    rc, out = _sandbox("cmd", texto, timeout=10)
+def _comando(*linhas):
+    """Manda um ou mais comandos ao SARndbox numa escrita só (cada um custava ~0,5 s separado)."""
+    rc, out = _sandbox("cmd", *linhas, timeout=10)
     if rc != 0:
         raise Erro(out or "o SARndbox não aceitou o comando")
 
@@ -261,13 +263,12 @@ def aplica(e):
         if rc != 0:
             raise Erro("o modo foto não abriu; a topografia voltou")
     a = e["ajuste"]
-    if e["modo"] in ("rosto", "esculpir"):
-        _encerra_outras("foto")
+    parar = _encerra_outras("foto") if e["modo"] in ("rosto", "esculpir") else ()
     if e["modo"] == "rosto":
-        _comando(f"rosto {os.path.join(FOTOS, 'rosto.png')} {e['giro']} {int(e['espelho'])}")
-        _comando(f"rostoAjuste {a['zoom']} {a['desloc']} {a['mistura']} {a['sombra']}")
+        _comando(*parar, f"rosto {os.path.join(FOTOS, 'rosto.png')} {e['giro']} {int(e['espelho'])}",
+                 f"rostoAjuste {a['zoom']} {a['desloc']} {a['mistura']} {a['sombra']}")
     elif e["modo"] == "esculpir":
-        _comando(f"esculpir {os.path.join(FOTOS, 'rosto.dem')}")
+        _comando(*parar, f"esculpir {os.path.join(FOTOS, 'rosto.dem')}")
     else:
         _comando("relevo")
     salva(e)
@@ -376,8 +377,7 @@ PARAR_BRINCADEIRAS = {"tesouro": ("fossilFim", "labirintoFim", "animais nada"),
 
 
 def _encerra_outras(qual_brincadeira):
-    for c in PARAR_BRINCADEIRAS.get(qual_brincadeira, ()):
-        _comando(c)
+    return PARAR_BRINCADEIRAS.get(qual_brincadeira, ())
 
 
 def _brincadeira(comando):
@@ -386,8 +386,7 @@ def _brincadeira(comando):
         rc, _ = _sandbox("rosto")
         if rc != 0:
             raise Erro("a caixa de areia não abriu o modo brincadeira; a topografia voltou")
-    _encerra_outras(comando.split()[0])
-    _comando(comando)
+    _comando(*_encerra_outras(comando.split()[0]), comando)
     e = estado()
     e["modo"] = "relevo"
     salva(e)
@@ -556,6 +555,23 @@ def labirinto_novo():
 def labirinto_fim():
     if qual() == "rosto":
         _comando("labirintoFim")
+
+
+def para_tudo():
+    """Encerra todas as brincadeiras de uma vez (botão "Parar brincadeiras")."""
+    if qual() == "rosto":
+        _comando("tesouroFim", "fossilFim", "animais nada", "labirintoFim")
+
+
+def reabre():
+    """Fecha a areia (mesmo travada) e abre a topografia de novo. Botão "Reabrir a areia" do painel."""
+    _sandbox("original")      # o sandbox.sh fecha o que estiver aberto antes de abrir o outro
+    rc, out = _sandbox("topografia")
+    if rc != 0 or qual() == "nenhum":
+        raise Erro("a areia não abriu: " + out)
+    e = estado()
+    e["modo"] = "original"
+    salva(e)
 
 
 def marca_topografia():

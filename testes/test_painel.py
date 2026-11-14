@@ -95,6 +95,20 @@ class Painel(Ambiente):
                          ["cmd tesouroFim", "cmd fossilFim", "cmd animais nada", "cmd labirintoFim"])
         self.assertIn(self.get("/estado").get_json()["tesouro"], ("nenhum", "escondido"))
 
+    def test_niveis_willbert_e_reabrir(self):
+        r = self.post("/brincar", json={"acao": "tesouro", "nivel": "facil"})
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd tesouro 4")
+        self.post("/brincar", json={"acao": "labirinto", "nivel": "dificil"})
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd labirinto dificil")
+        self.assertEqual(self.post("/brincar", json={"acao": "tesouro", "nivel": "xyz"}).status_code, 400)
+        self.assertEqual(self.post("/willbert", json={"acao": "explodir"}).status_code, 400)
+        r = self.post("/reabrir", json={})
+        self.assertEqual(r.status_code, 200, r.get_json())
+        c = [x for x in self.comandos() if x != "estado"]
+        self.assertEqual(c[-2:], ["original", "topografia"])   # fecha o que estiver aberto e abre de novo
+        self.assertIn("willbert", self.get("/estado").get_json())
+
     def test_labirinto_pelo_painel(self):
         r = self.post("/brincar", json={"acao": "labirinto"})
         self.assertEqual(r.status_code, 200, r.get_json())

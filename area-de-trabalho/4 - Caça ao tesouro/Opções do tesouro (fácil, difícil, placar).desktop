@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Opções do tesouro (fácil, difícil, placar)
-Comment=Escolhe a dificuldade ou vê quantos já acharam
-Exec=/home/laob/SARndbox-rosto/gui-tesouro.sh
-Icon=preferences-other
-Terminal=false

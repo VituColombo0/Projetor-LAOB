@@ -21,15 +21,15 @@ abre a **topografia** de sempre; por comando, atalho, painel do celular ou pelo
 
 ## Funcionalidades
 
-- **Topografia:** o SARndbox original, sem mudanças, com 8 temas de cor e animação por tema (lava, neve, poeira, vento, mar, estrelas, chuva).
+- **Topografia:** o SARndbox original, sem mudanças, com 8 temas de cor e animação por tema (lava, neve, poeira, vento, mar, estrelas); o Clássico é o visual original, sem efeito.
 - **Foto:** a imagem é projetada sobre a areia, amplia onde está alta (efeito lente) e ganha a sombra do relevo; rosto sai recortado, sem fundo.
 - **Esculpir:** o rosto vira relevo-alvo; o projetor pinta onde falta areia (vermelho) e onde sobra (azul).
 - **Caça ao tesouro** e **fósseis de dinossauro** (T-Rex, Triceratops, Pterodáctilo, pegada): cave para achar.
 - **Peixes e carrinhos:** peixes em cardume nos lagos, carrinhos seguindo os vales.
 - **Labirinto de água:** leve a água da nascente até o alvo, com placar.
 - **Uma brincadeira por vez:** começar uma encerra as outras; o tema de cor fica.
-- **Painel do celular** (:8090), atalhos de dois cliques e `COMO USAR.txt` em cada pasta da Área de Trabalho.
-- **Vigia:** reabre a topografia sozinho se ela fechar.
+- **Painel no navegador** (:8090): controla tudo (modos, temas, brincadeiras com nível, fotos, Willbert, "Reabrir a areia"); a Área de Trabalho tem só o atalho para ele.
+- **Vigia:** reabre a topografia se ela fechar, se ficar parada (sem desenhar por 2 min) ou se o GNOME travar.
 
 ## Arquitetura
 
@@ -73,8 +73,8 @@ flowchart LR
    ```
 
 O `instalar.sh` copia o SARndbox para `~/SARndbox-rosto`, aplica os patches e compila, cria o venv,
-baixa os modelos, instala os comandos em `~/.local/bin`, cria as pastas, ajudas e atalhos na Área
-de Trabalho, troca o autostart para abrir a topografia e liga o painel e o vigia.
+baixa os modelos, instala os comandos em `~/.local/bin`, põe só o atalho do painel na Área de
+Trabalho (e leva fotos de versões antigas para `Imagens/Fotos na areia`), troca o autostart para abrir a topografia e liga o painel e o vigia.
 `bash instalar.sh --compilar /tmp/teste` só testa a compilação.
 
 > [!WARNING]
@@ -83,7 +83,8 @@ de Trabalho, troca o autostart para abrir a topografia e liga o painel e o vigia
 
 ## Uso
 
-Coloque as imagens na pasta **"2 - Fotos na areia"** da Área de Trabalho e use no terminal:
+O jeito normal é o painel (`http://localhost:8090`, atalho na Área de Trabalho). As fotos ficam em
+**`Imagens/Fotos na areia`**. Pelo terminal:
 
 | Comando | O que faz |
 | :--- | :--- |
@@ -100,12 +101,6 @@ Coloque as imagens na pasta **"2 - Fotos na areia"** da Área de Trabalho e use 
 | `areia-animais todos [n]` | `peixes`, `carros` ou `todos` (também `parar`) |
 | `areia-labirinto [facil\|normal\|dificil\|nova\|placar\|parar]` | Labirinto de água |
 | `areia-vigia pausa` / `liga` | Pausa ou religa o vigia da topografia |
-
-**Área de Trabalho do lab2:** pastas "1 - Topografia (ligar e consertar)", "2 - Fotos na areia",
-"3 - Cores do relevo", "4 - Caça ao tesouro", "5 - Peixes e carrinhos", "7 - Fósseis de
-dinossauro" e "8 - Labirinto de água" (a "6 - Willbert" vem do Willbert-LAOB). Cada uma tem
-`COMO USAR.txt` e atalhos de dois cliques; os que pedem escolha abrem uma janela (`gui-*.sh`) e
-todos passam por `gui-rodar.sh`, que avisa por notificação ou mostra o erro.
 
 **Painel do celular:** `http://<IP-DO-LAB2>:8090` — selfie, foto salva ou câmera do laboratório,
 modo, cores, brincadeiras e girar. O endereço aparece no canto do papel de parede do lab2
@@ -182,8 +177,8 @@ Projetor-LAOB/
 ├── instalar.sh          # instala/atualiza tudo no PC
 ├── requirements.txt     # Python do venv (OpenCV, NumPy, Flask, waitress)
 ├── sarndbox/            # modo Foto e Extras: FaceImage, Extras, patches, projetor.cfg
-├── areia/               # areia.py, comandos areia-*, painel.py, rosto.py, temas/, gui-*.sh
-├── area-de-trabalho/    # pastas numeradas com COMO USAR.txt e atalhos .desktop
+├── areia/               # areia.py, comandos areia-*, painel.py, rosto.py, temas/
+├── area-de-trabalho/    # atalho .desktop do painel
 ├── sistema/             # serviços e timers de usuário (painel, vigia, papel de parede)
 └── testes/              # rodar.sh (automático) e integracao.sh (no lab2)
 ```
@@ -194,13 +189,13 @@ No PC, tudo fica em `~/SARndbox-rosto` (cópia do SARndbox + estes arquivos, `ve
 
 | Sintoma | Causa provável | Correção |
 | :--- | :--- | :--- |
-| A areia não abre ao ligar | Kinect demorou no USB | O autostart espera até 30 s e tenta 3×; veja `~/SARndbox-rosto/inicio.log` ou use o atalho "Abrir a areia" |
+| A areia não abre ao ligar | Kinect demorou no USB | O autostart espera até 30 s e tenta 3×; veja `~/SARndbox-rosto/inicio.log` ou o botão "Reabrir a areia" do painel |
 | Topografia fechou sozinha | Programa caiu | O `areia-vigia` reabre em até 2 min |
+| Imagem parada, botões não respondem | Areia ou GNOME travados | O vigia reabre em até 2 min; na hora: botão "Reabrir a areia" no painel |
 | Areia a 1 quadro/s, projetor sumiu | Kernel novo sem o driver NVIDIA | Rode `kernel-com-driver.sh` (Willbert-LAOB) e reinicie |
 | Foto aparece de lado | Orientação de quem olha a caixa | `areia-foto girar` |
 | "Ran out of time" no log | Grade de água grande demais | Mantenha `-wts 320 240` |
 
-Na Área de Trabalho também há `SE A AREIA NÃO ABRIR.txt`.
 
 ## Equipe
 

@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Projetar foto na areia
-Comment=Escolhe e projeta uma foto na caixa de areia
-Exec=/home/laob/SARndbox-rosto/gui-foto.sh
-Icon=camera-photo
-Terminal=false

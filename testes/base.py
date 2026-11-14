@@ -21,7 +21,8 @@ if AREIA_SRC not in sys.path:
 
 SANDBOX_FALSO = """#!/bin/bash
 F=$(dirname "$0")
-echo "$*" >> "$F/comandos.log"
+if [ "$1" = cmd ]; then shift; for c in "$@"; do echo "cmd $c" >> "$F/comandos.log"; done; set -- cmd "$@"
+else echo "$*" >> "$F/comandos.log"; fi
 case "$1" in
   estado) cat "$F/qual" 2>/dev/null || echo nenhum ;;
   original|rosto) echo "$1" > "$F/qual"; echo "$1" ;;

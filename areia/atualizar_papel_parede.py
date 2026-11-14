@@ -113,5 +113,8 @@ def atualizar(forcar=False):
     return ip
 
 if __name__ == "__main__":
-    ip = atualizar(forcar=True)
-    print(f"Papel de parede atualizado com: http://{ip}:{PORTA}")
+    import sys
+    # sem --forcar: só redesenha se o endereço mudou. Antes forçava a cada minuto, e o GNOME
+    # recarregava a imagem de fundo o tempo todo (em 13/11 o gnome-shell travou)
+    ip = atualizar(forcar="--forcar" in sys.argv[1:])
+    print(f"Endereço do painel: http://{ip}:{PORTA}")

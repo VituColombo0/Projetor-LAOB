@@ -92,8 +92,10 @@ case "${1:-estado}" in
     "$0" original ;;
   cmd)
     [ "$(qual)" = rosto ] || { echo "a versão com Foto não está rodando"; exit 1; }
-    manda "$FIFO" "${2:?comando}" || { echo "sem resposta do SARndbox"; exit 1; }
-    sleep 0.3; tail -n 2 "$LOG" ;;
+    shift; [ $# -gt 0 ] || { echo "uso: sandbox.sh cmd <comando> [mais comandos]"; exit 2; }
+    # vários comandos numa escrita só (uma linha cada): trocar de brincadeira manda 3 de uma vez
+    manda "$FIFO" "$(printf '%s\n' "$@")" || { echo "sem resposta do SARndbox"; exit 1; }
+    sleep 0.1; tail -n 2 "$LOG" ;;
   tema)
     arq=$(readlink -f "${2:?arquivo .cpt}")
     [ -f "$arq" ] || { echo "tema não encontrado: $2"; exit 1; }

@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Girar foto 90 graus
-Comment=Gira a imagem projetada em 90 graus
-Exec=/home/laob/SARndbox-rosto/gui-rodar.sh "Fotos na areia" object-rotate-right areia-foto girar
-Icon=object-rotate-right
-Terminal=false

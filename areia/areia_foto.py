@@ -1,4 +1,4 @@
-"""Modo FOTO da caixa de areia: projeta uma imagem da pasta Areia (na Área de Trabalho).
+"""Modo FOTO da caixa de areia: projeta uma imagem da pasta Imagens/Fotos na areia.
 
   areia-foto                 escolhe a imagem num menu (Enter = a última usada)
   areia-foto 3               a imagem número 3 da lista

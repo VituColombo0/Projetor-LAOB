@@ -39,7 +39,7 @@ echo "[3/8] programas da pasta areia/"
 cp "$REPO"/areia/{areia.py,areia_foto.py,areia_tema.py,areia_brincar.py,rosto.py,painel.py,sandbox.sh,atualizar_papel_parede.py} "$DEST/"
 COMANDOS=(areia-foto areia-tema areia-topografia areia-tesouro areia-animais areia-fossil areia-labirinto areia-vigia)
 for c in "${COMANDOS[@]}"; do cp "$REPO/areia/$c" "$DEST/"; chmod +x "$DEST/$c"; done
-cp "$REPO"/areia/gui-*.sh "$DEST/" && chmod +x "$DEST"/gui-*.sh   # janelas dos atalhos
+rm -f "$DEST"/gui-*.sh   # janelas dos atalhos da Área de Trabalho (substituídos pelo painel em 13/11)
 rm -f "$DEST"/*.bak "$DEST/patch_brincar.py" "$DEST/gui-willbert-estado.sh"   # sobras de edições manuais
 chmod +x "$DEST/sandbox.sh"
 mkdir -p "$DEST/temas" && cp "$REPO"/areia/temas/*.cpt "$DEST/temas/"   # o tema escolhido (temas/atual.cpt) fica
@@ -60,36 +60,37 @@ echo "[6/8] comandos: ${COMANDOS[*]}"
 mkdir -p "$HOME/.local/bin" "$DEST/fotos"
 for c in "${COMANDOS[@]}"; do ln -sf "$DEST/$c" "$HOME/.local/bin/$c"; done
 
-echo "[7/8] Área de Trabalho: uma pasta para cada coisa, com o manual dentro"
+echo "[7/8] tudo pelo painel: fotos em Imagens/Fotos na areia, Área de Trabalho só com o atalho do painel"
 MESA=$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop"); [ "$MESA" = "$HOME" ] && MESA=$HOME/Desktop
-AD=$REPO/area-de-trabalho
-FOTOS_DIR="$MESA/2 - Fotos na areia"
-# versões antigas: a pasta "Areia" vira a pasta das fotos; a ajuda e o atalho soltos vão para a pasta 1
-if [ -d "$MESA/Areia" ] && [ ! -e "$FOTOS_DIR" ]; then mv "$MESA/Areia" "$FOTOS_DIR"; fi
-[ -f "$DEST/estado.json" ] && sed -i "s#$MESA/Areia/#$FOTOS_DIR/#g" "$DEST/estado.json"   # última foto no lugar novo
-rm -f "$FOTOS_DIR/COMO USAR.txt.old" "$MESA/SE A AREIA NÃO ABRIR.txt" "$MESA/Abrir a areia.desktop"
-# uma pasta por recurso: o manual (COMO USAR.txt) e os atalhos de dois cliques
-for origem in "$AD"/*/; do
-  pasta=$(basename "$origem")
-  mkdir -p "$MESA/$pasta"
-  rm -f "$MESA/$pasta"/*.desktop   # atalhos são do repositório (fotos e outros arquivos ficam)
-  cp "$origem/COMO USAR.txt" "$MESA/$pasta/"
-  for at in "$origem"/*.desktop; do
-    [ -e "$at" ] || continue
-    destino="$MESA/$pasta/$(basename "$at")"
-    sed "s#/home/laob#$HOME#g" "$at" > "$destino"
-    chmod +x "$destino"
-    gio set "$destino" metadata::trusted true 2>/dev/null || true
-  done
+IMGS=$(xdg-user-dir PICTURES 2>/dev/null || echo "$HOME/Pictures"); [ "$IMGS" = "$HOME" ] && IMGS=$HOME/Pictures
+FOTOS_DIR="$IMGS/Fotos na areia"
+mkdir -p "$FOTOS_DIR"
+# fotos das versões antigas (pasta "2 - Fotos na areia" ou "Areia" na Área de Trabalho) vão para o lugar novo
+for velha in "$MESA/2 - Fotos na areia" "$MESA/Areia"; do
+  [ -d "$velha" ] || continue
+  find "$velha" -mindepth 1 -maxdepth 1 ! -name "*.desktop" ! -name "COMO USAR.txt*" -print0 |
+    while IFS= read -r -d "" f; do
+      alvo="$FOTOS_DIR/$(basename "$f")"
+      if [ -d "$f" ] && [ -d "$alvo" ]; then cp -an "$f/." "$alvo/" && rm -rf "$f"
+      elif [ ! -e "$alvo" ]; then mv "$f" "$alvo"; fi
+    done
+  [ -f "$DEST/estado.json" ] && sed -i "s#$velha/#$FOTOS_DIR/#g" "$DEST/estado.json"   # última foto no lugar novo
 done
-for at in "$AD"/*.desktop; do   # atalhos soltos na Área de Trabalho (ex.: painel da caixa de areia)
+# as pastas 1 a 8 (manual e atalhos, que eram do repositório) saem; se sobrar algo de outra pessoa, a pasta fica
+for velha in "$MESA"/[1-8]\ -\ *; do
+  [ -d "$velha" ] || continue
+  rm -f "$velha"/*.desktop "$velha/COMO USAR.txt" "$velha/COMO USAR.txt.old"
+  rmdir "$velha" 2>/dev/null || echo "  ficou $velha (tem arquivos que não são do Projetor)"
+done
+rm -f "$MESA/SE A AREIA NÃO ABRIR.txt" "$MESA/Abrir a areia.desktop"
+for at in "$REPO"/area-de-trabalho/*.desktop; do   # só o atalho do painel
   [ -e "$at" ] || continue
   destino="$MESA/$(basename "$at")"
   sed "s#/home/laob#$HOME#g" "$at" > "$destino"; chmod +x "$destino"
   gio set "$destino" metadata::trusted true 2>/dev/null || true
 done
 B=$HOME/.config/gtk-3.0/bookmarks; mkdir -p "$(dirname "$B")"
-grep -v "file://$MESA/Areia " "$B" 2>/dev/null | grep -v "Fotos%20na%20areia" > "$B.tmp"; mv "$B.tmp" "$B"
+grep -v "Fotos%20na%20areia" "$B" 2>/dev/null | grep -v "file://$MESA/Areia " > "$B.tmp"; mv "$B.tmp" "$B"
 echo "file://${FOTOS_DIR// /%20} Fotos na areia" >> "$B"
 
 echo "[8/8] topografia ao ligar, painel do celular e vigia"
@@ -117,4 +118,4 @@ systemctl --user daemon-reload
 systemctl --user enable --now atualizar-papel-parede.timer >/dev/null 2>&1 || true
 
 echo
-echo "Pronto. Manuais na Área de Trabalho (uma pasta para cada coisa). Teste completo: bash testes/integracao.sh"
+echo "Pronto. Tudo pelo painel: http://localhost:8090 (atalho na Área de Trabalho). Teste completo: bash testes/integracao.sh"

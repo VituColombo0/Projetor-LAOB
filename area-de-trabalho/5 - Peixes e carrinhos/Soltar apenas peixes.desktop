@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Soltar apenas peixes
-Comment=Peixes nadando nos lagos (cave um buraco para fazer um lago)
-Exec=/home/laob/SARndbox-rosto/gui-rodar.sh "Peixes" input-gaming areia-animais peixes
-Icon=input-gaming
-Terminal=false

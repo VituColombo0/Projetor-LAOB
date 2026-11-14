@@ -11,22 +11,19 @@ for f in "$R"/instalar.sh "$R"/areia/sandbox.sh "$R"/areia/areia-topografia "$R"
   bash -n "$f" || { echo "  ERRO em $f"; falhas=1; }
 done
 for w in areia-foto areia-tema areia-tesouro areia-animais areia-fossil areia-labirinto; do sh -n "$R/areia/$w" || falhas=1; done
-for g in "$R"/areia/gui-*.sh; do bash -n "$g" || falhas=1; done
 if command -v shellcheck >/dev/null; then
-  shellcheck -S warning "$R"/instalar.sh "$R"/areia/sandbox.sh "$R"/areia/areia-topografia "$R"/areia/areia-foto "$R"/areia/areia-tema "$R"/areia/areia-tesouro "$R"/areia/areia-animais "$R"/areia/areia-fossil "$R"/areia/areia-labirinto "$R"/areia/gui-*.sh || falhas=1
+  shellcheck -S warning "$R"/instalar.sh "$R"/areia/sandbox.sh "$R"/areia/areia-topografia "$R"/areia/areia-foto "$R"/areia/areia-tema "$R"/areia/areia-tesouro "$R"/areia/areia-animais "$R"/areia/areia-fossil "$R"/areia/areia-labirinto "$R"/areia/areia-vigia || falhas=1
 else
   echo "  (shellcheck não instalado: só a sintaxe)"
 fi
-echo "== atalhos da Área de Trabalho"
-for at in "$R"/area-de-trabalho/*.desktop "$R"/area-de-trabalho/*/*.desktop; do
-  exe=$(sed -n 's/^Exec=//p' "$at" | awk '{print $1}')
-  [ "$exe" = xdg-open ] || [ -f "$R/areia/$(basename "$exe")" ] || { echo "  atalho aponta para algo que não existe: $at -> $exe"; falhas=1; }
+echo "== Área de Trabalho: só o atalho do painel"
+n=0
+for at in "$R"/area-de-trabalho/*.desktop; do
+  n=$((n+1))
   for k in Type Name Exec Icon; do grep -q "^$k=" "$at" || { echo "  falta $k em $at"; falhas=1; }; done
-  for c in $(sed -n 's/^Exec=.*gui-rodar.sh "[^"]*" [^ ]* \([^ ]*\).*/\1/p' "$at"); do
-    [ -f "$R/areia/$c" ] || { echo "  comando inexistente em $at: $c"; falhas=1; }
-  done
 done
-for p in "$R"/area-de-trabalho/*/; do [ -s "$p/COMO USAR.txt" ] || { echo "  falta o manual em $p"; falhas=1; }; done
+[ $n = 1 ] || { echo "  esperava 1 atalho (o do painel), achei $n"; falhas=1; }
+ls -d "$R"/area-de-trabalho/*/ >/dev/null 2>&1 && { echo "  sobraram pastas em area-de-trabalho/"; falhas=1; }
 echo "== serviços"
 for u in "$R"/sistema/areia-vigia.service "$R"/sistema/sandbox-painel.service; do
   grep -q "^KillMode=process" "$u" || { echo "  falta KillMode=process em $u (o systemd mataria a areia)"; falhas=1; }

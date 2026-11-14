@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Modo esculpir relevo
-Comment=Mostra onde pôr (vermelho) ou tirar (azul) areia para formar a imagem
-Exec=/home/laob/SARndbox-rosto/gui-rodar.sh "Fotos na areia" applications-graphics areia-foto esculpir
-Icon=applications-graphics
-Terminal=false
