@@ -2,7 +2,7 @@
 
 > Caixa de areia de realidade aumentada do Laboratório LAOB: projeta relevo colorido, fotos que se deformam com a areia e brincadeiras e jogos de água (tesouro, fósseis, peixes, labirinto, corrida de rios, vila, vulcão) a partir de um Kinect e um projetor.
 
-![SARndbox](https://img.shields.io/badge/base-SARndbox%202.8-blue) ![Kinect](https://img.shields.io/badge/sensor-Kinect%20v1-lightgrey) ![Testes](https://img.shields.io/badge/testes-73-brightgreen) ![Licença GPL-2.0](https://img.shields.io/badge/licença-GPL--2.0-orange)
+![SARndbox](https://img.shields.io/badge/base-SARndbox%202.8-blue) ![Kinect](https://img.shields.io/badge/sensor-Kinect%20v1-lightgrey) ![Testes](https://img.shields.io/badge/testes-77-brightgreen) ![Licença GPL-2.0](https://img.shields.io/badge/licença-GPL--2.0-orange)
 
 ## Sumário
 
@@ -26,7 +26,7 @@ abre a **topografia** de sempre; por comando, atalho, painel do celular ou pelo
 - **Esculpir:** o rosto vira relevo-alvo; o projetor pinta onde falta areia (vermelho) e onde sobra (azul).
 - **Caça ao tesouro** e **fósseis de dinossauro** (T-Rex, Triceratops, Pterodáctilo, pegada): cave para achar.
 - **Peixes, carrinhos e pessoas:** peixes em cardume nos lagos, carrinhos seguindo os vales e pessoas passeando pela areia.
-- **Membros do laboratório:** cada membro anda pela areia com o próprio rosto num círculo e o nome embaixo; todos aparecem sempre, e quem o Willbert está vendo no laboratório ganha uma bolinha verde.
+- **Mundo LAOB:** os membros do laboratório vivem numa cidadezinha desenhada na areia (uma casa para cada um, laboratório, café, praça, parque e campinho). Cada boneco tem uma rotina, vai a pé ou de carro e entra nas construções; quem o Willbert está vendo no laboratório de verdade fica mais no laboratório da areia. No painel, tocar no nome de um membro mostra o rosto dele num balão.
 - **Labirinto de água:** leve a água da nascente até o alvo sem encostar nas armadilhas do caminho (encostou, recomeça), com placar.
 - **Jogos de água** (fácil, normal, difícil; nova rodada 20 s após o fim):
 
@@ -110,7 +110,7 @@ O jeito normal é o painel (`http://localhost:8090`, atalho na Área de Trabalho
 | `areia-tesouro [facil\|normal\|dificil\|achou\|parar]` | Caça ao tesouro |
 | `areia-fossil trex [facil\|dificil]` | Fóssil: `trex`, `triceratops`, `pterodactilo`, `pegada` (também `achou`, `parar`) |
 | `areia-animais todos [n]` | `peixes`, `carros`, `pessoas` ou `todos` (também `parar`) |
-| `areia-animais membros` | Membros andando com rosto e nome (fotos `Nome.jpg` em `~/SARndbox-rosto/membros/`) |
+| `areia-animais mundo` | Mundo LAOB: os membros numa cidadezinha (fotos `Nome.jpg` em `~/SARndbox-rosto/membros/`) |
 | `areia-labirinto [facil\|normal\|dificil\|nova\|placar\|parar]` | Labirinto de água |
 | `areia-jogo <jogo> [facil\|normal\|dificil]` | Jogo de água: `corrida`, `vila`, `rota`, `vulcao` (também `placar`, `nova`, `parar`, `ajuda`) |
 | `areia-vigia pausa` / `liga` | Pausa ou religa o vigia da topografia |
@@ -161,7 +161,7 @@ trocar para uma já usada leva ~1 s.
 hora pelo `colorMap` do SARndbox (~0,1 s). Pontos ajustados aos morros de ~8–10 cm do laob.
 
 **Extras** (`sarndbox/Extras.*`): mapa de alturas de 1,5 cm por célula, 2× por segundo, simulação
-na CPU e desenho no shader. Comandos: `tesouro [cm]`, `tesouroFim`, `animais peixes|carros|pessoas|todos|nada [n]`,
+na CPU e desenho no shader. Comandos: `tesouro [cm]`, `tesouroFim`, `animais peixes|carros|pessoas|todos|nada [n]`, `mundo …`, `mundoRosto NOME`,
 `labirinto [nível]`, `labirintoNovo`, `labirintoFim`, `labirintoTeste`,
 `jogo <nome> [1-3]`, `jogoNovo`, `jogoFim`, `jogoTeste`, `jogoInfo`.
 
@@ -170,7 +170,8 @@ na CPU e desenho no shader. Comandos: `tesouro [cm]`, `tesouroFim`, `animais pei
 - **Peixes:** água = 1,5 cm abaixo da mediana; só nadam onde o corpo inteiro cabe na água (1,8 cm de folga da margem), com rastro e bolhas; cardume com separação de ~5,5 cm, curvas suaves (até 2,8 rad/s); preso numa poça por 4 s, reaparece num lago de verdade.
 - **Carrinhos:** só andam onde cabem inteiros em chão firme (2,2 cm de folga do lago e da borda), levantam poeira; seguem a curva de nível dos vales, evitam rampas e lagos, freiam só para o de número menor; travado 3 s, dá meia-volta.
 - **Pessoas:** mesmo movimento dos carrinhos com corpo menor (1,7 cm de folga) e passo lento; desenhadas de cima (sapatos, ombros, braços, cabeça).
-- **Membros:** `membros.py` acha o rosto de cada foto de `membros/` (YuNet), recorta em círculo e monta `fotos/membros.rgba` (8 quadros de 128 px, RGBA); o Sandbox lê esse arquivo e o shader desenha o quadro de cada um (textura na unidade 6) e o nome em letras de 3×5 pontos. O painel lê `present` do `status.json` que o Willbert publica em `/dev/shm/visao/` (a cada 5 s) e manda `membros <giro> <n com rosto> <painel> NOME[+]…` (`+` = presente). As fotos ficam só na máquina, fora do repositório.
+- **Mundo LAOB** (`sarndbox/Mundo.cpp`): os lugares são peças como as dos jogos (casa, `P_LAB`, `P_PRACA`, `P_CAFE`, `P_PARQUE`, `P_CAMPO`), sorteadas em chão firme e plano. Cada boneco sorteia o próximo lugar por pesos (a própria casa, o laboratório com peso maior para quem está presente, os lugares de passeio), anda com o movimento das pessoas puxado para o destino, vira carrinho se o destino fica a mais de 22 cm e entra (some) nas construções fechadas. Seis moradores sem nome completam a cidade. As linhas `Mundo: NOME foi…/está…` do `sandbox.log` alimentam a seção LAOB do painel.
+- **Rostos dos membros:** `membros.py` acha o rosto de cada foto de `membros/` (YuNet), recorta em círculo e monta `fotos/membros.rgba` (8 quadros de 128 px, RGBA); o Sandbox lê esse arquivo (textura na unidade 6) e o shader mostra o quadro num balão quando o painel manda `mundoRosto NOME`. O nome é desenhado em letras de 3×5 pontos. O painel lê `present` do `status.json` do Willbert em `/dev/shm/visao/` a cada 5 s (`+` no nome = presente). As fotos ficam só na máquina, fora do repositório.
 - **Labirinto:** de 2 a 4 armadilhas (`P_PERIGO`) perto da reta nascente-alvo, medidas como as peças dos jogos; a nascente (disco de 2 cm) usa a água do próprio SARndbox (`addWater`); 2× por segundo mede a profundidade no alvo (`glGetTexImage`); com 0,25 cm escreve "Labirinto: a água chegou!", e após 20 s começa rodada nova.
 - **Jogos de água** (`sarndbox/Jogos.cpp`): até 4 nascentes e 16 peças (casa, portão, bandeira, placar) desenhadas no shader; fazenda, lago, barquinho e resgate foram retirados em 14/11/2026 (o código continua, sem comando). 2× por segundo a GPU devolve a água (`glGetTexImage` do nível e do fundo) e mede a maior e a média da profundidade em cada peça; com 0,3 cm conta como molhada. No vulcão, `extrasEfeito.w` escurece o relevo e pinta a água de lava em qualquer tema. Os avisos vão para o `sandbox.log` como linhas `Jogo: …`, que o painel e `areia-jogo placar` leem.
 - **Fluidez:** grade de água em 320×240 (`-wts 320 240`; 640×480 não dava conta na GTX 750 Ti). O log mostra `Desempenho: N quadros/s` a cada 30 s.
@@ -193,7 +194,7 @@ própria máquina, à rede local e à Tailscale; o resto recebe 403.
 Projetor-LAOB/
 ├── instalar.sh          # instala/atualiza tudo no PC
 ├── requirements.txt     # Python do venv (OpenCV, NumPy, Flask, waitress)
-├── sarndbox/            # modo Foto, Extras e Jogos de água: FaceImage, Extras, Jogos, patches, projetor.cfg
+├── sarndbox/            # modo Foto, Extras, Jogos de água e Mundo LAOB: FaceImage, Extras, Jogos, Mundo, patches, projetor.cfg
 ├── areia/               # areia.py, comandos areia-*, painel.py, rosto.py, temas/
 ├── area-de-trabalho/    # atalho .desktop do painel
 ├── sistema/             # serviços e timers de usuário (painel, vigia, papel de parede)
