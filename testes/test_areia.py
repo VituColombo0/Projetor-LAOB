@@ -527,6 +527,40 @@ class MembrosNaAreia(Ambiente):
         self.assertEqual(self.cmds()[-1], "cmd membros 0 2 - GAZZIRO VICTOR")
 
 
+class MundoLaob(MembrosNaAreia):
+    def test_liga_acompanha_e_mostra_rosto(self):
+        pasta = os.path.join(self.D, "membros")
+        os.makedirs(pasta)
+        for n in ("Gazziro.png", "Victor.png"):
+            escreve(os.path.join(pasta, n), b"x")
+        os.makedirs(self.areia.FOTOS, exist_ok=True)
+        escreve(self.areia.PAINEL_ROSTOS, b"x")
+        escreve(os.path.join(self.areia.FOTOS, "membros.json"), json.dumps({"nomes": ["GAZZIRO", "VICTOR"]}))
+        self.areia.PASTA_MEMBROS = pasta
+        with self.assertRaisesRegex(self.areia.Erro, "não está ligado"):
+            self.areia.mundo_rosto("Victor")
+        self.status(["Victor"])
+        self.assertEqual(self.areia.mundo(), (["GAZZIRO", "VICTOR"], ["VICTOR"]))
+        self.assertEqual(self.cmds()[-1], f"cmd mundo 0 2 {self.areia.PAINEL_ROSTOS} 6 GAZZIRO VICTOR+")
+        self.assertIn("cmd jogoFim", self.cmds()[-5:])
+        log = os.path.join(self.D, "sandbox.log")
+        escreve(log, "Mundo: VICTOR está em casa\nAnimais: mundo (2)\nMundo: cidade montada\n"
+                     "Mundo: VICTOR foi de carro para o laboratório\nMundo: GAZZIRO foi a pé para a praça\n"
+                     "Mundo: VICTOR está no laboratório\n")
+        self.assertEqual(self.areia.animais_situacao(), "mundo")
+        self.assertEqual(self.areia.mundo_situacao(), [
+            {"nome": "Gazziro", "fazendo": "foi a pé para a praça", "presente": False},
+            {"nome": "Victor", "fazendo": "está no laboratório", "presente": True}])
+        self.assertEqual(self.areia.mundo_rosto("victor"), "VICTOR")
+        self.assertEqual(self.cmds()[-1], "cmd mundoRosto VICTOR")
+        with self.assertRaisesRegex(self.areia.Erro, "não encontrado"):
+            self.areia.mundo_rosto("Fulano")
+        self.status(["Victor", "Gazziro"])                              # Gazziro chegou ao laboratório
+        self.assertTrue(self.areia.membros_atualiza())
+        self.assertEqual(self.cmds()[-1], "cmd mundo 0 2 - 6 GAZZIRO+ VICTOR+")
+        self.assertFalse(self.areia.membros_atualiza())
+
+
 class Labirinto(Ambiente):
     def cmds(self):
         return [c for c in self.comandos() if c.startswith("cmd")]

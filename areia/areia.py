@@ -393,6 +393,7 @@ PARAR_BRINCADEIRAS = {"tesouro": ("fossilFim", "labirintoFim", "jogoFim", "anima
                       "jogo": ("tesouroFim", "fossilFim", "labirintoFim", "animais nada"),
                       "animais": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim"),
                       "membros": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim"),
+                      "mundo": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim"),
                       "foto": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim", "animais nada")}
 
 
@@ -435,7 +436,7 @@ def tesouro(dificuldade="normal"):
     return prof
 
 
-_PREFIXOS_REGISTRO = ("Tesouro", "Fossil", "Labirinto", "Animais", "Jogo", "Modo Rosto:", "Modo Esculpir:")
+_PREFIXOS_REGISTRO = ("Tesouro", "Fossil", "Labirinto", "Animais", "Jogo", "Mundo", "Modo Rosto:", "Modo Esculpir:")
 _registro_cache = {"pos": 0, "linhas": [], "resto": b"", "rabo": b""}
 _registro_trava = threading.Lock()  # o painel atende várias consultas ao mesmo tempo
 
@@ -584,7 +585,7 @@ def animais_situacao():
     if not linhas or not linhas[-1].startswith("Animais: "):
         return "nada"
     t = linhas[-1].split()[1]
-    return t if t in ANIMAIS or t == "membros" else "nada"
+    return t if t in ANIMAIS or t in ("membros", "mundo") else "nada"
 
 
 # ---------- membros do laboratório andando na areia (quem o Willbert está vendo) ----------
@@ -675,18 +676,69 @@ def membros():
 
 
 def membros_atualiza():
-    """Chamado de tempos em tempos (painel): no modo membros, se mudou quem está presente (ou as
-    fotos), manda a lista nova. Devolve True se mandou."""
-    if animais_situacao() != "membros":
+    """Chamado de tempos em tempos (painel): no modo membros ou no mundo LAOB, se mudou quem está
+    presente (ou as fotos), manda a lista nova. Devolve True se mandou."""
+    sit = animais_situacao()
+    if sit not in ("membros", "mundo"):
         _membros_mandados[0] = None
         return False
     _, refez = membros_com_foto()
     nomes, n_fotos, presentes = membros_lista()
     if (nomes, presentes) == _membros_mandados[0] and not refez:
         return False
-    _comando(_comando_membros(nomes, n_fotos, presentes, refez or _membros_mandados[0] is None))
+    com_painel = refez or _membros_mandados[0] is None
+    _comando(_comando_mundo(nomes, n_fotos, presentes, com_painel) if sit == "mundo"
+             else _comando_membros(nomes, n_fotos, presentes, com_painel))
     _membros_mandados[0] = (nomes, presentes)
     return True
+
+
+# ---------- mundo LAOB: os membros vivendo numa cidadezinha na areia (Mundo.cpp) ----------
+
+MORADORES_DO_MUNDO = 6   # bonecos sem nome, para a cidade ter movimento
+
+
+def _comando_mundo(nomes, n_fotos, presentes, com_painel):
+    return " ".join(["mundo", str(estado()["giro"] // 90), str(n_fotos), PAINEL_ROSTOS if com_painel and n_fotos else "-",
+                     str(MORADORES_DO_MUNDO), *[n + ("+" if n in presentes else "") for n in nomes]])
+
+
+def mundo():
+    """Liga o mundo LAOB: casas, laboratório, praça, café, parque e campinho, com os membros (e
+    alguns moradores sem nome) indo de um lugar para o outro. Devolve (nomes, presentes)."""
+    membros_com_foto()   # refaz o painel de rostos se a pasta mudou
+    nomes, n_fotos, presentes = membros_lista()
+    _brincadeira(_comando_mundo(nomes, n_fotos, presentes, True))
+    _membros_mandados[0] = (nomes, presentes)
+    return nomes, presentes
+
+
+def mundo_situacao():
+    """O que cada membro está fazendo no mundo LAOB: lista de {nome, fazendo, presente}, na ordem
+    dos bonecos. Vazia se o mundo não está ligado."""
+    if animais_situacao() != "mundo":
+        return []
+    linhas = _registro_caca()
+    inicio = max((i for i, l in enumerate(linhas) if l.startswith("Animais: mundo")), default=0)
+    fazendo = {}
+    for l in linhas[inicio:]:
+        m = re.match(r"Mundo: ([A-Z]+) (foi .+|está .+)$", l.strip())
+        if m:
+            fazendo[m.group(1)] = m.group(2)
+    nomes, _, presentes = membros_lista()
+    return [{"nome": n.capitalize(), "fazendo": fazendo.get(n, "saindo de casa"), "presente": n in presentes}
+            for n in nomes]
+
+
+def mundo_rosto(nome):
+    """Mostra por uns segundos o rosto do membro num balão acima do boneco dele."""
+    if animais_situacao() != "mundo":
+        raise Erro("o mundo LAOB não está ligado")
+    n = _nome_curto(nome)
+    if not n or n not in membros_lista()[0]:
+        raise Erro("membro não encontrado")
+    _comando(f"mundoRosto {n}")
+    return n
 
 
 def animais_fim():

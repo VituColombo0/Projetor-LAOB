@@ -63,7 +63,7 @@ confere "caça ao tesouro esconde o baú" "areia-tesouro facil >/dev/null && sle
 confere "tesouro: situação" "areia-tesouro achou | grep -qiE 'escondido|acharam'"
 confere "escavação de fóssil" "areia-fossil triceratops facil >/dev/null && sleep 2 && grep -q 'Fossil escondido' '$D/sandbox.log' && areia-fossil achou | grep -qiE 'enterrado|escavado'"
 confere "peixes e carrinhos" "areia-animais todos 12 >/dev/null && grep -q 'Animais: todos (12)' '$D/sandbox.log'"
-confere "membros do laboratório na areia" "areia-animais membros >/dev/null && sleep 1 && grep -q 'Animais: membros' '$D/sandbox.log' && curl -s -m 5 localhost:8090/estado | grep -q '\"animais\":\"membros\"'"
+confere "mundo LAOB: cidade montada e bonecos com rotina" "areia-animais mundo >/dev/null && for _ in \$(seq 1 30); do grep -q '^Mundo: cidade montada' '$D/sandbox.log' && break; sleep 0.5; done; grep -q '^Animais: mundo' '$D/sandbox.log' && grep -q '^Mundo: cidade montada' '$D/sandbox.log' && curl -s -m 5 localhost:8090/estado | grep -q '\"animais\":\"mundo\"'"
 confere "pessoas andando" "areia-animais pessoas 8 >/dev/null && grep -q 'Animais: pessoas (8)' '$D/sandbox.log'"
 confere "labirinto de água liga" "areia-labirinto facil >/dev/null && sleep 1 && grep -q '^Labirinto: nascente' '$D/sandbox.log' && areia-labirinto placar | grep -qiE 'correndo|chegou'"
 confere "labirinto: a água chega ao alvo e é medida" "'$D/sandbox.sh' cmd labirintoTeste >/dev/null && for _ in \$(seq 1 40); do grep -q '^Labirinto: a água chegou' '$D/sandbox.log' && break; sleep 0.5; done; grep -q '^Labirinto: a água chegou' '$D/sandbox.log' && areia-labirinto placar | grep -q 'chegou'"

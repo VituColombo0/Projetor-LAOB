@@ -9,7 +9,7 @@
   areia-animais peixes       peixes nadando no lago (cave um buraco e ele vira lago)
   areia-animais carros       carrinhos andando pelos vales
   areia-animais pessoas      pessoinhas passeando pela areia
-  areia-animais membros      os membros do laboratório andando, com rosto e nome (fotos em membros/)
+  areia-animais mundo        o mundo LAOB: os membros vivendo numa cidadezinha (fotos em membros/)
   areia-animais todos        tudo junto (pode pôr a quantidade: areia-animais peixes 15)
   areia-animais parar        tira os animais
 
@@ -61,12 +61,13 @@ def animais(args):
     elif pedido in ("parar", "tirar", "nada", "fim"):
         areia.animais_fim()
         print("Animais removidos.")
-    elif pedido in ("membros", "membro", "laboratorio", "lab"):
-        nomes, presentes = areia.membros()
+    elif pedido in ("mundo", "laob", "membros", "membro", "laboratorio", "lab", "cidade"):
+        nomes, presentes = areia.mundo()
+        print("Mundo LAOB na areia: casas, laboratório, café, praça, parque e campinho.")
         if nomes:
-            print("Na areia: " + ", ".join(n.capitalize() + (" (no laboratório)" if n in presentes else "") for n in nomes) + ".")
+            print("Moram lá: " + ", ".join(n.capitalize() + (" (no laboratório agora)" if n in presentes else "") for n in nomes) + ".")
         else:
-            print(f"Nenhum membro com foto. Ponha as fotos em {areia.PASTA_MEMBROS} (Nome.jpg) e rode de novo.")
+            print(f"Sem fotos de membros: só moradores sem nome. Fotos em {areia.PASTA_MEMBROS} (Nome.jpg).")
     else:
         print("Soltando os animais...")
         t, n = areia.animais(pedido, args[1] if len(args) > 1 else None)

@@ -8,6 +8,7 @@
    fossil [trex|triceratops|pterodactilo|pegada] [cm] [s]   escavação de fóssil (mesmo mecanismo do tesouro)
    fossilFim                                               encerra a escavação
    animais peixes|carros|pessoas|todos|nada [quantidade]   peixes no lago, carrinhos e pessoas andando
+   mundo <giro> <n com rosto> <painel|-> <moradores> [NOME[+]...] / mundoRosto NOME   a cidade LAOB (Mundo.cpp)
    membros <giro> <n com rosto> <painel|-> [NOME[+]...]    membros andando com rosto e nome (+ = presente agora)
    efeito <tema>                                           animação do tema (lava, neve, poeira...)
    labirinto [facil|normal|dificil] / labirintoNovo / labirintoFim (labirintoTeste: alvo na nascente)
@@ -353,6 +354,27 @@ void Sandbox::toggleDEM(DEM* dem)
 						setFaceMode(0,0);
 					extras.membros(lista,atoi(tokens[1].c_str()),atoi(tokens[2].c_str()));
 					std::cout<<"Animais: membros ("<<lista.size()<<", "<<extras.nFotos<<" com rosto)"<<std::endl;
+					}
+				else if(isToken(tokens[0],"mundo")&&tokens.size()>=5)
+					{
+					/* mundo <giro> <quantos têm rosto> <painel de rostos | -> <moradores sem nome> [NOME[+]...]:
+					   a cidade LAOB (Mundo.cpp); mandar de novo com os mesmos nomes só atualiza quem está presente */
+					std::vector<std::string> lista;
+					for(size_t i=5;i<tokens.size();++i)
+						lista.push_back(tokens[i]);
+					if(tokens[3]!="-"&&!extras.carregaAtlas(tokens[3].c_str()))
+						std::cout<<"Mundo: não consegui ler o painel de rostos "<<tokens[3]<<std::endl;
+					bool ja=extras.modo==Extras::MUNDO;
+					if(!ja)
+						setFaceMode(0,0);
+					extras.mundo(lista,atoi(tokens[1].c_str()),atoi(tokens[2].c_str()),atoi(tokens[4].c_str()));
+					if(!ja)
+						std::cout<<"Animais: mundo ("<<lista.size()<<")"<<std::endl;
+					}
+				else if(isToken(tokens[0],"mundoRosto")&&tokens.size()>=2)
+					{
+					if(extras.mundoRosto(tokens[1].c_str()))
+						std::cout<<"Mundo: mostrando o rosto de "<<tokens[1]<<std::endl;
 					}
 				else if(isToken(tokens[0],"animais"))
 					{
@@ -809,6 +831,6 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
 
 m = open("makefile").read()
 if "FaceImage.cpp" not in m:
-    m = rep(m, "                   DEM.cpp \\\n", "                   DEM.cpp \\\n                   FaceImage.cpp \\\n                   Extras.cpp \\\n                   Jogos.cpp \\\n")
+    m = rep(m, "                   DEM.cpp \\\n", "                   DEM.cpp \\\n                   FaceImage.cpp \\\n                   Extras.cpp \\\n                   Jogos.cpp \\\n                   Mundo.cpp \\\n")
     open("makefile", "w").write(m)
 print("Sandbox ok")

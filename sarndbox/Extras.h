@@ -23,7 +23,7 @@ class Extras
 	{
 	public:
 	enum {MAX_AGENTES=24};
-	enum Modo {NADA=0,PEIXES=1,CARROS=2,TODOS=3,PESSOAS=4,MEMBROS=5}; // TODOS = peixes, carrinhos e pessoas
+	enum Modo {NADA=0,PEIXES=1,CARROS=2,TODOS=3,PESSOAS=4,MEMBROS=5,MUNDO=6}; // MUNDO: a cidade LAOB (Mundo.cpp) // TODOS = peixes, carrinhos e pessoas
 	enum {NUM_UNIFORMS=12};
 	enum {MAX_NOMES=8,MAX_LETRAS=8}; // membros do laboratório andando na areia, com o nome em cima
 	/* Efeito animado de cada tema de cor: */
@@ -100,7 +100,7 @@ class Extras
 	/* Jogos de água (Jogos.cpp): como o labirinto, a água é a da simulação do SARndbox e a GPU mede
 	   quanta água há em cada peça (casa, planta, portão...) duas vezes por segundo. */
 	enum Jogo {SEM_JOGO=0,CORRIDA=1,VILA=2,FAZENDA=3,ROTA=4,LAGO=5,VULCAO=6,BARCO=7,RESGATE=8,NUM_JOGOS=9};
-	enum TipoPeca {P_NADA=0,P_NASCENTE=1,P_ALVO=2,P_CASA=3,P_PLANTA=4,P_PORTAO=5,P_LAGO=6,P_BARCO=7,P_PORTO=8,P_PEIXE=9,P_PLACAR=10,P_AVISO=11,P_PERIGO=12};
+	enum TipoPeca {P_NADA=0,P_NASCENTE=1,P_ALVO=2,P_CASA=3,P_PLANTA=4,P_PORTAO=5,P_LAGO=6,P_BARCO=7,P_PORTO=8,P_PEIXE=9,P_PLACAR=10,P_AVISO=11,P_PERIGO=12,P_LAB=13,P_PRACA=14,P_CAFE=15,P_PARQUE=16,P_CAMPO=17};
 	enum {MAX_PECAS=16,MAX_FONTES=4};
 	struct Peca
 		{
@@ -140,6 +140,17 @@ class Extras
 	std::vector<unsigned char> atlas; // painel de rostos: MAX_NOMES quadros RGBA lado a lado
 	mutable bool atlasNovo; mutable GLuint atlasTextura; // textura (criada no contexto OpenGL, no envio)
 	bool carregaAtlas(const char* arquivo);
+	/* Mundo LAOB (Mundo.cpp): destino e rotina de cada boneco */
+	float alvoX[MAX_AGENTES],alvoY[MAX_AGENTES],mAte[MAX_AGENTES],mTroca[MAX_AGENTES];
+	bool temAlvo[MAX_AGENTES],escondido[MAX_AGENTES];
+	int mEstado[MAX_AGENTES],mLugar[MAX_AGENTES],mCasa[MAX_AGENTES]; // 0 no lugar / 1 a caminho; peça atual ou destino; casa
+	double rostoAte[MAX_NOMES]; // até quando mostrar o rosto no balão
+	bool mundoPedido;
+	void mundo(const std::vector<std::string>& lista,int giro,int fotos,int moradores);
+	void mundoMonta(void);
+	int mundoEscolhe(int i);
+	void mundoPasso(float dt);
+	bool mundoRosto(const char* nome,float segundos=12.0f);
 	void membros(const std::vector<std::string>& lista,int giro,int fotos=0); // uma pessoinha por nome (mantém quem já estava)
 	void armadilhasDoLabirinto(void); // peças P_PERIGO entre a nascente e o alvo
 	float vbx,vby; // última velocidade da água no barco

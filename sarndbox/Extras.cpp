@@ -35,6 +35,16 @@ Extras::Extras(void)
 		tipo[i]=0.0f;
 		}
 	nNomes=giroNomes=nFotos=0;
+	mundoPedido=false;
+	for(int i=0;i<MAX_AGENTES;++i)
+		{
+		alvoX[i]=alvoY[i]=mAte[i]=mTroca[i]=0.0f;
+		temAlvo[i]=escondido[i]=false;
+		mEstado[i]=0;
+		mLugar[i]=mCasa[i]=-1;
+		}
+	for(int i=0;i<MAX_NOMES;++i)
+		rostoAte[i]=0.0;
 	atlasNovo=false;
 	atlasTextura=0;
 	for(int i=0;i<MAX_NOMES;++i)
@@ -334,6 +344,11 @@ void Extras::nasce(int i)
 
 void Extras::povoa(int novoModo,int quantidade)
 	{
+	if(modo==MUNDO)
+		nPecas=0; // os lugares da cidade somem com ela
+	mundoPedido=false;
+	for(int i=0;i<MAX_AGENTES;++i)
+		temAlvo[i]=escondido[i]=false;
 	modo=novoModo;
 	nNomes=0;
 	quantos=std::max(0,std::min(int(MAX_AGENTES),quantidade));
@@ -449,10 +464,14 @@ void Extras::passo(float dt)
 	if(!mapaOk||modo==NADA)
 		return;
 	dt=std::min(dt,0.1f);
+	if(modo==MUNDO)
+		mundoPasso(dt); // rotina de cada boneco: aonde vai, se entra, se vai de carro
 	for(int i=0;i<quantos;++i)
 		{
 		if(tipo[i]<0.5f)
 			continue;
+		if(modo==MUNDO&&(escondido[i]||nPecas==0))
+			continue; // dentro de uma construção (ou a cidade ainda não foi montada)
 		bool peixe=tipo[i]<2.0f;
 		if(vel[i]==0.0f)
 			{
@@ -563,12 +582,19 @@ void Extras::passo(float dt)
 				if(modo==MEMBROS&&!dentro(px,py,6.0f)&&dentro(ax[i],ay[i],6.0f))
 					continue; // membro: longe da beirada, para a plaquinha do nome caber inteira
 				if(!chaoLivre(px,py,rc)||!chaoLivre(ax[i]+std::cos(a)*olha*0.5f,ay[i]+std::sin(a)*olha*0.5f,rc)
-				   ||h-h0>2.0f||h0-h>3.0f)
-					continue;
+				   ||((h-h0>2.0f||h0-h>3.0f)&&!(modo==MUNDO&&pessoa)))
+					continue; // (no mundo LAOB quem está a pé sobe e desce ladeira: precisa chegar aos lugares)
 				/* vale: baixo, mas sem despencar (segue a curva de nível); longe dos outros carros */
 				float nota=0.35f*h+0.6f*std::abs(h-h0)+0.8f*std::abs(desvios[k]);
 				if(pessoa) // passeia: de tempos em tempos prefere virar para um lado
 					nota=0.5f*std::abs(h-h0)+0.6f*std::abs(desvios[k]-0.7f*std::sin(float(tempo)*0.35f+float(i)*2.3f));
+				if(modo==MUNDO&&temAlvo[i])
+					{
+					/* tem destino: prefere a direção que aponta para ele (o relevo ainda pesa) */
+					float rumo=difAng(std::atan2(alvoY[i]-ay[i],alvoX[i]-ax[i])-ang[i]);
+					rumo=std::max(-1.1f,std::min(1.1f,rumo));
+					nota=0.4f*std::abs(h-h0)+0.9f*std::abs(desvios[k]-rumo);
+					}
 				for(int j=0;j<quantos;++j)
 					if(j!=i&&tipo[j]>=2.0f&&vel[j]!=0.0f)
 						{
@@ -888,6 +914,283 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				}
 			}
 		}
+	/* (as peças vêm antes dos bonecos: no mundo LAOB eles andam por cima da praça e do campinho) */
+	/* Jogos de água (Jogos.cpp): peças desenhadas sobre o relevo */
+	if(extrasJogoInfo.x>0.5)
+		{
+		float jfase=extrasJogoInfo.y;
+		float jt=extrasJogoInfo.z;
+		float jaux=extrasJogoInfo.w; // corrida/outros: vencedor (-1 nenhum); rota: próximo portão
+		for(int i=0;i<16;++i)
+			{
+			vec4 a=extrasJogo[2*i];
+			vec4 b=extrasJogo[2*i+1];
+			if(a.w<0.5)
+				continue;
+			vec2 q=ep.xy-a.xy;
+			float d=length(q);
+			float r=a.z;
+			if(d>r*2.2+2.5)
+				continue;
+			float tipo=a.w;
+			float est=b.x;
+			float ang=atan(q.y,q.x);
+			vec3 c=baseColor.rgb;
+			float ouro=(jfase>1.5&&est>0.5&&est<1.5)?(0.6+0.4*sin(et*5.0)):0.0;
+			if(tipo<1.5)
+				{
+				/* nascente: ondas azuis (some quando a rodada termina) */
+				float on=smoothstep(r*1.6,0.0,d)*(jfase<1.5?1.0:0.3);
+				float ondas=0.5+0.5*sin(d*3.0-et*6.0);
+				c=mix(c,mix(vec3(0.15,0.45,0.95),vec3(0.75,0.95,1.0),ondas),on*0.85);
+				}
+			else if(tipo<2.5)
+				{
+				/* bandeira (corrida: azul ou vermelha; rota: vermelha) */
+				vec3 cor=b.w<0.5?vec3(0.15,0.45,1.0):vec3(0.95,0.15,0.15);
+				float venceu=(jfase>1.5&&((b.w<1.5&&abs(jaux-b.w)<0.5)||est>0.5))?1.0:0.0;
+				float anel=smoothstep(0.35,0.0,abs(d-r))*step(0.0,sin(ang*8.0+et*2.5));
+				float pano=(q.x>0.0&&q.x<2.2&&q.y>0.3&&q.y<1.5-q.x*0.4)?1.0:0.0;
+				float mastro=(abs(q.x)<0.12&&q.y>-0.6&&q.y<1.6)?1.0:0.0;
+				c=mix(c,venceu>0.5?vec3(1.0,0.82,0.2):cor,max(anel,smoothstep(1.0,0.6,d)*0.8));
+				c=mix(c,cor,pano*(0.85+0.15*sin(et*6.0+q.x*3.0)));
+				c=mix(c,vec3(0.95),mastro);
+				if(venceu>0.5)
+					{
+					float onda=smoothstep(0.6,0.0,abs(d-mod(jt*7.0,14.0)))*smoothstep(8.0,1.0,jt);
+					c=mix(c,vec3(1.0,0.85,0.25),onda);
+					}
+				}
+			else if(tipo<3.5)
+				{
+				/* casa: paredes, telhado e porta; alagada = água por cima; salva = brilho verde */
+				float s=r/2.6;
+				vec2 p=q/s;
+				bool corpo=abs(p.x)<1.1&&p.y>-1.2&&p.y<0.3;
+				bool telhado=p.y>=0.3&&p.y<1.5&&abs(p.x)<(1.5-p.y)*1.3;
+				bool porta=abs(p.x)<0.28&&p.y>-1.2&&p.y<-0.45;
+				if(corpo||telhado)
+					{
+					vec3 telha=b.w>0.5?vec3(0.5)+0.45*cos(6.2832*(vec3(b.w/100.0)+vec3(0.0,0.33,0.67))):vec3(0.78,0.2,0.14);
+					vec3 cc=corpo?vec3(0.96,0.9,0.74):telha;
+					if(corpo&&b.w>0.5&&abs(abs(p.x)-0.68)<0.2&&abs(p.y+0.3)<0.22)
+						cc=mix(vec3(0.25,0.3,0.4),vec3(1.0,0.9,0.4),b.y); // janelas: acesas com o dono em casa
+					if(porta)
+						cc=vec3(0.45,0.28,0.15);
+					if(est>1.5)
+						cc=mix(cc,vec3(0.2,0.45,0.9),0.55+0.15*sin(et*4.0+p.x*3.0));
+					c=cc*mix(1.0,0.7,smoothstep(0.85,1.1,max(abs(p.x)/1.1,0.0)));
+					}
+				else if(est>0.5&&est<1.5&&d<r*1.5&&b.w<0.5)
+					c=mix(c,vec3(0.3,0.95,0.4),smoothstep(r*1.5,r*1.1,d)*0.6);
+				}
+			else if(tipo<4.5)
+				{
+				/* plantação: broto com duas folhas; seca devagar (verde -> marrom); anel = água que resta */
+				float s=r/2.8;
+				vec2 p=q/s;
+				vec3 verde=mix(vec3(0.55,0.4,0.15),vec3(0.2,0.75,0.2),clamp(b.y,0.0,1.0));
+				if(est>1.5)
+					verde=vec3(0.45,0.38,0.3);
+				vec2 f1=p-vec2(0.55,0.35),f2=p+vec2(0.55,-0.35);
+				bool folha=(f1.x*f1.x/0.36+f1.y*f1.y/0.1<1.0)||(f2.x*f2.x/0.36+f2.y*f2.y/0.1<1.0);
+				bool caule=abs(p.x)<0.1&&p.y>-0.9&&p.y<0.4;
+				bool terra=length(p+vec2(0.0,0.95))<0.45;
+				if(folha||caule)
+					c=verde;
+				else if(terra)
+					c=vec3(0.4,0.26,0.14);
+				float fr=fract(ang/6.2831853+1.0);
+				float arco=smoothstep(0.3,0.0,abs(d-r*1.15))*(fr<b.y?1.0:0.25);
+				c=mix(c,mix(vec3(0.9,0.25,0.15),vec3(0.2,0.6,1.0),b.y),arco*(est>1.5?0.0:1.0));
+				c=mix(c,vec3(0.3,0.95,0.4),smoothstep(0.4,0.0,abs(d-r*1.3))*ouro);
+				}
+			else if(tipo<5.5)
+				{
+				/* portão numerado: anel com o número em bolinhas; o próximo pisca amarelo */
+				vec3 cor=est>0.5?vec3(0.2,0.9,0.35):(abs(b.z-jaux)<0.5?mix(vec3(1.0,0.85,0.1),vec3(1.0),0.5+0.5*sin(et*6.0)):vec3(0.95));
+				float anel=smoothstep(0.45,0.15,abs(d-r));
+				float bolas=0.0;
+				for(int k=0;k<4;++k)
+					{
+					if(float(k)>=b.z)
+						break;
+					vec2 cb=vec2((float(k)-(b.z-1.0)*0.5)*0.9,0.0);
+					bolas=max(bolas,smoothstep(0.38,0.28,length(q-cb)));
+					}
+				c=mix(c,cor,max(anel,bolas));
+				}
+			else if(tipo<6.5)
+				{
+				/* lago: contorno tracejado girando; cor pela água que tem (azul falta, verde na medida, vermelho demais) */
+				vec3 cor=b.z<0.5?vec3(0.3,0.55,1.0):(b.z<1.5?vec3(0.25,0.95,0.4):vec3(1.0,0.3,0.2));
+				float tracos=step(0.0,sin(ang*12.0-et*1.5));
+				float anel=smoothstep(0.35,0.0,abs(d-r))*tracos;
+				float dentroL=smoothstep(r,r-0.6,d);
+				c=mix(c,cor,max(anel,dentroL*0.18));
+				if(jfase>1.5)
+					c=mix(c,est<1.5?vec3(1.0,0.85,0.25):vec3(1.0,0.3,0.2),smoothstep(0.6,0.0,abs(d-mod(jt*6.0,r*2.0)))*0.8);
+				}
+			else if(tipo<7.5)
+				{
+				/* barquinho: casco de madeira e vela branca, apontando para onde a água leva */
+				float ca=cos(b.w),sa=sin(b.w);
+				vec2 p=vec2(ca*q.x+sa*q.y,-sa*q.x+ca*q.y)/(r/1.8);
+				bool casco=(p.x*p.x/2.2+p.y*p.y/0.35<1.0)&&p.x>-1.4;
+				bool vela=p.x>-0.6&&p.x<0.6&&p.y>0.05&&p.y<(0.6-p.x)*1.4&&p.y<1.3;
+				if(vela)
+					c=vec3(0.97);
+				else if(casco)
+					c=mix(vec3(0.55,0.32,0.15),vec3(0.75,0.5,0.25),smoothstep(0.6,0.0,abs(p.y)));
+				c=mix(c,vec3(1.0,0.82,0.2),smoothstep(0.5,0.0,abs(d-r*1.5))*ouro);
+				}
+			else if(tipo<8.5)
+				{
+				/* porto: tábuas de madeira dentro de um anel */
+				float anel=smoothstep(0.35,0.0,abs(d-r))*step(0.0,sin(ang*10.0+et*1.5));
+				bool tabuas=abs(q.x)<r*0.5&&abs(q.y)<r*0.25;
+				float linhas=step(0.82,fract(q.x*1.2));
+				if(tabuas)
+					c=mix(vec3(0.62,0.42,0.22),vec3(0.35,0.22,0.1),linhas);
+				c=mix(c,est>0.5?vec3(1.0,0.82,0.2):vec3(0.85,0.65,0.4),anel);
+				}
+			else if(tipo>16.5)
+				{
+				/* campinho: gramado com linhas, traves e a bola correndo quando tem gente */
+				if(abs(q.x)<r&&abs(q.y)<r*0.62)
+					{
+					c=mix(vec3(0.2,0.62,0.25),vec3(0.26,0.7,0.3),step(0.0,sin(q.x*2.4)));
+					float linhas=max(smoothstep(0.14,0.04,abs(abs(q.x)-r*0.94)),smoothstep(0.14,0.04,abs(abs(q.y)-r*0.56)));
+					linhas=max(linhas,max(smoothstep(0.14,0.04,abs(q.x)),smoothstep(0.14,0.04,abs(d-r*0.24))));
+					c=mix(c,vec3(0.97),linhas);
+					if(abs(q.x)>r*0.88&&abs(q.y)<r*0.2)
+						c=vec3(0.95,0.95,0.9);
+					if(est>0.5&&distance(q,vec2(r*0.7*sin(et*1.3),r*0.4*sin(et*2.1+1.0)))<0.42)
+						c=vec3(1.0);
+					}
+				}
+			else if(tipo>15.5)
+				{
+				/* parque: gramado redondo, três árvores que balançam e um caminho */
+				c=mix(c,vec3(0.36,0.68,0.3),smoothstep(r,r*0.8,d)*0.85);
+				if(abs(q.y+q.x*0.3)<0.4&&d<r*0.9)
+					c=vec3(0.82,0.72,0.52);
+				for(int k=0;k<3;++k)
+					{
+					float fk=float(k);
+					vec2 pa=vec2(cos(fk*2.1+0.5),sin(fk*2.1+0.5))*r*0.55+vec2(0.12*sin(et*1.5+fk),0.0);
+					float da=distance(q,pa);
+					if(da<1.25)
+						c=mix(vec3(0.1,0.42,0.14),vec3(0.3,0.72,0.25),smoothstep(1.25,0.2,da));
+					}
+				}
+			else if(tipo>14.5)
+				{
+				/* café: casinha com toldo listrado e fumacinha quando tem alguém lá dentro */
+				bool corpoC=abs(q.x)<r*0.85&&q.y>-r*0.6&&q.y<r*0.55;
+				if(corpoC)
+					{
+					c=vec3(0.93,0.84,0.7);
+					if(q.y<-r*0.15)
+						c=mix(vec3(0.85,0.2,0.2),vec3(0.98),step(0.0,sin(q.x*5.0)));
+					else if(abs(abs(q.x)-r*0.4)<r*0.18&&abs(q.y-r*0.2)<r*0.16)
+						c=mix(vec3(0.3,0.35,0.45),vec3(1.0,0.88,0.45),b.y);
+					c*=mix(1.0,0.75,smoothstep(r*0.75,r*0.85,abs(q.x)));
+					}
+				for(int k=0;k<3;++k)
+					{
+					float ph=fract(et*0.35+float(k)/3.0);
+					vec2 pf=vec2(r*0.45+0.3*sin(ph*6.0+float(k)),r*0.6+ph*2.6);
+					c=mix(c,vec3(0.97),smoothstep(0.3+0.5*ph,0.1,distance(q,pf))*(1.0-ph)*0.7*b.y);
+					}
+				}
+			else if(tipo>13.5)
+				{
+				/* praça: calçada redonda, bancos e a fonte no meio */
+				if(d<r)
+					{
+					c=mix(vec3(0.78,0.74,0.66),vec3(0.7,0.66,0.58),step(0.0,sin(q.x*3.0)*sin(q.y*3.0)));
+					c*=mix(1.0,0.8,smoothstep(r*0.9,r,d));
+					if(abs(abs(q.x)-r*0.62)<0.55&&abs(q.y)<0.22||abs(abs(q.y)-r*0.62)<0.22&&abs(q.x)<0.55)
+						c=vec3(0.5,0.32,0.16);
+					if(d<r*0.36)
+						c=mix(vec3(0.6,0.62,0.66),mix(vec3(0.2,0.55,0.95),vec3(0.8,0.95,1.0),0.5+0.5*sin(d*9.0-et*5.0)),step(d,r*0.3));
+					}
+				}
+			else if(tipo>12.5)
+				{
+				/* laboratório: prédio com faixa azul e janelas que acendem conforme a gente lá dentro */
+				if(abs(q.x)<r*0.95&&abs(q.y)<r*0.62)
+					{
+					c=vec3(0.86,0.9,0.95);
+					if(q.y>r*0.42)
+						c=vec3(0.12,0.4,0.8);
+					for(int k=0;k<4;++k)
+						{
+						float wx=(float(k)-1.5)*r*0.42;
+						if(abs(q.x-wx)<r*0.13&&abs(q.y-r*0.08)<r*0.16)
+							c=float(k)<est-0.5?mix(vec3(1.0,0.85,0.3),vec3(1.0,0.97,0.7),0.5+0.5*sin(et*3.0+float(k))):vec3(0.2,0.27,0.4);
+						}
+					if(abs(q.x)<r*0.12&&q.y<-r*0.3)
+						c=vec3(0.35,0.25,0.18);
+					c*=mix(1.0,0.72,max(smoothstep(r*0.86,r*0.95,abs(q.x)),smoothstep(r*0.54,r*0.62,abs(q.y))));
+					}
+				}
+			else if(tipo>11.5)
+				{
+				/* armadilha do labirinto: disco vermelho com espinhos girando; ao ser tocada, pisca */
+				float espinhos=r*(0.78+0.22*abs(sin(ang*5.0+et*1.5)));
+				float dentroA=smoothstep(espinhos,espinhos-0.5,d);
+				float xis=smoothstep(0.35,0.1,abs(abs(q.x)-abs(q.y)))*step(d,r*0.55);
+				vec3 cor=mix(vec3(0.75,0.05,0.05),vec3(1.0,0.35,0.1),0.5+0.5*sin(et*3.0));
+				if(est>0.5)
+					cor=mix(cor,vec3(1.0),0.5+0.5*sin(et*25.0));
+				c=mix(c,cor,dentroA*0.85);
+				c=mix(c,vec3(1.0,0.95,0.6),xis*dentroA);
+				}
+			else if(tipo>10.5)
+				{
+				/* aviso do vulcão: aqui vai abrir uma boca de lava (anéis que fecham, piscando) */
+				float pisca=0.5+0.5*sin(et*12.0);
+				float anel=smoothstep(0.5,0.0,abs(d-r*(1.6-fract(et*1.2))));
+				float miolo=smoothstep(r*0.5,0.0,d);
+				c=mix(c,mix(vec3(1.0,0.9,0.1),vec3(1.0,0.2,0.0),pisca),clamp(anel+miolo*pisca,0.0,1.0)*0.9);
+				}
+			else if(tipo>9.5)
+				{
+				/* placar: casinha pequena; branca = de pé, vermelha com X = perdida, verde = salva */
+				vec2 p=q/(r/1.3);
+				bool corpo=abs(p.x)<0.8&&p.y>-0.9&&p.y<0.15;
+				bool telhado=p.y>=0.15&&p.y<1.0&&abs(p.x)<(1.0-p.y)*1.25;
+				vec3 cor=est>1.5?vec3(0.95,0.15,0.1):(est>0.5?vec3(0.25,0.95,0.4):vec3(0.97));
+				if(d<r*1.25)
+					c=mix(c,vec3(0.0),0.75);
+				if(corpo||telhado)
+					c=cor;
+				if(est>1.5&&abs(abs(p.x)-abs(p.y+0.2))<0.16&&abs(p.x)<0.9)
+					c=vec3(0.1,0.0,0.0);
+				}
+			else
+				{
+				/* peixe preso na poça: anel = ar que resta; salvo = nada e brilha; perdido = cinza parado */
+				float s=r/2.4;
+				float onda=est<1.5?0.25*sin(et*(est>0.5?10.0:4.0)+q.x*2.0):0.0;
+				vec2 p=vec2(q.x,q.y+onda)/s;
+				bool corpo=p.x*p.x/1.4+p.y*p.y/0.4<1.0;
+				bool rabo=p.x<-0.9&&p.x>-1.8&&abs(p.y)<(-p.x-0.9)*0.9;
+				vec3 cor=est>1.5?vec3(0.55):vec3(1.0,0.55,0.15);
+				if(corpo||rabo)
+					c=corpo&&distance(p,vec2(0.6,0.15))<0.15?vec3(0.05):cor;
+				else if(d<r)
+					c=mix(c,vec3(0.25,0.55,0.95),0.35);
+				float fr=fract(ang/6.2831853+1.0);
+				float arco=smoothstep(0.3,0.0,abs(d-r*1.15))*(fr<b.y?1.0:0.2);
+				c=mix(c,mix(vec3(0.9,0.25,0.15),vec3(0.35,0.75,1.0),b.y),arco*(est<0.5?1.0:0.0));
+				c=mix(c,vec3(0.3,0.95,0.6),smoothstep(0.4,0.0,abs(d-r*1.2))*(est>0.5&&est<1.5?0.8:0.0));
+				}
+			baseColor.rgb=c;
+			}
+		}
 	/* Peixes e carrinhos (vistos de cima, com sombra): */
 	for(int i=0;i<24;++i)
 		{
@@ -1026,14 +1329,17 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				}
 			}
 		}
-	/* Membros do laboratório: o rosto de cada um num círculo em cima da pessoinha (sempre de pé,
-	   não gira com o passo) e o nome numa plaquinha; bolinha verde = está no laboratório agora */
+	/* Membros do laboratório: plaquinha pequena com o nome acima do boneco (ele fica à vista);
+	   bolinha verde = está no laboratório agora. O rosto só aparece, num balão acima do nome,
+	   quando alguém toca no membro no painel. */
 	for(int i=0;i<8;++i)
 		{
 		if(float(i)>=extrasNomesCfg.x-0.5)
 			break;
 		vec4 a=extrasAg[i];
 		float cod=extrasNomes[i*9];
+		float mostra=floor(cod/32.0);
+		cod-=32.0*mostra;
 		float pres=floor(cod/16.0);
 		float len=cod-16.0*pres;
 		if(a.w<0.5||len<0.5)
@@ -1041,37 +1347,36 @@ const char* Extras::glslFragmentMain=R"GLSL(
 		float gr=extrasNomesCfg.y;
 		vec2 cima=gr<0.5?vec2(0.0,1.0):(gr<1.5?vec2(-1.0,0.0):(gr<2.5?vec2(0.0,-1.0):vec2(1.0,0.0)));
 		vec2 dir=vec2(cima.y,-cima.x);
-		bool temRosto=float(i)<extrasNomesCfg.z-0.5;
-		float hueM=fract(a.w);
-		vec3 corM=vec3(0.55)+0.45*cos(6.2832*(vec3(hueM)+vec3(0.0,0.33,0.67)));
-		if(temRosto)
+		if(mostra>0.5&&float(i)<extrasNomesCfg.z-0.5)
 			{
-			float R=1.9; // raio do rosto, em cm
-			vec2 rr=ep.xy-(a.xy+cima*0.9);
+			float R=2.3; // raio do rosto no balão, em cm
+			vec2 rr=ep.xy-(a.xy+cima*6.4);
 			vec2 tr=vec2(dot(rr,dir),dot(rr,cima));
 			float dr=length(tr);
+			float hueM=fract(a.w);
+			vec3 corM=vec3(0.55)+0.45*cos(6.2832*(vec3(hueM)+vec3(0.0,0.33,0.67)));
+			if(tr.y<-R*0.8&&tr.y>-R-1.2&&abs(tr.x)<(tr.y+R+1.2)*0.45)
+				baseColor.rgb=mix(corM,vec3(1.0),0.3);                  // bico do balão
 			if(dr<R+0.35)
 				{
-				vec3 aro=pres>0.5?mix(corM,vec3(1.0),0.25):corM*0.75;
-				baseColor.rgb=mix(baseColor.rgb,aro,smoothstep(R+0.35,R+0.2,dr));
+				baseColor.rgb=mix(baseColor.rgb,mix(corM,vec3(1.0),0.3),smoothstep(R+0.35,R+0.2,dr));
 				if(dr<R)
 					{
-					vec2 uv=vec2((float(i)+0.5+tr.x/(2.0*R))/8.0,0.5-tr.y/(2.0*R));
-					vec4 rosto=texture2D(extrasRostos,uv);
-					baseColor.rgb=mix(baseColor.rgb,rosto.rgb,rosto.a);
+					vec4 rosto=texture2D(extrasRostos,vec2((float(i)+0.5+tr.x/(2.0*R))/8.0,0.5-tr.y/(2.0*R)));
+					baseColor.rgb=mix(vec3(0.95),rosto.rgb,rosto.a);
 					}
 				}
 			}
-		vec2 rel=ep.xy-(a.xy+cima*(temRosto?-2.4:3.7));
+		vec2 rel=ep.xy-(a.xy+cima*2.7);
 		vec2 t=vec2(dot(rel,dir),dot(rel,cima));
-		float px=0.27;
+		float px=0.2;
 		float cw=4.0*px;
 		float larg=len*cw-px;
-		float margem=pres>0.5?1.25:0.5; // espaço para a bolinha verde
-		if(t.x<-larg*0.5-margem||t.x>larg*0.5+0.5||abs(t.y)>2.5*px+0.45)
+		float margem=pres>0.5?0.95:0.35; // espaço para a bolinha verde
+		if(t.x<-larg*0.5-margem||t.x>larg*0.5+0.35||abs(t.y)>2.5*px+0.3)
 			continue;
-		baseColor.rgb=mix(baseColor.rgb,vec3(0.04,0.06,0.1),0.8);
-		if(pres>0.5&&distance(t,vec2(-larg*0.5-0.6,0.0))<0.4)
+		baseColor.rgb=mix(baseColor.rgb,vec3(0.04,0.06,0.1),0.78);
+		if(pres>0.5&&distance(t,vec2(-larg*0.5-0.48,0.0))<0.3)
 			baseColor.rgb=vec3(0.2,0.95,0.4);
 		float cx=(t.x+larg*0.5)/cw;
 		float k=floor(cx);
@@ -1119,197 +1424,6 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			baseColor.rgb+=vec3(1.0,0.9,0.5)*faisca;
 			}
 		}
-	/* Jogos de água (Jogos.cpp): peças desenhadas sobre o relevo */
-	if(extrasJogoInfo.x>0.5)
-		{
-		float jfase=extrasJogoInfo.y;
-		float jt=extrasJogoInfo.z;
-		float jaux=extrasJogoInfo.w; // corrida/outros: vencedor (-1 nenhum); rota: próximo portão
-		for(int i=0;i<16;++i)
-			{
-			vec4 a=extrasJogo[2*i];
-			vec4 b=extrasJogo[2*i+1];
-			if(a.w<0.5)
-				continue;
-			vec2 q=ep.xy-a.xy;
-			float d=length(q);
-			float r=a.z;
-			if(d>r*2.2+2.5)
-				continue;
-			float tipo=a.w;
-			float est=b.x;
-			float ang=atan(q.y,q.x);
-			vec3 c=baseColor.rgb;
-			float ouro=(jfase>1.5&&est>0.5&&est<1.5)?(0.6+0.4*sin(et*5.0)):0.0;
-			if(tipo<1.5)
-				{
-				/* nascente: ondas azuis (some quando a rodada termina) */
-				float on=smoothstep(r*1.6,0.0,d)*(jfase<1.5?1.0:0.3);
-				float ondas=0.5+0.5*sin(d*3.0-et*6.0);
-				c=mix(c,mix(vec3(0.15,0.45,0.95),vec3(0.75,0.95,1.0),ondas),on*0.85);
-				}
-			else if(tipo<2.5)
-				{
-				/* bandeira (corrida: azul ou vermelha; rota: vermelha) */
-				vec3 cor=b.w<0.5?vec3(0.15,0.45,1.0):vec3(0.95,0.15,0.15);
-				float venceu=(jfase>1.5&&((b.w<1.5&&abs(jaux-b.w)<0.5)||est>0.5))?1.0:0.0;
-				float anel=smoothstep(0.35,0.0,abs(d-r))*step(0.0,sin(ang*8.0+et*2.5));
-				float pano=(q.x>0.0&&q.x<2.2&&q.y>0.3&&q.y<1.5-q.x*0.4)?1.0:0.0;
-				float mastro=(abs(q.x)<0.12&&q.y>-0.6&&q.y<1.6)?1.0:0.0;
-				c=mix(c,venceu>0.5?vec3(1.0,0.82,0.2):cor,max(anel,smoothstep(1.0,0.6,d)*0.8));
-				c=mix(c,cor,pano*(0.85+0.15*sin(et*6.0+q.x*3.0)));
-				c=mix(c,vec3(0.95),mastro);
-				if(venceu>0.5)
-					{
-					float onda=smoothstep(0.6,0.0,abs(d-mod(jt*7.0,14.0)))*smoothstep(8.0,1.0,jt);
-					c=mix(c,vec3(1.0,0.85,0.25),onda);
-					}
-				}
-			else if(tipo<3.5)
-				{
-				/* casa: paredes, telhado e porta; alagada = água por cima; salva = brilho verde */
-				float s=r/2.6;
-				vec2 p=q/s;
-				bool corpo=abs(p.x)<1.1&&p.y>-1.2&&p.y<0.3;
-				bool telhado=p.y>=0.3&&p.y<1.5&&abs(p.x)<(1.5-p.y)*1.3;
-				bool porta=abs(p.x)<0.28&&p.y>-1.2&&p.y<-0.45;
-				if(corpo||telhado)
-					{
-					vec3 cc=corpo?vec3(0.96,0.9,0.74):vec3(0.78,0.2,0.14);
-					if(porta)
-						cc=vec3(0.45,0.28,0.15);
-					if(est>1.5)
-						cc=mix(cc,vec3(0.2,0.45,0.9),0.55+0.15*sin(et*4.0+p.x*3.0));
-					c=cc*mix(1.0,0.7,smoothstep(0.85,1.1,max(abs(p.x)/1.1,0.0)));
-					}
-				else if(est>0.5&&est<1.5&&d<r*1.5)
-					c=mix(c,vec3(0.3,0.95,0.4),smoothstep(r*1.5,r*1.1,d)*0.6);
-				}
-			else if(tipo<4.5)
-				{
-				/* plantação: broto com duas folhas; seca devagar (verde -> marrom); anel = água que resta */
-				float s=r/2.8;
-				vec2 p=q/s;
-				vec3 verde=mix(vec3(0.55,0.4,0.15),vec3(0.2,0.75,0.2),clamp(b.y,0.0,1.0));
-				if(est>1.5)
-					verde=vec3(0.45,0.38,0.3);
-				vec2 f1=p-vec2(0.55,0.35),f2=p+vec2(0.55,-0.35);
-				bool folha=(f1.x*f1.x/0.36+f1.y*f1.y/0.1<1.0)||(f2.x*f2.x/0.36+f2.y*f2.y/0.1<1.0);
-				bool caule=abs(p.x)<0.1&&p.y>-0.9&&p.y<0.4;
-				bool terra=length(p+vec2(0.0,0.95))<0.45;
-				if(folha||caule)
-					c=verde;
-				else if(terra)
-					c=vec3(0.4,0.26,0.14);
-				float fr=fract(ang/6.2831853+1.0);
-				float arco=smoothstep(0.3,0.0,abs(d-r*1.15))*(fr<b.y?1.0:0.25);
-				c=mix(c,mix(vec3(0.9,0.25,0.15),vec3(0.2,0.6,1.0),b.y),arco*(est>1.5?0.0:1.0));
-				c=mix(c,vec3(0.3,0.95,0.4),smoothstep(0.4,0.0,abs(d-r*1.3))*ouro);
-				}
-			else if(tipo<5.5)
-				{
-				/* portão numerado: anel com o número em bolinhas; o próximo pisca amarelo */
-				vec3 cor=est>0.5?vec3(0.2,0.9,0.35):(abs(b.z-jaux)<0.5?mix(vec3(1.0,0.85,0.1),vec3(1.0),0.5+0.5*sin(et*6.0)):vec3(0.95));
-				float anel=smoothstep(0.45,0.15,abs(d-r));
-				float bolas=0.0;
-				for(int k=0;k<4;++k)
-					{
-					if(float(k)>=b.z)
-						break;
-					vec2 cb=vec2((float(k)-(b.z-1.0)*0.5)*0.9,0.0);
-					bolas=max(bolas,smoothstep(0.38,0.28,length(q-cb)));
-					}
-				c=mix(c,cor,max(anel,bolas));
-				}
-			else if(tipo<6.5)
-				{
-				/* lago: contorno tracejado girando; cor pela água que tem (azul falta, verde na medida, vermelho demais) */
-				vec3 cor=b.z<0.5?vec3(0.3,0.55,1.0):(b.z<1.5?vec3(0.25,0.95,0.4):vec3(1.0,0.3,0.2));
-				float tracos=step(0.0,sin(ang*12.0-et*1.5));
-				float anel=smoothstep(0.35,0.0,abs(d-r))*tracos;
-				float dentroL=smoothstep(r,r-0.6,d);
-				c=mix(c,cor,max(anel,dentroL*0.18));
-				if(jfase>1.5)
-					c=mix(c,est<1.5?vec3(1.0,0.85,0.25):vec3(1.0,0.3,0.2),smoothstep(0.6,0.0,abs(d-mod(jt*6.0,r*2.0)))*0.8);
-				}
-			else if(tipo<7.5)
-				{
-				/* barquinho: casco de madeira e vela branca, apontando para onde a água leva */
-				float ca=cos(b.w),sa=sin(b.w);
-				vec2 p=vec2(ca*q.x+sa*q.y,-sa*q.x+ca*q.y)/(r/1.8);
-				bool casco=(p.x*p.x/2.2+p.y*p.y/0.35<1.0)&&p.x>-1.4;
-				bool vela=p.x>-0.6&&p.x<0.6&&p.y>0.05&&p.y<(0.6-p.x)*1.4&&p.y<1.3;
-				if(vela)
-					c=vec3(0.97);
-				else if(casco)
-					c=mix(vec3(0.55,0.32,0.15),vec3(0.75,0.5,0.25),smoothstep(0.6,0.0,abs(p.y)));
-				c=mix(c,vec3(1.0,0.82,0.2),smoothstep(0.5,0.0,abs(d-r*1.5))*ouro);
-				}
-			else if(tipo<8.5)
-				{
-				/* porto: tábuas de madeira dentro de um anel */
-				float anel=smoothstep(0.35,0.0,abs(d-r))*step(0.0,sin(ang*10.0+et*1.5));
-				bool tabuas=abs(q.x)<r*0.5&&abs(q.y)<r*0.25;
-				float linhas=step(0.82,fract(q.x*1.2));
-				if(tabuas)
-					c=mix(vec3(0.62,0.42,0.22),vec3(0.35,0.22,0.1),linhas);
-				c=mix(c,est>0.5?vec3(1.0,0.82,0.2):vec3(0.85,0.65,0.4),anel);
-				}
-			else if(tipo>11.5)
-				{
-				/* armadilha do labirinto: disco vermelho com espinhos girando; ao ser tocada, pisca */
-				float espinhos=r*(0.78+0.22*abs(sin(ang*5.0+et*1.5)));
-				float dentroA=smoothstep(espinhos,espinhos-0.5,d);
-				float xis=smoothstep(0.35,0.1,abs(abs(q.x)-abs(q.y)))*step(d,r*0.55);
-				vec3 cor=mix(vec3(0.75,0.05,0.05),vec3(1.0,0.35,0.1),0.5+0.5*sin(et*3.0));
-				if(est>0.5)
-					cor=mix(cor,vec3(1.0),0.5+0.5*sin(et*25.0));
-				c=mix(c,cor,dentroA*0.85);
-				c=mix(c,vec3(1.0,0.95,0.6),xis*dentroA);
-				}
-			else if(tipo>10.5)
-				{
-				/* aviso do vulcão: aqui vai abrir uma boca de lava (anéis que fecham, piscando) */
-				float pisca=0.5+0.5*sin(et*12.0);
-				float anel=smoothstep(0.5,0.0,abs(d-r*(1.6-fract(et*1.2))));
-				float miolo=smoothstep(r*0.5,0.0,d);
-				c=mix(c,mix(vec3(1.0,0.9,0.1),vec3(1.0,0.2,0.0),pisca),clamp(anel+miolo*pisca,0.0,1.0)*0.9);
-				}
-			else if(tipo>9.5)
-				{
-				/* placar: casinha pequena; branca = de pé, vermelha com X = perdida, verde = salva */
-				vec2 p=q/(r/1.3);
-				bool corpo=abs(p.x)<0.8&&p.y>-0.9&&p.y<0.15;
-				bool telhado=p.y>=0.15&&p.y<1.0&&abs(p.x)<(1.0-p.y)*1.25;
-				vec3 cor=est>1.5?vec3(0.95,0.15,0.1):(est>0.5?vec3(0.25,0.95,0.4):vec3(0.97));
-				if(d<r*1.25)
-					c=mix(c,vec3(0.0),0.75);
-				if(corpo||telhado)
-					c=cor;
-				if(est>1.5&&abs(abs(p.x)-abs(p.y+0.2))<0.16&&abs(p.x)<0.9)
-					c=vec3(0.1,0.0,0.0);
-				}
-			else
-				{
-				/* peixe preso na poça: anel = ar que resta; salvo = nada e brilha; perdido = cinza parado */
-				float s=r/2.4;
-				float onda=est<1.5?0.25*sin(et*(est>0.5?10.0:4.0)+q.x*2.0):0.0;
-				vec2 p=vec2(q.x,q.y+onda)/s;
-				bool corpo=p.x*p.x/1.4+p.y*p.y/0.4<1.0;
-				bool rabo=p.x<-0.9&&p.x>-1.8&&abs(p.y)<(-p.x-0.9)*0.9;
-				vec3 cor=est>1.5?vec3(0.55):vec3(1.0,0.55,0.15);
-				if(corpo||rabo)
-					c=corpo&&distance(p,vec2(0.6,0.15))<0.15?vec3(0.05):cor;
-				else if(d<r)
-					c=mix(c,vec3(0.25,0.55,0.95),0.35);
-				float fr=fract(ang/6.2831853+1.0);
-				float arco=smoothstep(0.3,0.0,abs(d-r*1.15))*(fr<b.y?1.0:0.2);
-				c=mix(c,mix(vec3(0.9,0.25,0.15),vec3(0.35,0.75,1.0),b.y),arco*(est<0.5?1.0:0.0));
-				c=mix(c,vec3(0.3,0.95,0.6),smoothstep(0.4,0.0,abs(d-r*1.2))*(est>0.5&&est<1.5?0.8:0.0));
-				}
-			baseColor.rgb=c;
-			}
-		}
 	}
 )GLSL";
 
@@ -1319,7 +1433,7 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 	GLfloat ag[MAX_AGENTES*4];
 	for(int i=0;i<MAX_AGENTES;++i)
 		{
-		bool visivel=i<quantos&&tipo[i]>0.5f&&vel[i]!=0.0f;
+		bool visivel=i<quantos&&tipo[i]>0.5f&&vel[i]!=0.0f&&!(modo==MUNDO&&(escondido[i]||nPecas==0));
 		ag[i*4+0]=ax[i];
 		ag[i*4+1]=ay[i];
 		ag[i*4+2]=ang[i];
@@ -1343,7 +1457,7 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 		int len=0;
 		for(int c=0;c<MAX_LETRAS;++c)
 			{
-			char ch=(modo==MEMBROS&&i<nNomes&&len==c)?nomes[i][c]:0;
+			char ch=((modo==MEMBROS||modo==MUNDO)&&i<nNomes&&len==c)?nomes[i][c]:0;
 			if(ch>='A'&&ch<='Z')
 				{
 				nm[i*9+1+c]=GLfloat(LETRAS[ch-'A']);
@@ -1352,15 +1466,17 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 			else
 				nm[i*9+1+c]=0.0f;
 			}
-		nm[i*9]=GLfloat(len+((modo==MEMBROS&&i<nNomes&&presente[i])?16:0)); // +16 = presente
+		bool daqui=(modo==MEMBROS||modo==MUNDO)&&i<nNomes;
+		nm[i*9]=GLfloat(len+((daqui&&presente[i])?16:0)+((daqui&&tempo<rostoAte[i])?32:0)); // +16 presente, +32 mostra o rosto
 		}
 	glUniform1fvARB(locations[9],MAX_NOMES*9,nm);
-	glUniform4fARB(locations[10],modo==MEMBROS?GLfloat(nNomes):0.0f,GLfloat(giroNomes),
-	               modo==MEMBROS?GLfloat(nFotos):0.0f,0.0f);
+	bool comNomes=modo==MEMBROS||modo==MUNDO;
+	glUniform4fARB(locations[10],comNomes?GLfloat(nNomes):0.0f,GLfloat(giroNomes),
+	               comNomes?GLfloat(nFotos):0.0f,0.0f);
 	/* painel de rostos na unidade de textura 6 (a 5 é a foto do modo Foto). O número da unidade vai
 	   sempre: um sampler2D deixado na unidade 0 (das texturas retangulares) invalidaria o desenho. */
 	glUniform1iARB(locations[11],6);
-	if(modo==MEMBROS&&nFotos>0&&!atlas.empty())
+	if(comNomes&&nFotos>0&&!atlas.empty())
 		{
 		glActiveTextureARB(GL_TEXTURE6_ARB);
 		if(atlasTextura==0)
@@ -1385,14 +1501,14 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 	for(int i=0;i<MAX_PECAS;++i)
 		{
 		const Peca& p=pecas[i];
-		bool vale=(jogo!=SEM_JOGO||labirinto)&&i<nPecas;
+		bool vale=(jogo!=SEM_JOGO||labirinto||modo==MUNDO)&&i<nPecas;
 		GLfloat* v=jg+i*8;
 		v[0]=p.x; v[1]=p.y; v[2]=p.raio; v[3]=vale?GLfloat(p.tipo):0.0f;
 		v[4]=GLfloat(p.estado); v[5]=p.nivel; v[6]=GLfloat(p.ordem);
 		v[7]=p.tipo==P_BARCO?p.ang:GLfloat(p.time);
 		}
 	glUniform4fvARB(locations[7],MAX_PECAS*2,jg);
-	glUniform4fARB(locations[8],GLfloat(jogo!=SEM_JOGO&&jogoFase>0?jogo:(labirinto&&nPecas>0?99:0)),GLfloat(jogoFase),
+	glUniform4fARB(locations[8],GLfloat(jogo!=SEM_JOGO&&jogoFase>0?jogo:(labirinto&&nPecas>0?99:(modo==MUNDO&&nPecas>0?98:0))),GLfloat(jogoFase),
 	               GLfloat(jogoFase==2?tempo-jogoFim:tempo-jogoInicio),
 	               jogo==ROTA?GLfloat(proximoPortao):GLfloat(jogoVencedor));
 	}

@@ -72,7 +72,7 @@ def ver_estado():
     e["labirinto"], e["labirinto_rodadas"] = areia.labirinto_situacao()
     e["jogo"] = areia.jogo_situacao()
     e["animais"] = areia.animais_situacao()
-    e["membros"] = [n.capitalize() for n in areia.membros_lista()[0]] if e["animais"] == "membros" else []
+    e["mundo"] = areia.mundo_situacao()
     e["tema"] = areia.tema_atual()
     e["temas"] = [[t, areia.NOMES_TEMAS.get(t, t)] for t in areia.temas()]
     e["fotos_salvas"] = [os.path.basename(f) for f in areia.imagens()]
@@ -169,11 +169,10 @@ def brincar():
         if acao == "jogoNovo":
             areia.jogo_novo()
             return "Nova rodada iniciada"
-        if acao == "membros":
-            nomes, presentes = areia.membros()
-            if not nomes:
-                return "Nenhum membro com foto e ninguém presente agora (fotos: pasta membros do projetor)"
-            return "Na areia: " + ", ".join(n.capitalize() for n in nomes)
+        if acao in ("mundo", "membros", "laob"):
+            nomes, presentes = areia.mundo()
+            return "Mundo LAOB na areia" + (": " + ", ".join(n.capitalize() for n in nomes) if nomes else
+                                            " (sem fotos de membros: só moradores sem nome)")
         if acao in areia.ANIMAIS:
             t, n = areia.animais(acao)
             return f"{n} {t} na areia"
@@ -216,6 +215,14 @@ def willbert():
             raise areia.Erro(f"não consegui {acao} o Willbert: {(r.stdout + r.stderr).strip()[:200]}")
         _willbert_cache[0] = 0.0
         return "Willbert ligado (pronto em uns 30 s)" if acao == "ligar" else "Willbert desligado"
+    return resposta(faz)
+
+
+@app.post("/mundo/rosto")
+def mundo_rosto():
+    def faz():
+        n = areia.mundo_rosto(str((request.get_json(silent=True) or {}).get("nome") or ""))
+        return f"Rosto de {n.capitalize()} na areia por alguns segundos"
     return resposta(faz)
 
 
@@ -431,6 +438,17 @@ input[type=file] { display: none; }
 .barra .lbl { font-size: .82rem; color: var(--muted); }
 .barra .sp { flex: 1; }
 
+/* mundo LAOB */
+.moradores { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.morador {
+  display: flex; align-items: center; gap: 10px; text-align: left; justify-content: flex-start;
+  padding: 10px 12px; min-height: 52px;
+}
+.morador .bola { width: 10px; height: 10px; border-radius: 50%; background: var(--border-strong); flex: none; }
+.morador.aqui .bola { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); }
+.morador .n { font-weight: 700; }
+.morador .f { font-size: .8rem; font-weight: 500; color: var(--muted); }
+
 /* fotos */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .chip {
@@ -466,6 +484,16 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
     </div>
     <div id="msg" role="status" aria-live="polite"></div>
   </header>
+
+  <section class="card" id="sec-laob">
+    <h2>LAOB <span class="extra" id="laob-estado"></span></h2>
+    <p class="hint" id="laob-dica">Os membros do laboratório vivendo numa cidadezinha na areia: casas, laboratório, café, praça, parque e campinho.</p>
+    <div class="moradores" id="moradores"></div>
+    <div class="grid" style="margin-top:12px">
+      <button class="primary" id="laob-ligar">🏙️ Abrir o mundo LAOB</button>
+      <button class="danger" data-b="parar">Fechar</button>
+    </div>
+  </section>
 
   <section class="card" id="sec-jogos">
     <h2>Jogos e brincadeiras <span class="extra" id="njogos"></span></h2>
@@ -549,8 +577,8 @@ const OUTROS = [
    d: 'Os carrinhos andam pelos lugares planos e desviam de montanhas. Façam estradas na areia para eles passarem.'},
   {id: 'pessoas', ic: '🚶', t: 'Pessoas andando', c: 'Pessoinhas passeando pela areia.', tag: 'Animação',
    d: 'Pessoas vistas de cima caminham pela areia, desviam umas das outras, dos morros íngremes e dos lagos. Mudem o relevo e elas escolhem outro caminho.'},
-  {id: 'membros', ic: '🧑‍🤝‍🧑', t: 'Membros do laboratório', c: 'Cada membro anda na areia com rosto e nome.', tag: 'Animação',
-   d: 'Cada membro do laboratório anda pela areia com o próprio rosto num círculo e o nome embaixo. Todos aparecem sempre; quem o Willbert está vendo no laboratório agora ganha uma bolinha verde ao lado do nome.'},
+  {id: 'mundo', ic: '🏙️', t: 'LAOB', c: 'Os membros vivendo numa cidadezinha.', tag: 'Mundo',
+   d: 'Cada membro do laboratório tem uma casa e uma rotina: vai ao laboratório, ao café, à praça, ao parque e ao campinho, a pé ou de carro quando é longe. Quem o Willbert está vendo no laboratório de verdade fica mais no laboratório da areia. Toque no nome de alguém, na seção LAOB, para ver o rosto num balão.'},
   {id: 'todos', ic: '🐠', t: 'Tudo junto', c: 'Peixes, carrinhos e pessoas.', tag: 'Animação',
    d: 'Peixes no lago, carrinhos nos vales e pessoas passeando, tudo ao mesmo tempo.'},
 ];
@@ -636,7 +664,7 @@ function situacao(a) {
   if (a === 'labirinto') return E.labirinto === 'chegou' ? 'A água chegou!' : 'Labirinto · água correndo';
   if (a === 'tesouro') return E.tesouro === 'achado' ? 'Tesouro achado!' : 'Tesouro enterrado';
   if (a === 'trex') return E.fossil === 'achado' ? 'Fóssil escavado!' : 'Fóssil enterrado';
-  if (a === 'membros') return (E.membros && E.membros.length) ? 'Na areia: ' + E.membros.join(', ') : 'Membros: nenhum com foto';
+  if (a === 'mundo') return 'Mundo LAOB';
   return 'Animação na areia';
 }
 
@@ -678,6 +706,31 @@ async function carrega() {
       txt = 'x';
     }
     pl.style.display = txt ? 'block' : 'none';
+
+    const M = $('#moradores');
+    const mundo = E.mundo || [];
+    const ligado = a === 'mundo';
+    $('#laob-estado').textContent = ligado ? 'aberto' : '';
+    $('#laob-ligar').hidden = ligado;
+    $('#laob-dica').textContent = ligado
+      ? (mundo.length ? 'Toque num nome para ver o rosto num balão acima do boneco. Bolinha verde: está no laboratório de verdade agora.'
+                      : 'Mundo aberto só com moradores sem nome: não há fotos de membros na pasta do projetor.')
+      : 'Os membros do laboratório vivendo numa cidadezinha na areia: casas, laboratório, café, praça, parque e campinho.';
+    const chaveM = JSON.stringify(mundo);
+    if (M.dataset.chave !== chaveM) {
+      M.dataset.chave = chaveM;
+      M.innerHTML = '';
+      for (const m of mundo) {
+        const b = document.createElement('button');
+        b.className = 'morador' + (m.presente ? ' aqui' : '');
+        b.innerHTML = '<span class="bola"></span><span><span class="n"></span><br><span class="f"></span></span>';
+        b.querySelector('.n').textContent = m.nome;
+        b.querySelector('.f').textContent = m.fazendo;
+        b.title = 'Mostrar o rosto de ' + m.nome + ' na areia';
+        b.onclick = () => post('/mundo/rosto', {nome: m.nome});
+        M.appendChild(b);
+      }
+    }
 
     $('#wb').textContent = E.willbert ? 'Willbert ' + E.willbert : 'Willbert';
     $('#p-wb').classList.toggle('on', E.willbert === 'ligado');
@@ -752,6 +805,7 @@ $$('[data-b]').forEach(b => b.onclick = () => post('/brincar', {acao: b.dataset.
 $$('[data-w]').forEach(b => b.onclick = () => post('/willbert', {acao: b.dataset.w}));
 $$('[data-m]').forEach(b => b.onclick = () => post('/modo', {modo: b.dataset.m}));
 $('#reabrir').onclick = () => post('/reabrir', {});
+$('#laob-ligar').onclick = () => post('/brincar', {acao: 'mundo'});
 $('#espelhar').onclick = () => post('/ajuste', {espelho: !E.espelho});
 $('#girar').onclick = () => post('/ajuste', {giro: ((E.giro || 0) + 90) % 360});
 carrega();
