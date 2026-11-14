@@ -487,24 +487,44 @@ class MembrosNaAreia(Ambiente):
 
     def test_liga_e_acompanha_quem_chega_e_sai(self):
         self.status(["Victor", "Lucas"])
-        self.assertEqual(self.areia.membros(), ["VICTOR", "LUCAS"])
-        self.assertEqual(self.cmds()[-1], "cmd membros 0 VICTOR LUCAS")
+        self.assertEqual(self.areia.membros(), (["VICTOR", "LUCAS"], ["VICTOR", "LUCAS"]))
+        self.assertEqual(self.cmds()[-1], "cmd membros 0 0 - VICTOR+ LUCAS+")   # sem fotos: só o nome
         self.assertIn("cmd jogoFim", self.cmds()[-5:])                  # uma brincadeira por vez
         log = os.path.join(self.D, "sandbox.log")
-        escreve(log, "Animais: membros (2)\n")
+        escreve(log, "Animais: membros (2, 0 com rosto)\n")
         self.assertEqual(self.areia.animais_situacao(), "membros")
         n = len(self.cmds())
         self.assertFalse(self.areia.membros_atualiza())                 # ninguém chegou nem saiu
         self.assertEqual(len(self.cmds()), n)
         self.status(["Victor", "Lucas", "Mario"])
         self.assertTrue(self.areia.membros_atualiza())
-        self.assertEqual(self.cmds()[-1], "cmd membros 0 VICTOR LUCAS MARIO")
+        self.assertEqual(self.cmds()[-1], "cmd membros 0 0 - VICTOR+ LUCAS+ MARIO+")
         self.status([])
         self.assertTrue(self.areia.membros_atualiza())
-        self.assertEqual(self.cmds()[-1], "cmd membros 0")
-        escreve(log, "Animais: membros (0)\nTesouro: escondendo a 4 cm\n")   # outra brincadeira entrou
+        self.assertEqual(self.cmds()[-1], "cmd membros 0 0 -")
+        escreve(log, "Animais: membros (0, 0 com rosto)\nTesouro: escondendo a 4 cm\n")   # outra brincadeira entrou
         self.status(["Victor"])
         self.assertFalse(self.areia.membros_atualiza())
+
+    def test_membros_com_foto_aparecem_sempre(self):
+        # painel de rostos já montado (o membros.py de verdade precisa do OpenCV e é testado no laob)
+        pasta = os.path.join(self.D, "membros")
+        os.makedirs(pasta)
+        for n in ("Gazziro.png", "Victor.png"):
+            escreve(os.path.join(pasta, n), b"x")
+        os.makedirs(self.areia.FOTOS, exist_ok=True)
+        escreve(self.areia.PAINEL_ROSTOS, b"x")
+        escreve(os.path.join(self.areia.FOTOS, "membros.json"), json.dumps({"nomes": ["GAZZIRO", "VICTOR"]}))
+        self.areia.PASTA_MEMBROS = pasta
+        self.status(["Lucas", "Victor"])
+        nomes, presentes = self.areia.membros()
+        self.assertEqual(nomes, ["GAZZIRO", "VICTOR", "LUCAS"])         # com foto primeiro; Lucas só com o nome
+        self.assertEqual(presentes, ["VICTOR", "LUCAS"])
+        self.assertEqual(self.cmds()[-1], f"cmd membros 0 2 {self.areia.PAINEL_ROSTOS} GAZZIRO VICTOR+ LUCAS+")
+        escreve(os.path.join(self.D, "sandbox.log"), "Animais: membros (3, 2 com rosto)\n")
+        self.status([])                                                 # todos foram embora: os com foto continuam
+        self.assertTrue(self.areia.membros_atualiza())
+        self.assertEqual(self.cmds()[-1], "cmd membros 0 2 - GAZZIRO VICTOR")
 
 
 class Labirinto(Ambiente):

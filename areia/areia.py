@@ -619,29 +619,73 @@ def membros_presentes():
     return nomes[:8]
 
 
-def _comando_membros(nomes):
-    return " ".join(["membros", str(estado()["giro"] // 90), *nomes])
+PASTA_MEMBROS = os.environ.get("AREIA_MEMBROS") or os.path.join(D, "membros")
+PAINEL_ROSTOS = os.path.join(FOTOS, "membros.rgba")
+MEMBROS_PY = os.path.join(D, "membros.py")
+
+
+def membros_com_foto(refaz=None):
+    """Nomes dos membros que têm foto em membros/ (Nome.jpg ou .png), na ordem do painel de rostos.
+    O painel (fotos/membros.rgba) é refeito quando a pasta muda. Devolve (nomes, refez)."""
+    lista = os.path.join(FOTOS, "membros.json")
+    try:
+        fotos = [os.path.join(PASTA_MEMBROS, f) for f in os.listdir(PASTA_MEMBROS) if f.lower().endswith(EXT)]
+    except OSError:
+        fotos = []
+    if not fotos:
+        return [], False
+    novo = max([os.path.getmtime(f) for f in fotos] + [os.path.getmtime(PASTA_MEMBROS)])
+    velho = os.path.getmtime(lista) if os.path.exists(lista) and os.path.exists(PAINEL_ROSTOS) else 0
+    refez = False
+    if refaz or novo > velho:
+        r = subprocess.run([PY, MEMBROS_PY], capture_output=True, text=True, timeout=120,
+                           env={**os.environ, "AREIA_MEMBROS": PASTA_MEMBROS, "AREIA_DIR": D})
+        if r.returncode != 0:
+            raise Erro("não consegui montar os rostos dos membros: " + (r.stderr.strip().splitlines() or ["erro"])[-1])
+        refez = True
+    try:
+        with open(lista) as f:
+            return [str(n) for n in json.load(f).get("nomes", [])][:8], refez
+    except (OSError, ValueError, AttributeError):
+        return [], refez
+
+
+def membros_lista():
+    """(nomes na ordem do comando, quantos têm rosto, presentes). Primeiro quem tem foto (aparece
+    sempre, esteja ou não no laboratório); depois quem o Willbert vê e não tem foto (só o nome)."""
+    com_foto, _ = membros_com_foto()
+    presentes = membros_presentes()
+    nomes = com_foto + [n for n in presentes if n not in com_foto]
+    return nomes[:8], len(com_foto), [n for n in nomes[:8] if n in presentes]
+
+
+def _comando_membros(nomes, n_fotos, presentes, com_painel):
+    return " ".join(["membros", str(estado()["giro"] // 90), str(n_fotos), PAINEL_ROSTOS if com_painel and n_fotos else "-",
+                     *[n + ("+" if n in presentes else "") for n in nomes]])
 
 
 def membros():
-    """Liga as pessoinhas dos membros presentes (cada uma com o nome em cima). Devolve os nomes."""
-    nomes = membros_presentes()
-    _brincadeira(_comando_membros(nomes))
-    _membros_mandados[0] = nomes
-    return nomes
+    """Liga as pessoinhas dos membros: todos os que têm foto (com o rosto), mais quem o Willbert
+    está vendo. Devolve (nomes, presentes)."""
+    membros_com_foto()   # refaz o painel de rostos se a pasta mudou
+    nomes, n_fotos, presentes = membros_lista()
+    _brincadeira(_comando_membros(nomes, n_fotos, presentes, True))
+    _membros_mandados[0] = (nomes, presentes)
+    return nomes, presentes
 
 
 def membros_atualiza():
-    """Chamado de tempos em tempos (painel): se está no modo membros e mudou quem está presente,
-    manda a lista nova (quem chegou aparece, quem saiu some). Devolve True se mandou."""
+    """Chamado de tempos em tempos (painel): no modo membros, se mudou quem está presente (ou as
+    fotos), manda a lista nova. Devolve True se mandou."""
     if animais_situacao() != "membros":
         _membros_mandados[0] = None
         return False
-    nomes = membros_presentes()
-    if nomes == _membros_mandados[0]:
+    _, refez = membros_com_foto()
+    nomes, n_fotos, presentes = membros_lista()
+    if (nomes, presentes) == _membros_mandados[0] and not refez:
         return False
-    _comando(_comando_membros(nomes))
-    _membros_mandados[0] = nomes
+    _comando(_comando_membros(nomes, n_fotos, presentes, refez or _membros_mandados[0] is None))
+    _membros_mandados[0] = (nomes, presentes)
     return True
 
 

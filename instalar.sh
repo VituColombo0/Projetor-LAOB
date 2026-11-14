@@ -37,7 +37,8 @@ fi
 [ $SO_COMPILAR = 1 ] && { echo "compilado em $DEST/bin/SARndbox"; exit 0; }
 
 echo "[3/8] programas da pasta areia/"
-cp "$REPO"/areia/{areia.py,areia_foto.py,areia_tema.py,areia_brincar.py,rosto.py,painel.py,sandbox.sh,atualizar_papel_parede.py} "$DEST/"
+cp "$REPO"/areia/{areia.py,areia_foto.py,areia_tema.py,areia_brincar.py,rosto.py,membros.py,painel.py,sandbox.sh,atualizar_papel_parede.py} "$DEST/"
+mkdir -p "$DEST/membros"   # fotos dos membros para as pessoinhas (Nome.jpg); ficam só nesta máquina
 COMANDOS=(areia-foto areia-tema areia-topografia areia-tesouro areia-animais areia-fossil areia-labirinto areia-jogo areia-vigia)
 for c in "${COMANDOS[@]}"; do cp "$REPO/areia/$c" "$DEST/"; chmod +x "$DEST/$c"; done
 rm -f "$DEST"/gui-*.sh   # janelas dos atalhos da Área de Trabalho (substituídos pelo painel em 13/11)

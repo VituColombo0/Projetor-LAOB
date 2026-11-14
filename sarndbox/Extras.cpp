@@ -8,6 +8,8 @@ Extras - caça ao tesouro, peixes e carrinhos sobre o relevo (Projetor-LAOB).
 #include <cstring>
 #include <algorithm>
 #include <GL/Extensions/GLARBShaderObjects.h>
+#include <GL/Extensions/GLARBMultitexture.h>
+#include <cstdio>
 #include <Geometry/ProjectiveTransformation.h>
 
 namespace {
@@ -31,6 +33,14 @@ Extras::Extras(void)
 		{
 		ax[i]=ay[i]=ang[i]=vel[i]=vb[i]=parado[i]=0.0f;
 		tipo[i]=0.0f;
+		}
+	nNomes=giroNomes=nFotos=0;
+	atlasNovo=false;
+	atlasTextura=0;
+	for(int i=0;i<MAX_NOMES;++i)
+		{
+		nomes[i][0]=0;
+		presente[i]=false;
 		}
 	jogo=SEM_JOGO;
 	jogoFase=0;
@@ -345,7 +355,24 @@ void Extras::povoa(int novoModo,int quantidade)
 		}
 	}
 
-void Extras::membros(const std::vector<std::string>& lista,int giro)
+bool Extras::carregaAtlas(const char* arquivo)
+	{
+	/* painel de rostos montado pelo membros.py: MAX_NOMES quadros de ATLAS_LADO, RGBA cru */
+	size_t tam=size_t(ATLAS_LADO)*ATLAS_LADO*MAX_NOMES*4;
+	std::vector<unsigned char> novo(tam);
+	FILE* f=std::fopen(arquivo,"rb");
+	if(f==0)
+		return false;
+	size_t lido=std::fread(&novo[0],1,tam,f);
+	std::fclose(f);
+	if(lido!=tam)
+		return false;
+	atlas.swap(novo);
+	atlasNovo=true;
+	return true;
+	}
+
+void Extras::membros(const std::vector<std::string>& lista,int giro,int fotos)
 	{
 	/* Uma pessoinha para cada membro presente (o painel manda a lista de quem o Willbert está
 	   vendo no laboratório). Quem já estava continua andando de onde estava; quem chegou nasce
@@ -354,8 +381,10 @@ void Extras::membros(const std::vector<std::string>& lista,int giro)
 	float nx[MAX_NOMES],ny[MAX_NOMES],na[MAX_NOMES],nv[MAX_NOMES],nb[MAX_NOMES],nt[MAX_NOMES];
 	bool novo[MAX_NOMES];
 	char nn[MAX_NOMES][MAX_LETRAS+1];
+	nFotos=atlas.empty()?0:std::max(0,std::min(fotos,n));
 	for(int i=0;i<n;++i)
 		{
+		presente[i]=!lista[i].empty()&&lista[i][lista[i].size()-1]=='+'; // "NOME+" = presente agora
 		int k=0;
 		unsigned int soma=7u;
 		for(size_t c=0;c<lista[i].size()&&k<MAX_LETRAS;++c)
@@ -624,7 +653,7 @@ void Extras::passo(float dt)
 /* ----------------------------------------------------------------- shader */
 
 const char* Extras::nomesUniforms[NUM_UNIFORMS]={"extrasCaixa","extrasAg","extrasTesouro","extrasInfo","extrasEfeito",
-	"extrasLab","extrasLab2","extrasJogo","extrasJogoInfo","extrasNomes","extrasNomesCfg"};
+	"extrasLab","extrasLab2","extrasJogo","extrasJogoInfo","extrasNomes","extrasNomesCfg","extrasRostos"};
 
 const char* Extras::glslVertexUniforms=R"GLSL(
 uniform mat4 extrasCaixa; // espaço da câmera -> caixa (cm)
@@ -645,7 +674,8 @@ uniform vec4 extrasLab2;     // labirinto: raio do alvo, estado (0 desligado, 1 
 uniform vec4 extrasJogo[32]; // jogos de água: por peça (x, y, raio, tipo) e (estado, nível, ordem, time ou ângulo)
 uniform vec4 extrasJogoInfo; // jogo (0 nenhum), fase, segundos na fase, vencedor ou próximo portão
 uniform float extrasNomes[72]; // membros: por pessoa, nº de letras e 8 letras (desenho 3x5 em bits)
-uniform vec4 extrasNomesCfg;  // quantos nomes, giro do texto (quartos de volta)
+uniform vec4 extrasNomesCfg;  // quantos nomes, giro do texto (quartos de volta), quantos têm rosto no painel
+uniform sampler2D extrasRostos; // painel de rostos dos membros (8 quadros lado a lado, com transparência)
 float exCaixa(vec2 p,vec2 metade,float raio)
 	{
 	vec2 q=abs(p)-metade+vec2(raio);
@@ -996,26 +1026,53 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				}
 			}
 		}
-	/* Membros do laboratório: o nome de cada um numa plaquinha acima da pessoinha (letras 3x5) */
+	/* Membros do laboratório: o rosto de cada um num círculo em cima da pessoinha (sempre de pé,
+	   não gira com o passo) e o nome numa plaquinha; bolinha verde = está no laboratório agora */
 	for(int i=0;i<8;++i)
 		{
 		if(float(i)>=extrasNomesCfg.x-0.5)
 			break;
 		vec4 a=extrasAg[i];
-		float len=extrasNomes[i*9];
+		float cod=extrasNomes[i*9];
+		float pres=floor(cod/16.0);
+		float len=cod-16.0*pres;
 		if(a.w<0.5||len<0.5)
 			continue;
 		float gr=extrasNomesCfg.y;
 		vec2 cima=gr<0.5?vec2(0.0,1.0):(gr<1.5?vec2(-1.0,0.0):(gr<2.5?vec2(0.0,-1.0):vec2(1.0,0.0)));
 		vec2 dir=vec2(cima.y,-cima.x);
-		vec2 rel=ep.xy-(a.xy+cima*3.7);
+		bool temRosto=float(i)<extrasNomesCfg.z-0.5;
+		float hueM=fract(a.w);
+		vec3 corM=vec3(0.55)+0.45*cos(6.2832*(vec3(hueM)+vec3(0.0,0.33,0.67)));
+		if(temRosto)
+			{
+			float R=1.9; // raio do rosto, em cm
+			vec2 rr=ep.xy-(a.xy+cima*0.9);
+			vec2 tr=vec2(dot(rr,dir),dot(rr,cima));
+			float dr=length(tr);
+			if(dr<R+0.35)
+				{
+				vec3 aro=pres>0.5?mix(corM,vec3(1.0),0.25):corM*0.75;
+				baseColor.rgb=mix(baseColor.rgb,aro,smoothstep(R+0.35,R+0.2,dr));
+				if(dr<R)
+					{
+					vec2 uv=vec2((float(i)+0.5+tr.x/(2.0*R))/8.0,0.5-tr.y/(2.0*R));
+					vec4 rosto=texture2D(extrasRostos,uv);
+					baseColor.rgb=mix(baseColor.rgb,rosto.rgb,rosto.a);
+					}
+				}
+			}
+		vec2 rel=ep.xy-(a.xy+cima*(temRosto?-2.4:3.7));
 		vec2 t=vec2(dot(rel,dir),dot(rel,cima));
 		float px=0.27;
 		float cw=4.0*px;
 		float larg=len*cw-px;
-		if(abs(t.x)>larg*0.5+0.5||abs(t.y)>2.5*px+0.45)
+		float margem=pres>0.5?1.25:0.5; // espaço para a bolinha verde
+		if(t.x<-larg*0.5-margem||t.x>larg*0.5+0.5||abs(t.y)>2.5*px+0.45)
 			continue;
 		baseColor.rgb=mix(baseColor.rgb,vec3(0.04,0.06,0.1),0.8);
+		if(pres>0.5&&distance(t,vec2(-larg*0.5-0.6,0.0))<0.4)
+			baseColor.rgb=vec3(0.2,0.95,0.4);
 		float cx=(t.x+larg*0.5)/cw;
 		float k=floor(cx);
 		float colf=floor(fract(cx)*4.0);
@@ -1295,10 +1352,35 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 			else
 				nm[i*9+1+c]=0.0f;
 			}
-		nm[i*9]=GLfloat(len);
+		nm[i*9]=GLfloat(len+((modo==MEMBROS&&i<nNomes&&presente[i])?16:0)); // +16 = presente
 		}
 	glUniform1fvARB(locations[9],MAX_NOMES*9,nm);
-	glUniform4fARB(locations[10],modo==MEMBROS?GLfloat(nNomes):0.0f,GLfloat(giroNomes),0.0f,0.0f);
+	glUniform4fARB(locations[10],modo==MEMBROS?GLfloat(nNomes):0.0f,GLfloat(giroNomes),
+	               modo==MEMBROS?GLfloat(nFotos):0.0f,0.0f);
+	/* painel de rostos na unidade de textura 6 (a 5 é a foto do modo Foto). O número da unidade vai
+	   sempre: um sampler2D deixado na unidade 0 (das texturas retangulares) invalidaria o desenho. */
+	glUniform1iARB(locations[11],6);
+	if(modo==MEMBROS&&nFotos>0&&!atlas.empty())
+		{
+		glActiveTextureARB(GL_TEXTURE6_ARB);
+		if(atlasTextura==0)
+			{
+			glGenTextures(1,&atlasTextura);
+			atlasNovo=true;
+			}
+		glBindTexture(GL_TEXTURE_2D,atlasTextura);
+		if(atlasNovo)
+			{
+			glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+			glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+			glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP);
+			glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP);
+			glPixelStorei(GL_UNPACK_ALIGNMENT,1);
+			glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,ATLAS_LADO*MAX_NOMES,ATLAS_LADO,0,GL_RGBA,GL_UNSIGNED_BYTE,&atlas[0]);
+			atlasNovo=false;
+			}
+		glActiveTextureARB(GL_TEXTURE0_ARB);
+		}
 	GLfloat jg[MAX_PECAS*8];
 	for(int i=0;i<MAX_PECAS;++i)
 		{
