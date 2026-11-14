@@ -25,16 +25,16 @@ abre a **topografia** de sempre; por comando, atalho, painel do celular ou pelo
 - **Foto:** a imagem é projetada sobre a areia, amplia onde está alta (efeito lente) e ganha a sombra do relevo; rosto sai recortado, sem fundo.
 - **Esculpir:** o rosto vira relevo-alvo; o projetor pinta onde falta areia (vermelho) e onde sobra (azul).
 - **Caça ao tesouro** e **fósseis de dinossauro** (T-Rex, Triceratops, Pterodáctilo, pegada): cave para achar.
-- **Peixes e carrinhos:** peixes em cardume nos lagos, carrinhos seguindo os vales.
-- **Labirinto de água:** leve a água da nascente até o alvo, com placar.
+- **Peixes, carrinhos e pessoas:** peixes em cardume nos lagos, carrinhos seguindo os vales e pessoas passeando pela areia.
+- **Labirinto de água:** leve a água da nascente até o alvo sem encostar nas armadilhas do caminho (encostou, recomeça), com placar.
 - **Jogos de água** (fácil, normal, difícil; nova rodada 20 s após o fim):
 
   | Jogo | Objetivo |
   | :--- | :--- |
   | Corrida de rios | Dois times; ganha quem levar a água primeiro à sua bandeira (pouca água: é preciso cavar) |
   | Salve a vila | A enchente vem de três lados; diques e valas protegem as casinhas (10 s para se preparar) |
-  | Rota com paradas | A água passa pelos portões 1, 2, 3… na ordem até a bandeira |
-  | Vulcão em erupção | A areia escurece e a lava sai do pico mais alto; muralhas salvam as casas |
+  | Rota com paradas | A água passa pelos portões 1, 2, 3… na ordem até a bandeira; portões espalhados pela caixa, em ordem sorteada |
+  | Vulcão em erupção | Jogo de reagir: lava em pulsos do pico mais alto e bocas novas que abrem de surpresa (aviso 6 s antes) |
 
   Na vila e no vulcão, uma fila de casinhas num canto da areia (e o painel) mostra quantas estão de pé e quantas foram perdidas.
 - **Uma brincadeira por vez:** começar uma encerra as outras; o tema de cor fica.
@@ -108,7 +108,7 @@ O jeito normal é o painel (`http://localhost:8090`, atalho na Área de Trabalho
 | `areia-tema vulcao` | Tema: `classico`, `vulcao`, `inverno`, `marte`, `deserto`, `oceano`, `arco-iris`, `mapa` |
 | `areia-tesouro [facil\|normal\|dificil\|achou\|parar]` | Caça ao tesouro |
 | `areia-fossil trex [facil\|dificil]` | Fóssil: `trex`, `triceratops`, `pterodactilo`, `pegada` (também `achou`, `parar`) |
-| `areia-animais todos [n]` | `peixes`, `carros` ou `todos` (também `parar`) |
+| `areia-animais todos [n]` | `peixes`, `carros`, `pessoas` ou `todos` (também `parar`) |
 | `areia-labirinto [facil\|normal\|dificil\|nova\|placar\|parar]` | Labirinto de água |
 | `areia-jogo <jogo> [facil\|normal\|dificil]` | Jogo de água: `corrida`, `vila`, `rota`, `vulcao` (também `placar`, `nova`, `parar`, `ajuda`) |
 | `areia-vigia pausa` / `liga` | Pausa ou religa o vigia da topografia |
@@ -159,7 +159,7 @@ trocar para uma já usada leva ~1 s.
 hora pelo `colorMap` do SARndbox (~0,1 s). Pontos ajustados aos morros de ~8–10 cm do laob.
 
 **Extras** (`sarndbox/Extras.*`): mapa de alturas de 1,5 cm por célula, 2× por segundo, simulação
-na CPU e desenho no shader. Comandos: `tesouro [cm]`, `tesouroFim`, `animais peixes|carros|todos|nada [n]`,
+na CPU e desenho no shader. Comandos: `tesouro [cm]`, `tesouroFim`, `animais peixes|carros|pessoas|todos|nada [n]`,
 `labirinto [nível]`, `labirintoNovo`, `labirintoFim`, `labirintoTeste`,
 `jogo <nome> [1-3]`, `jogoNovo`, `jogoFim`, `jogoTeste`, `jogoInfo`.
 
@@ -167,7 +167,8 @@ na CPU e desenho no shader. Comandos: `tesouro [cm]`, `tesouroFim`, `animais pei
 - **Fósseis:** mesmo mecanismo (`tipoTesouro` 2–5), raio maior, quadrícula de escavação e esqueleto em marfim; outro aparece em 30 s.
 - **Peixes:** água = 1,5 cm abaixo da mediana; só nadam onde o corpo inteiro cabe na água (1,8 cm de folga da margem), com rastro e bolhas; cardume com separação de ~5,5 cm, curvas suaves (até 2,8 rad/s); preso numa poça por 4 s, reaparece num lago de verdade.
 - **Carrinhos:** só andam onde cabem inteiros em chão firme (2,2 cm de folga do lago e da borda), levantam poeira; seguem a curva de nível dos vales, evitam rampas e lagos, freiam só para o de número menor; travado 3 s, dá meia-volta.
-- **Labirinto:** a nascente (disco de 2 cm) usa a água do próprio SARndbox (`addWater`); 2× por segundo mede a profundidade no alvo (`glGetTexImage`); com 0,25 cm escreve "Labirinto: a água chegou!", e após 20 s começa rodada nova.
+- **Pessoas:** mesmo movimento dos carrinhos com corpo menor (1,7 cm de folga) e passo lento; desenhadas de cima (sapatos, ombros, braços, cabeça).
+- **Labirinto:** de 2 a 4 armadilhas (`P_PERIGO`) perto da reta nascente-alvo, medidas como as peças dos jogos; a nascente (disco de 2 cm) usa a água do próprio SARndbox (`addWater`); 2× por segundo mede a profundidade no alvo (`glGetTexImage`); com 0,25 cm escreve "Labirinto: a água chegou!", e após 20 s começa rodada nova.
 - **Jogos de água** (`sarndbox/Jogos.cpp`): até 4 nascentes e 16 peças (casa, portão, bandeira, placar) desenhadas no shader; fazenda, lago, barquinho e resgate foram retirados em 14/11/2026 (o código continua, sem comando). 2× por segundo a GPU devolve a água (`glGetTexImage` do nível e do fundo) e mede a maior e a média da profundidade em cada peça; com 0,3 cm conta como molhada. No vulcão, `extrasEfeito.w` escurece o relevo e pinta a água de lava em qualquer tema. Os avisos vão para o `sandbox.log` como linhas `Jogo: …`, que o painel e `areia-jogo placar` leem.
 - **Fluidez:** grade de água em 320×240 (`-wts 320 240`; 640×480 não dava conta na GTX 750 Ti). O log mostra `Desempenho: N quadros/s` a cada 30 s.
 
