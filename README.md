@@ -1,184 +1,216 @@
 # Projetor-LAOB
 
-Imagens projetadas na caixa de areia do laboratório (AR Sandbox / SARndbox 2.8, Kinect v1 e
-projetor), rodando no **lab2**. Ao ligar o PC abre a **topografia** de sempre; por comando no
-terminal, a caixa passa a mostrar uma **foto** que se deforma conforme mexem na areia.
+> Caixa de areia de realidade aumentada do Laboratório LAOB: projeta relevo colorido, fotos que se deformam com a areia e brincadeiras (tesouro, fósseis, peixes, labirinto de água) a partir de um Kinect e um projetor.
 
-- **Topografia**: o SARndbox original, sem nenhuma mudança (`~/SARndbox-2.8`).
-- **Foto**: uma cópia (`~/SARndbox-rosto`) com um modo novo: a imagem é projetada sobre a areia,
-  amplia onde a areia está alta (efeito lente) e ganha a sombra do relevo. Foto com rosto sai
-  recortada, sem fundo (preto = projetor apagado).
-- **Esculpir**: o rosto vira um relevo-alvo; o projetor pinta onde falta areia (vermelho) e onde
-  sobra (azul).
-- Tudo roda localmente no PC (Python próprio e modelos na pasta); só a instalação baixa coisas.
+![SARndbox](https://img.shields.io/badge/base-SARndbox%202.8-blue) ![Kinect](https://img.shields.io/badge/sensor-Kinect%20v1-lightgrey) ![Testes](https://img.shields.io/badge/testes-53-brightgreen) ![Licença GPL-2.0](https://img.shields.io/badge/licença-GPL--2.0-orange)
 
-## Uso rápido
+## Sumário
 
-Coloque as imagens em **Área de Trabalho > Areia** e, no terminal:
+- [Sobre](#sobre) · [Funcionalidades](#funcionalidades) · [Arquitetura](#arquitetura) · [Requisitos](#requisitos)
+- [Instalação](#instalação) · [Uso](#uso) · [Configuração](#configuração) · [Testes](#testes)
+- [Como funciona por dentro](#como-funciona-por-dentro) · [Estrutura do projeto](#estrutura-do-projeto)
+- [Solução de problemas](#solução-de-problemas) · [Licença](#licença)
 
-    areia-foto            # lista as imagens e pergunta o número
-    areia-foto 2          # ou direto pelo número / parte do nome
-    areia-foto girar      # se aparecer de lado para quem olha a caixa
-    areia-topografia      # volta ao relevo
-    areia-tema vulcao     # cores do relevo: classico, vulcao, inverno, marte, deserto, oceano, arco-iris, mapa
-    areia-tesouro         # caça ao tesouro (facil|normal|dificil, achou, parar)
-    areia-animais todos   # peixes no lago e carrinhos nos vales (peixes|carros|todos [n], parar)
-    areia-fossil trex     # escavação de fóssil (trex|triceratops|pterodactilo|pegada [facil|dificil], achou, parar)
-    areia-labirinto       # labirinto de água: levar a água da nascente até o alvo (facil|normal|dificil, nova, placar, parar)
+## Sobre
 
-Na Área de Trabalho do lab2 há uma pasta para cada coisa, cada uma com o seu `COMO USAR.txt`
-(os textos estão em [`area-de-trabalho/`](area-de-trabalho)): 1 - Topografia (ligar e consertar),
-2 - Fotos na areia (é também onde se colocam as fotos), 3 - Cores do relevo, 4 - Caça ao tesouro,
-5 - Peixes e carrinhos, 7 - Fósseis de dinossauro, 8 - Labirinto de água. A pasta 6 - Willbert vem do repositório do Willbert.
-Cada pasta também tem **atalhos de dois cliques** (ex.: "Iniciar caça ao tesouro", "Escolher cores do
-relevo"): os que pedem escolha abrem uma janela (`gui-foto.sh`, `gui-tema.sh`, `gui-tesouro.sh`,
-`gui-fossil.sh`, `gui-labirinto.sh`) e todos rodam por `gui-rodar.sh`, que avisa por notificação quando dá certo e abre uma
-janela com o motivo quando dá errado. Os atalhos ficam em `area-de-trabalho/<pasta>/*.desktop`.
+Roda no PC **lab2**, junto ao AR Sandbox (SARndbox 2.8, Kinect v1 e projetor). Ao ligar o PC
+abre a **topografia** de sempre; por comando, atalho, painel do celular ou pelo
+[Willbert-LAOB](https://github.com/VituColombo0/Willbert-LAOB), a caixa passa a mostrar uma
+**foto** que se deforma conforme mexem na areia, ou uma das brincadeiras. Tudo roda localmente
+(Python e modelos na própria pasta); só a instalação baixa coisas.
 
-## Instalar
+## Funcionalidades
 
-Num PC com o SARndbox 2.8 já compilado em `~/SARndbox-2.8` e calibrado (Ubuntu, sem sudo):
+- **Topografia:** o SARndbox original, sem mudanças, com 8 temas de cor e animação por tema (lava, neve, poeira, vento, mar, estrelas, chuva).
+- **Foto:** a imagem é projetada sobre a areia, amplia onde está alta (efeito lente) e ganha a sombra do relevo; rosto sai recortado, sem fundo.
+- **Esculpir:** o rosto vira relevo-alvo; o projetor pinta onde falta areia (vermelho) e onde sobra (azul).
+- **Caça ao tesouro** e **fósseis de dinossauro** (T-Rex, Triceratops, Pterodáctilo, pegada): cave para achar.
+- **Peixes e carrinhos:** peixes em cardume nos lagos, carrinhos seguindo os vales.
+- **Labirinto de água:** leve a água da nascente até o alvo, com placar.
+- **Uma brincadeira por vez:** começar uma encerra as outras; o tema de cor fica.
+- **Painel do celular** (:8090), atalhos de dois cliques e `COMO USAR.txt` em cada pasta da Área de Trabalho.
+- **Vigia:** reabre a topografia sozinho se ela fechar.
 
-    git clone https://github.com/VituColombo0/Projetor-LAOB.git && cd Projetor-LAOB
-    bash instalar.sh
+## Arquitetura
 
-O `instalar.sh` copia o SARndbox para `~/SARndbox-rosto`, aplica os patches e compila, cria o
-Python próprio (`requirements.txt`), baixa os modelos, instala os comandos em `~/.local/bin`,
-cria a pasta Areia, a ajuda e o atalho na Área de Trabalho, troca o autostart para abrir a
-topografia no projetor e liga o painel do celular. Pode rodar de novo para atualizar.
+```mermaid
+flowchart LR
+    K[Kinect v1] --> SB
+    subgraph PC[lab2]
+        SB["SARndbox-rosto<br/>(cópia com modo Foto e Extras)"]
+        ORIG["SARndbox-2.8 original<br/>(topografia)"]
+        AR["areia.py<br/>comandos areia-*"]
+        PN["painel.py :8090"]
+        AR -->|cano .fifo| SB
+        AR -->|colorMap| ORIG
+        PN --> AR
+    end
+    WB["Willbert<br/>POST /foto · voz"] --> PN
+    CEL[Celular] --> PN
+    SB --> PJ[Projetor HDMI-0]
+    ORIG --> PJ
+```
+
+## Requisitos
+
+- PC Ubuntu com o **SARndbox 2.8 compilado e calibrado** em `~/SARndbox-2.8`.
+- Kinect v1 e projetor (tela cheia no HDMI-0).
+- Placa NVIDIA com driver (no lab2: GTX 750 Ti, driver 535, kernel fixado com `kernel-com-driver.sh` do Willbert).
+- Não precisa de sudo; o `instalar.sh` cria o Python próprio e baixa os modelos (YuNet e U²-Net, 176 MB).
+
+## Instalação
+
+1. Clone o repositório:
+
+   ```bash
+   git clone https://github.com/VituColombo0/Projetor-LAOB.git
+   ```
+
+2. Rode o instalador (pode rodar de novo para atualizar):
+
+   ```bash
+   cd Projetor-LAOB && bash instalar.sh
+   ```
+
+O `instalar.sh` copia o SARndbox para `~/SARndbox-rosto`, aplica os patches e compila, cria o venv,
+baixa os modelos, instala os comandos em `~/.local/bin`, cria as pastas, ajudas e atalhos na Área
+de Trabalho, troca o autostart para abrir a topografia e liga o painel e o vigia.
 `bash instalar.sh --compilar /tmp/teste` só testa a compilação.
 
-## Organização
+> [!WARNING]
+> Antes de reinstalar no lab2, compare o lab2 com o repositório: mudanças feitas direto na
+> máquina se perdem com o `instalar.sh`.
 
-| Pasta | O que tem |
-|---|---|
-| `sarndbox/` | o modo Foto dentro do SARndbox: `FaceImage.h/.cpp` (a imagem como textura e a matriz câmera -> imagem), `patch_surface.py` (shader: só a imagem, lente e sombra), `patch_sandbox.py` (comandos `rosto`, `rostoAjuste`, `esculpir`, `relevo` pelo cano `-cp` e a área iluminada), `projetor.cfg` (tela cheia no HDMI-0) |
-| `areia/` | o que roda no dia a dia: `areia.py` (núcleo: pasta, estado, cache, projetor), `areia_foto.py` + `areia-foto` (o comando), `areia-topografia`, `rosto.py` (prepara a imagem), `painel.py` (celular), `sandbox.sh` (troca de programa) |
-| `area-de-trabalho/` | `COMO-USAR.txt`, `SE-A-AREIA-NAO-ABRIR.txt` e o atalho `abrir-a-areia.desktop` |
-| `sistema/` | `sandbox-painel.service` (serviço de usuário do painel) |
-| `testes/` | testes automáticos e o teste no PC de verdade |
+## Uso
 
-No PC tudo fica numa pasta só, `~/SARndbox-rosto` (cópia do SARndbox + os arquivos acima).
+Coloque as imagens na pasta **"2 - Fotos na areia"** da Área de Trabalho e use no terminal:
+
+| Comando | O que faz |
+| :--- | :--- |
+| `areia-foto` | Lista as imagens e pergunta o número (Enter = a última) |
+| `areia-foto 3` / `areia-foto gato` | Escolhe pelo número ou parte do nome |
+| `areia-foto ~/Downloads/x.jpg` | Usa qualquer arquivo (é copiado para a pasta) |
+| `areia-foto girar` / `espelhar` / `esculpir` | Gira 90°, espelha ou entra no modo esculpir |
+| `areia-foto camera` | Foto pela câmera do laboratório (via Willbert) |
+| `areia-foto lista` / `pasta` | Lista as imagens / abre a pasta |
+| `areia-topografia` | Volta ao relevo |
+| `areia-tema vulcao` | Tema: `classico`, `vulcao`, `inverno`, `marte`, `deserto`, `oceano`, `arco-iris`, `mapa` |
+| `areia-tesouro [facil\|normal\|dificil\|achou\|parar]` | Caça ao tesouro |
+| `areia-fossil trex [facil\|dificil]` | Fóssil: `trex`, `triceratops`, `pterodactilo`, `pegada` (também `achou`, `parar`) |
+| `areia-animais todos [n]` | `peixes`, `carros` ou `todos` (também `parar`) |
+| `areia-labirinto [facil\|normal\|dificil\|nova\|placar\|parar]` | Labirinto de água |
+| `areia-vigia pausa` / `liga` | Pausa ou religa o vigia da topografia |
+
+**Área de Trabalho do lab2:** pastas "1 - Topografia (ligar e consertar)", "2 - Fotos na areia",
+"3 - Cores do relevo", "4 - Caça ao tesouro", "5 - Peixes e carrinhos", "7 - Fósseis de
+dinossauro" e "8 - Labirinto de água" (a "6 - Willbert" vem do Willbert-LAOB). Cada uma tem
+`COMO USAR.txt` e atalhos de dois cliques; os que pedem escolha abrem uma janela (`gui-*.sh`) e
+todos passam por `gui-rodar.sh`, que avisa por notificação ou mostra o erro.
+
+**Painel do celular:** `http://<IP-DO-LAB2>:8090` — selfie, foto salva ou câmera do laboratório,
+modo, cores, brincadeiras e girar. O endereço aparece no canto do papel de parede do lab2
+(`atualizar_papel_parede.py`, a cada minuto) e no atalho "Abrir painel da caixa de areia".
+
+## Configuração
+
+| Onde | O quê |
+| :--- | :--- |
+| `areia/temas/*.cpt` | Temas: altura em cm → cor RGB (abaixo de 0 é água); o ativo é o link `temas/atual.cpt` |
+| `sarndbox/projetor.cfg` | Janela em tela cheia no projetor (HDMI-0) |
+| `PARAR_BRINCADEIRAS` em `areia/areia.py` | Quais brincadeiras se encerram entre si |
+| `/root/etc/SARndbox-2.8` | Calibração real do Kinect e do projetor |
+
+Opções da foto: `--sem-fundo` recorta a pessoa mesmo sem rosto; `--com-fundo` nunca recorta. No
+painel, "mistura" traz o relevo de volta e deformação 0 + sombra 0 projeta a foto sem efeito
+(também por `POST /ajuste`).
 
 ## Testes
 
-    bash testes/rodar.sh       # 53 testes: imagem, área iluminada, relevo, pasta, cache, comando,
-                               # painel (com projetor falso) + sintaxe/shellcheck dos scripts
-    bash testes/integracao.sh  # no lab2, depois do instalar.sh: compila, confere tudo instalado,
-                               # o painel (aceita rede local e Tailscale, recusa a internet) e o projetor de verdade
-                               # (~1 min), terminando na topografia
+Testes automáticos, com projetor falso (imagem, área iluminada, relevo, pasta, cache, comandos,
+painel e sintaxe/shellcheck dos scripts):
 
-## Caça ao tesouro, peixes e carrinhos
+```bash
+bash testes/rodar.sh
+```
 
-`sarndbox/Extras.h/.cpp`: um mapa de alturas grosseiro da área iluminada (1,5 cm por célula,
-2x por segundo) e a simulação na CPU; o desenho é feito no shader da superfície (uniforms com as
-posições). Comandos no cano da versão com Foto: `tesouro [cm]`, `tesouroFim`,
-`animais peixes|carros|todos|nada [n]`.
-- **Tesouro:** lugar sorteado onde há areia acima da média; aparece onde cavarem abaixo de
-  (altura - profundidade); brilha dourado a menos de 2,5 cm; "Tesouro encontrado!" vai para o
-  `sandbox.log` (`areia-tesouro achou` lê de lá).
-- **Fósseis:** o mesmo mecanismo do tesouro (`tipoTesouro` 2–5), com raio maior; perto aparece a
-  quadrícula de escavação e, cavando, o esqueleto em marfim na rocha (T-Rex, Triceratops,
-  Pterodáctilo ou pegada). Achado, outro aparece em 30 s. Fóssil e tesouro se substituem.
-- **Lago e peixes:** tudo 1,5 cm abaixo da mediana da areia vira água; os peixes só nadam ali e
-  desviam das margens (cavar um buraco cria um lago).
-  Nadam em cardume (separação de ~5,5 cm, alinhamento e coesão fraca: juntos, sem amontoar), viram suave (no máximo 2,8 rad/s) e dão
-  nadadas (a velocidade oscila); preso numa poça por 4 s, o peixe reaparece num lago de verdade
-  (só nasce onde há água num raio de 3,5 cm).
-- **Carrinhos:** seguem os vales pela curva de nível (baixo, mas sem despencar no fundo do buraco),
-  sem rampa íngreme, sem lago e sem sair da área; descem mais rápido e sobem devagar, se espalham
-  (custo por carro perto) e freiam para o da frente só se ele tem número menor (nunca travam um
-  esperando o outro); travado por 3 s, dá meia-volta.
-- **Desenho:** peixes com corpo que ondula, cauda bifurcada, nadadeiras, olhos, listras e sombra;
-  carrinhos com carroceria arredondada, cabine, vidros, faróis com facho, lanternas, rodas e sombra.
-- **Uma brincadeira por vez:** começar tesouro, fóssil, labirinto ou animais encerra as outras
-  (`PARAR_BRINCADEIRAS` em `areia.py`); a foto e o esculpir também encerram; o tema de cores fica.
-- **Labirinto de água:** comandos `labirinto [facil|normal|dificil]`, `labirintoNovo`, `labirintoFim`
-  (e `labirintoTeste`, que põe o alvo na nascente, para o teste de integração). A nascente é um
-  disco de 2 cm que entra na simulação de água do próprio SARndbox (`addWater`, a mesma via da chuva
-  com a mão); 2x por segundo o `display` lê a grade de água e a de fundo (`glGetTexImage`) e mede a
-  maior profundidade dentro do alvo; com 0,25 cm escreve "Labirinto: a água chegou!" no log, o alvo
-  fica dourado e, 20 s depois, rodada nova com a água zerada (`setWaterLevel`). Foto, esculpir,
-  `labirintoFim` e a topografia encerram o labirinto e esvaziam a água dele.
-- **Fluidez:** a versão com Foto roda com a grade de água em 320x240 (`-wts 320 240`; o padrão
-  640x480 não dava conta na GTX 750 Ti e escrevia "Ran out of time" no log a cada quadro). O log
-  mostra a cada 30 s uma linha `Desempenho: N quadros/s; água atrasada em X de Y passos`.
-- **Willbert:** o gesto das duas mãos ao lado do rosto (antes, "Willbert, grave o meu rosto") manda
-  a foto tratada para `POST /foto` do painel (só aceita a própria máquina): PNG já recortado (o Willbert
-  usa o fundo vazio da cena), que o `rosto.py` usa como alfa. As fotos `willbert-*` além das 30 mais
-  novas vão para a subpasta "antigas do Willbert" (`areia.arquiva_willbert`).
+No lab2, depois do `instalar.sh` (~1 min; compila, confere a instalação, o painel e o projetor de
+verdade, terminando na topografia):
 
-## Temas de cor do relevo
+```bash
+bash testes/integracao.sh
+```
 
-`areia/temas/*.cpt` (altura em cm acima do plano base -> cor RGB; abaixo de 0 é água). O tema
-escolhido é o link `temas/atual.cpt`: a topografia (o SARndbox original, sem mudanças) abre com
-`-uhm temas/atual.cpt -cp topografia.fifo`, e `areia-tema` troca na hora pelo comando `colorMap`
-do próprio SARndbox (~0,1 s, sem fechar o programa). Vale também no modo Relevo da versão com Foto.
-Os pontos foram ajustados à areia do lab2 (morros de ~8–10 cm): lava e ilhas aparecem nos picos.
+## Como funciona por dentro
 
-## Painel do celular
-`painel.py` (serviço de usuário `sandbox-painel`) em `http://<IP-DO-LAB2>:8090`: escuta em todas as
-interfaces e responde à própria máquina, à rede local do laboratório (10/8, 172.16/12, 192.168/16) e à
-Tailscale (o resto recebe 403): tirar selfie, escolher foto ou usar a câmera do laboratório, trocar de modo,
-escolher uma das fotos salvas, cores do relevo, brincadeiras e girar a imagem (espelho, deformação, sombra e
-mistura continuam aceitos em `POST /ajuste`, sem botão na página desde 2026-11-11).
+**Modo Foto** (`sarndbox/FaceImage.*`, `patch_surface.py`, `patch_sandbox.py`): a imagem vira
+textura com a matriz câmera → imagem; o shader mostra só a imagem, com lente e sombra. Comandos
+pelo cano `-cp`: `rosto`, `rostoAjuste`, `esculpir`, `relevo`. A foto ocupa só a área iluminada
+(a calibração marca uma caixa maior que a projeção; hoje ~59 × 42 cm). Rosto detectado com YuNet;
+recorte com U²-Net de pessoas (~3 s); a preparação (~5 s) fica em `fotos/cache/` (40 últimas) e
+trocar para uma já usada leva ~1 s.
 
-O endereço atual aparece no canto do papel de parede do lab2: `atualizar_papel_parede.py`
-(timer de usuário `atualizar-papel-parede`, a cada minuto) desenha o IP sobre `~/Pictures/logo-original.png`
-e só redesenha quando ele muda. Na Área de Trabalho, o atalho "Abrir painel da caixa de areia" abre o painel.
+**Temas:** a topografia abre com `-uhm temas/atual.cpt -cp topografia.fifo`; `areia-tema` troca na
+hora pelo `colorMap` do SARndbox (~0,1 s). Pontos ajustados aos morros de ~8–10 cm do lab2.
 
-## Comandos internos (sandbox.sh)
-    ./sandbox.sh rosto
-    venv/bin/python rosto.py foto.jpg --saida fotos
-    ./sandbox.sh cmd "rosto /home/laob/SARndbox-rosto/fotos/rosto.png 0 0"
-    ./sandbox.sh cmd "esculpir /home/laob/SARndbox-rosto/fotos/rosto.dem"
-    ./sandbox.sh cmd "relevo"
-    ./sandbox.sh original
+**Extras** (`sarndbox/Extras.*`): mapa de alturas de 1,5 cm por célula, 2× por segundo, simulação
+na CPU e desenho no shader. Comandos: `tesouro [cm]`, `tesouroFim`, `animais peixes|carros|todos|nada [n]`,
+`labirinto [nível]`, `labirintoNovo`, `labirintoFim`, `labirintoTeste`.
 
-## Projetor
+- **Tesouro:** sorteado onde há areia acima da média; aparece ao cavar; brilha dourado a menos de 2,5 cm; "Tesouro encontrado!" vai para o `sandbox.log`. Achado, reaparece em outro lugar após 20 s.
+- **Fósseis:** mesmo mecanismo (`tipoTesouro` 2–5), raio maior, quadrícula de escavação e esqueleto em marfim; outro aparece em 30 s.
+- **Peixes:** água = 1,5 cm abaixo da mediana; cardume com separação de ~5,5 cm, curvas suaves (até 2,8 rad/s); preso numa poça por 4 s, reaparece num lago de verdade.
+- **Carrinhos:** seguem a curva de nível dos vales, evitam rampas e lagos, freiam só para o de número menor; travado 3 s, dá meia-volta.
+- **Labirinto:** a nascente (disco de 2 cm) usa a água do próprio SARndbox (`addWater`); 2× por segundo mede a profundidade no alvo (`glGetTexImage`); com 0,25 cm escreve "Labirinto: a água chegou!", e após 20 s começa rodada nova.
+- **Fluidez:** grade de água em 320×240 (`-wts 320 240`; 640×480 não dava conta na GTX 750 Ti). O log mostra `Desempenho: N quadros/s` a cada 30 s.
 
-- `sandbox.sh` abre o SARndbox (as duas versões) com `-mergeConfig projetor.cfg`: a janela já sai
-  em tela cheia no projetor (HDMI-0). Sem isso ela abre no monitor.
-- A calibração do lab2 marca uma caixa maior que a imagem do projetor; a foto é encaixada só na
-  parte iluminada (cantos da imagem do projetor levados ao plano base, em `Sandbox.cpp` e `rosto.py`).
-  Hoje: x -34,5..24,8 cm, y -28,8..13,1 cm (cerca de 59 × 42 cm).
+**Willbert:** o gesto das duas mãos manda a foto já recortada para `POST /foto` (só aceita a
+própria máquina). Fotos `willbert-*` ficam na subpasta "Fotos do Willbert". O painel responde à
+própria máquina, à rede local e à Tailscale; o resto recebe 403.
 
-## Topografia ao ligar, foto por comando
+**Comandos internos** (`areia/sandbox.sh`):
 
-- Ao ligar o lab2, o autostart (`~/.config/autostart/SARndbox.desktop`) roda `areia-topografia`:
-  o SARndbox original em tela cheia no projetor. O atalho antigo ficou em
-  `~/SARndbox-rosto/SARndbox.desktop.original` (para desfazer, copie-o de volta).
-- **Pasta das imagens:** `~/Desktop/Areia`, na Área de Trabalho, com o arquivo `COMO USAR.txt` (cópia de
-  `COMO-USAR.txt` deste diretório) e atalho "Areia" na barra lateral do Arquivos. Coloque
-  ali as fotos (.jpg, .png, .webp, .bmp). No terminal (comandos em `~/.local/bin`):
-  - `areia-foto`: lista as imagens da pasta e pergunta o número (Enter = a última usada).
-  - `areia-foto 3` / `areia-foto gato`: escolhe direto pelo número ou por parte do nome.
-  - `areia-foto ~/Downloads/x.jpg`: qualquer arquivo; ele é copiado para a pasta Areia.
-  - `areia-foto lista`, `areia-foto pasta` (abre a pasta), `areia-foto girar`, `areia-foto espelhar`,
-    `areia-foto esculpir`.
-  - `areia-foto camera`: foto pela câmera do laboratório (só essa opção depende do Willbert).
-  - `areia-topografia`: volta à topografia.
-- Com rosto na imagem: recorte retrato em volta do rosto, sem fundo. Sem rosto: a imagem inteira,
-  com fundo (`--sem-fundo` recorta a pessoa mesmo assim; `--com-fundo` nunca recorta). PNG já
-  transparente usa a própria transparência. A preparação (~5 s) fica guardada em `fotos/cache/`
-  (40 últimas): trocar para uma imagem já usada leva ~1 s.
-- Tudo local nesta pasta: `venv/` (OpenCV, NumPy, Flask, waitress), `modelos/` (YuNet e U²-Net) e a
-  calibração de `etc/` (o `instalar.sh` recria o que faltar). As fotos enviadas pelo painel do celular também vão para a pasta Areia.
-- No modo foto não aparecem cores de relevo, curvas de nível nem água: só a foto, que amplia onde a
-  areia está mais alta e ganha sombra do relevo. No painel, "mistura" traz o relevo de volta, e
-  deformação 0 + sombra 0 projeta a foto sem efeito nenhum.
-- Recorte do fundo: U²-Net de pessoas (`modelos/u2net_human_seg.onnx`, 176 MB, release v0.0.0 do
-  projeto rembg) rodando no OpenCV do venv local, ~3 s (o `instalar.sh` baixa).
+```bash
+./sandbox.sh rosto
+./sandbox.sh cmd "relevo"
+./sandbox.sh original
+```
 
-## Ao ligar e se não abrir
+## Estrutura do projeto
 
-- O lab2 tem login automático (GDM) e o autostart roda `areia-topografia`, que espera o Kinect
-  aparecer no USB (até 30 s), tenta abrir 3 vezes e registra em `~/SARndbox-rosto/inicio.log`.
-- Na Área de Trabalho: `SE A AREIA NÃO ABRIR.txt` e o atalho `Abrir a areia` (o `instalar.sh` o marca
-  como confiável para abrir com dois cliques).
+```text
+Projetor-LAOB/
+├── instalar.sh          # instala/atualiza tudo no PC
+├── requirements.txt     # Python do venv (OpenCV, NumPy, Flask, waitress)
+├── sarndbox/            # modo Foto e Extras: FaceImage, Extras, patches, projetor.cfg
+├── areia/               # areia.py, comandos areia-*, painel.py, rosto.py, temas/, gui-*.sh
+├── area-de-trabalho/    # pastas numeradas com COMO USAR.txt e atalhos .desktop
+├── sistema/             # serviços e timers de usuário (painel, vigia, papel de parede)
+└── testes/              # rodar.sh (automático) e integracao.sh (no lab2)
+```
+
+No PC, tudo fica em `~/SARndbox-rosto` (cópia do SARndbox + estes arquivos, `venv/`, `modelos/`).
+
+## Solução de problemas
+
+| Sintoma | Causa provável | Correção |
+| :--- | :--- | :--- |
+| A areia não abre ao ligar | Kinect demorou no USB | O autostart espera até 30 s e tenta 3×; veja `~/SARndbox-rosto/inicio.log` ou use o atalho "Abrir a areia" |
+| Topografia fechou sozinha | Programa caiu | O `areia-vigia` reabre em até 2 min |
+| Areia a 1 quadro/s, projetor sumiu | Kernel novo sem o driver NVIDIA | Rode `kernel-com-driver.sh` (Willbert-LAOB) e reinicie |
+| Foto aparece de lado | Orientação de quem olha a caixa | `areia-foto girar` |
+| "Ran out of time" no log | Grade de água grande demais | Mantenha `-wts 320 240` |
+
+Na Área de Trabalho também há `SE A AREIA NÃO ABRIR.txt`.
+
+## Equipe
+
+Desenvolvido no **Laboratório LAOB**.
+
+- Victor Colombo
+- Prof. Mario Gazziro
 
 ## Licença
 
-O SARndbox é de Oliver Kreylos (UC Davis), sob GPL-2.0; os patches e o modo Foto deste repositório
-seguem a mesma licença. Os modelos baixados pelo instalador têm licenças próprias: YuNet
-(OpenCV Zoo, MIT) e U²-Net de pessoas (projeto rembg / U²-Net, Apache-2.0).
+O SARndbox é de Oliver Kreylos (UC Davis), sob GPL-2.0; os patches e o modo Foto deste
+repositório seguem a mesma licença. Os modelos baixados têm licenças próprias: YuNet (OpenCV Zoo,
+MIT) e U²-Net de pessoas (rembg / U²-Net, Apache-2.0).
