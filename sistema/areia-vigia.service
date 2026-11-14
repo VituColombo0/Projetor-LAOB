@@ -5,4 +5,7 @@ After=graphical-session.target
 [Service]
 Type=oneshot
 ExecStart=%h/SARndbox-rosto/areia-vigia
-Nice=5
+# A areia (SARndbox) aberta por este serviço não pode morrer junto com ele: sem isto o systemd
+# matava a areia quando o vigia terminava a checagem (ela ficava abrindo e fechando a cada 2 min)
+# e quando o painel reiniciava. Sem Nice: a areia herdaria a prioridade menor.
+KillMode=process

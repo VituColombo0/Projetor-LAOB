@@ -27,6 +27,11 @@ for at in "$R"/area-de-trabalho/*.desktop "$R"/area-de-trabalho/*/*.desktop; do
   done
 done
 for p in "$R"/area-de-trabalho/*/; do [ -s "$p/COMO USAR.txt" ] || { echo "  falta o manual em $p"; falhas=1; }; done
+echo "== serviços"
+for u in "$R"/sistema/areia-vigia.service "$R"/sistema/sandbox-painel.service; do
+  grep -q "^KillMode=process" "$u" || { echo "  falta KillMode=process em $u (o systemd mataria a areia)"; falhas=1; }
+  grep -q "^Nice=" "$u" && { echo "  Nice em $u: a areia herdaria a prioridade menor"; falhas=1; }
+done
 echo "== testes Python ($PY)"
 ( cd "$R/testes" && "$PY" -m unittest -v test_rosto test_areia test_painel ) || falhas=1
 "$PY" -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$R/areia/atualizar_papel_parede.py" || falhas=1
