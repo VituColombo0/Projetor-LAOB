@@ -168,7 +168,7 @@ void Extras::novoJogo(void)
 				addFonte(sx,sy,n==3?0.6f:0.9f);
 				addPeca(P_ALVO,sx+(bx-sx)*lev,sy+(by-sy)*lev,n==1?5.0f:4.0f,t);
 				}
-			jogoDuracao=0.0f;
+			jogoDuracao=240.0f; // sem vencedor em 4 min: empate (a água não enche a caixa para sempre)
 			anuncia("Jogo: corrida de rios (azul x vermelho)");
 			break;
 			}
@@ -247,22 +247,23 @@ void Extras::novoJogo(void)
 				addPeca(P_PORTAO,px,py,3.2f,0,k);
 				}
 			addPeca(P_ALVO,bx,by,4.0f,2);
-			jogoDuracao=0.0f;
+			jogoDuracao=n==1?180.0f:n==2?240.0f:300.0f;
 			anuncia(fmt("Jogo: rota com %d paradas",portoes));
 			break;
 			}
 		case LAGO:
 			{
-			if(!pontoLivre(x,y,10.0f,0.0f,-1e9f,1e9f))
+			/* num lugar baixo ou médio (em cima de um morro a água não chegaria) e longe da nascente */
+			float sx,sy;
+			naBorda(lado,0.5f,sx,sy);
+			addFonte(sx,sy,1.0f);
+			if(!pontoLivre(x,y,10.0f,18.0f,r-6.0f,r+0.5f))
 				{
 				x=(bmin[0]+bmax[0])/2;
 				y=(bmin[1]+bmax[1])/2;
 				}
 			addPeca(P_LAGO,x,y,n==1?7.0f:n==2?6.0f:5.0f);
 			pecas[nPecas-1].nivel=0.0f;
-			float sx,sy;
-			naBorda(lado,0.5f,sx,sy);
-			addFonte(sx,sy,1.0f);
 			jogoDuracao=n==1?25.0f:n==2?30.0f:35.0f; // a nascente joga água só durante esse tempo
 			anuncia("Jogo: encha o lago na medida");
 			break;
@@ -279,7 +280,7 @@ void Extras::novoJogo(void)
 			pecas[nPecas-1].ang=std::atan2(dy,dx);
 			float lev=n==1?0.6f:1.0f;
 			addPeca(P_PORTO,sx+dx*lev,sy+dy*lev,n==1?5.0f:4.0f);
-			jogoDuracao=0.0f;
+			jogoDuracao=180.0f;
 			anuncia("Jogo: leve o barquinho até o porto");
 			break;
 			}
@@ -405,6 +406,19 @@ void Extras::jogoPasso(float dt)
 		{
 		return int(std::count_if(pecas,pecas+nPecas,[&](const Peca& q){return q.tipo==tipo&&q.estado==estado;}));
 		};
+	/* Corrida, rota e barquinho: sem chegada até o tempo limite, a rodada acaba (antes a nascente
+	   jogava água para sempre e a caixa inteira alagava) */
+	if(jogoDuracao>0.0f&&t>=jogoDuracao)
+		{
+		if(jogo==CORRIDA)
+			terminaRodada("empate: o tempo acabou",2);
+		else if(jogo==ROTA)
+			terminaRodada("o tempo acabou antes de a água chegar",1);
+		else if(jogo==BARCO)
+			terminaRodada("o tempo acabou: o barquinho não chegou ao porto",1);
+		if(jogoFase!=1)
+			return;
+		}
 	switch(jogo)
 		{
 		case VILA:

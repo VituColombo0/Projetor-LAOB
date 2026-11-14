@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 import unicodedata
 
@@ -92,7 +93,7 @@ def acha(pedido, lista=None):
         raise Erro(f"não há imagem número {n}")
     caminho = os.path.expanduser(pedido)
     if os.path.isfile(caminho):
-        if os.path.abspath(caminho).startswith(pasta()):
+        if os.path.commonpath([os.path.abspath(caminho), os.path.abspath(pasta())]) == os.path.abspath(pasta()):
             return caminho
         return guarda(caminho)
     achadas = [c for c in lista if pedido.casefold() in os.path.basename(c).casefold()]
@@ -231,14 +232,26 @@ def limpa_cache(manter=MANTER_NO_CACHE):
 
 # ---------- projetor ----------
 
+_qual_cache = [0.0, None]  # (quando, resposta): o painel pergunta várias vezes por consulta
+
+
 def _sandbox(*args, timeout=60):
-    r = subprocess.run([SANDBOX, *args], capture_output=True, text=True, timeout=timeout)
+    try:
+        r = subprocess.run([SANDBOX, *args], capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _qual_cache[0] = 0.0
+        return 1, "a caixa de areia demorou demais para responder"
+    if args[:1] != ("estado",):
+        _qual_cache[0] = 0.0  # qualquer outro comando pode ter trocado o programa
     return r.returncode, (r.stdout + r.stderr).strip()
 
 
 def qual():
-    """original, rosto ou nenhum."""
-    return _sandbox("estado", timeout=10)[1] or "nenhum"
+    """original, rosto ou nenhum. A resposta vale por 1 s (cada pergunta abre um processo)."""
+    agora = time.monotonic()
+    if _qual_cache[1] is None or agora - _qual_cache[0] > 1.0:
+        _qual_cache[:] = [agora, _sandbox("estado", timeout=10)[1] or "nenhum"]
+    return _qual_cache[1]
 
 
 def _comando(*linhas):
@@ -255,6 +268,7 @@ def aplica(e):
         if rc != 0 or qual() == "nenhum":
             raise Erro("a topografia não abriu: " + out)
         salva(e)
+        _volta_tema()  # se o jogo do vulcão estava ligado, o tema de antes volta
         return
     if e["modo"] in ("rosto", "esculpir") and not os.path.exists(os.path.join(FOTOS, "rosto.png")):
         raise Erro("ainda não há imagem: escolha uma")
@@ -272,6 +286,8 @@ def aplica(e):
     else:
         _comando("relevo")
     salva(e)
+    if parar:
+        _volta_tema()
 
 
 def ajusta(e):
@@ -418,13 +434,50 @@ def tesouro(dificuldade="normal"):
     return prof
 
 
+_PREFIXOS_REGISTRO = ("Tesouro", "Fossil", "Labirinto", "Animais", "Jogo", "Modo Rosto:", "Modo Esculpir:")
+_registro_cache = {"pos": 0, "linhas": [], "resto": b"", "rabo": b""}
+_registro_trava = threading.Lock()  # o painel atende várias consultas ao mesmo tempo
+
+
 def _registro_caca():
-    """Linhas do registro do programa da areia sobre o tesouro e os fósseis (mesmo mecanismo)."""
+    """Linhas do registro do programa da areia sobre as brincadeiras (tesouro, fósseis, labirinto,
+    animais e jogos). Lê só o que foi escrito desde a última vez: o painel pergunta a cada poucos
+    segundos e o registro cresce o dia todo (antes o arquivo inteiro era relido 6x por consulta).
+    O registro recomeça do zero quando a areia reabre: confere os últimos bytes já lidos e,
+    se mudaram, lê tudo de novo."""
+    with _registro_trava:
+        return _le_registro()
+
+
+def _le_registro():
+    c = _registro_cache
     try:
-        with open(os.path.join(D, "sandbox.log"), errors="replace") as f:
-            return [l for l in f if l.startswith(("Tesouro", "Fossil", "Labirinto", "Animais", "Jogo", "Modo Rosto:", "Modo Esculpir:"))]
+        with open(os.path.join(D, "sandbox.log"), "rb") as f:
+            tam = os.fstat(f.fileno()).st_size
+            n = len(c["rabo"])
+            if tam >= c["pos"] and n:
+                f.seek(c["pos"] - n)
+                mesmo = f.read(n) == c["rabo"]
+            else:
+                mesmo = tam >= c["pos"] and c["pos"] == 0
+            if not mesmo:
+                c.update(pos=0, linhas=[], resto=b"", rabo=b"")
+            f.seek(c["pos"])
+            novo = f.read()
     except OSError:
+        c.update(pos=0, linhas=[], resto=b"", rabo=b"")
         return []
+    if novo:
+        c["pos"] += len(novo)
+        c["rabo"] = (c["rabo"] + novo)[-64:]
+        partes = (c["resto"] + novo).split(b"\n")
+        c["resto"] = partes.pop()  # linha ainda sendo escrita
+        for l in partes:
+            t = l.decode("utf-8", "replace") + "\n"
+            if t.startswith(_PREFIXOS_REGISTRO):
+                c["linhas"].append(t)
+        del c["linhas"][:-4000]
+    return list(c["linhas"])
 
 
 def _situacao(prefixo):
@@ -553,11 +606,7 @@ def labirinto(dificuldade="normal"):
 
 
 def _registro_labirinto():
-    try:
-        with open(os.path.join(D, "sandbox.log"), errors="replace") as f:
-            return [l for l in f if l.startswith(("Labirinto", "Tesouro", "Fossil", "Animais", "Jogo", "Modo Rosto:", "Modo Esculpir:"))]
-    except OSError:
-        return []
+    return _registro_caca()
 
 
 def labirinto_situacao():
@@ -706,5 +755,7 @@ if __name__ == "__main__":
     import sys
     if sys.argv[1:] == ["marca-topografia"]:
         marca_topografia()
+    elif sys.argv[1:] == ["volta-tema"]:
+        _volta_tema()
     else:
-        sys.exit("uso: python3 areia.py marca-topografia")
+        sys.exit("uso: python3 areia.py marca-topografia|volta-tema")

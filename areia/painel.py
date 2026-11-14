@@ -43,6 +43,11 @@ def resposta(fn):
             return jsonify(ok=True, msg=fn() or "Feito")
         except areia.Erro as err:
             return jsonify(ok=False, msg=str(err)), 400
+        except subprocess.TimeoutExpired:
+            return jsonify(ok=False, msg="demorou demais; tente de novo"), 504
+        except Exception as err:  # erro inesperado: mensagem legível no painel em vez de uma página 500
+            app.logger.exception("erro no painel")
+            return jsonify(ok=False, msg=f"erro inesperado ({type(err).__name__}); tente de novo"), 500
 
 
 @app.get("/")
@@ -54,7 +59,11 @@ def pagina():
 def ver_estado():
     e = areia.estado()
     e["sandbox"] = areia.qual()
-    e["tem_foto"] = os.path.exists(os.path.join(areia.FOTOS, "rosto.png"))
+    try:  # a página só baixa a prévia de novo quando a foto muda
+        e["foto_versao"] = int(os.path.getmtime(os.path.join(areia.FOTOS, "rosto.png")) * 1000)
+    except OSError:
+        e["foto_versao"] = 0
+    e["tem_foto"] = bool(e["foto_versao"])
     e["imagem"] = os.path.basename(e["imagem"]) if e.get("imagem") else None
     e["tesouro"] = areia.tesouro_situacao()
     e["tesouros_achados"] = areia.tesouro_achados()
@@ -358,6 +367,7 @@ button.active { background: var(--accent); border-color: var(--accent); color: v
 .primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 .danger { background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger-fg); }
 button:disabled { opacity: .55; cursor: progress; }
+body.ocupado button, body.ocupado label.btn, body.ocupado .chip { opacity: .6; cursor: progress; }
 input[type=file] { display: none; }
 [hidden] { display: none !important; }
 
@@ -543,7 +553,11 @@ function msg(t, tipo) {
   el.className = tipo || '';
 }
 
+let OCUPADO = false;
 async function post(u, b, isForm) {
+  if (OCUPADO) return;   // um pedido por vez: toques repetidos não empilham trocas no projetor
+  OCUPADO = true;
+  document.body.classList.add('ocupado');
   msg('Enviando…');
   try {
     const r = await fetch(u, {method: 'POST', body: isForm ? b : JSON.stringify(b),
@@ -554,6 +568,7 @@ async function post(u, b, isForm) {
     await carrega();
     return j;
   } catch (e) { msg('Sem conexão com a areia', 'err'); }
+  finally { OCUPADO = false; document.body.classList.remove('ocupado'); }
 }
 
 function monta() {
@@ -681,6 +696,9 @@ async function carrega() {
     const fotos = [...(E.fotos_salvas || []), ...(E.fotos_willbert || [])];
     $('#box-fotos').hidden = !fotos.length;
     const C = $('#chips');
+    const lista = fotos.join('|');
+    if (C.dataset.lista !== lista) {
+    C.dataset.lista = lista;
     C.innerHTML = '';
     fotos.forEach(nome => {
       const tag = document.createElement('span');
@@ -690,7 +708,12 @@ async function carrega() {
       tag.onclick = () => post('/escolher', {imagem: nome});
       C.appendChild(tag);
     });
-    if (E.tem_foto) { $('#prev').hidden = false; $('#prev').src = '/previa.png?' + Date.now(); }
+    }
+    if (E.tem_foto) {
+      const P = $('#prev');
+      P.hidden = false;
+      if (P.dataset.v !== String(E.foto_versao)) { P.dataset.v = String(E.foto_versao); P.src = '/previa.png?' + E.foto_versao; }
+    }
   } catch (e) {}
 }
 
@@ -719,7 +742,8 @@ $('#reabrir').onclick = () => post('/reabrir', {});
 $('#espelhar').onclick = () => post('/ajuste', {espelho: !E.espelho});
 $('#girar').onclick = () => post('/ajuste', {giro: ((E.giro || 0) + 90) % 360});
 carrega();
-setInterval(carrega, 4000);
+setInterval(() => { if (!document.hidden) carrega(); }, 4000);   // aba escondida não fica perguntando
+document.addEventListener('visibilitychange', () => { if (!document.hidden) carrega(); });
 </script>
 </body>
 </html>""".replace(

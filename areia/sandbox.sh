@@ -22,11 +22,16 @@ export DISPLAY=${DISPLAY:-:0} XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$U}
 export DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-unix:path=/run/user/$U/bus}
 [ -n "${XAUTHORITY:-}" ] || { [ -f "/run/user/$U/gdm/Xauthority" ] && export XAUTHORITY=/run/user/$U/gdm/Xauthority; }
 
-# janela em tela cheia no projetor (sem isso ela abre no monitor); só se o projetor estiver ligado
+# janela em tela cheia no projetor (sem isso ela abre no monitor); só se o projetor estiver ligado.
+# Só é consultado quando um programa vai abrir: "estado" e "cmd" são chamados o tempo todo pelo
+# painel e não precisam do xrandr (uns 50 ms e uma conversa com o X a cada chamada).
 TELA=()
-if xrandr 2>/dev/null | grep -q "^HDMI-0 connected"; then
-  TELA=(-mergeConfig "$D/projetor.cfg")
-fi
+tela() {
+  TELA=()
+  if xrandr 2>/dev/null | grep -q "^HDMI-0 connected"; then
+    TELA=(-mergeConfig "$D/projetor.cfg")
+  fi
+}
 
 CORES=(-uhm)
 [ -f "$TEMA" ] && CORES=(-uhm "$(readlink -f "$TEMA")")
@@ -52,6 +57,7 @@ parar() {
 }
 
 iniciar_original() {
+  tela
   fifo "$FIFO_TOPO"
   ( cd "$HOME" && exec setsid nohup "$ORIG" "${TELA[@]}" "${CORES[@]}" -fpv -cp "$FIFO_TOPO" ) >/dev/null 2>&1 < /dev/null &
 }
@@ -74,6 +80,7 @@ case "${1:-estado}" in
     [ "$(qual)" = rosto ] && { echo rosto; exit 0; }
     [ -x "$ROSTO" ] || { echo "falta $ROSTO (rode o instalar.sh)"; exit 1; }
     fifo "$FIFO"
+    tela
     parar
     ( cd "$HOME" && exec setsid nohup "$ROSTO" "${TELA[@]}" "${CORES[@]}" -wts 320 240 -fpv -cp "$FIFO" ) > "$LOG" 2>&1 < /dev/null &
     sleep 8  # o Kinect e a janela levam uns segundos para ficar prontos para comandos

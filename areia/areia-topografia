@@ -29,6 +29,7 @@ for tentativa in 1 2 3; do
   sleep 2
   if [ "$("$D/sandbox.sh" estado)" != nenhum ]; then
     registra "topografia aberta (tentativa $tentativa)"
+    python3 "$D/areia.py" volta-tema 2>/dev/null || true   # o jogo do vulcão troca o tema; aqui ele volta
     echo "Topografia no projetor."
     exit 0
   fi
