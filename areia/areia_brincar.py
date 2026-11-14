@@ -112,12 +112,38 @@ def labirinto(args):
     return 0
 
 
+def jogo(args):
+    pedido = args[0] if args else "ajuda"
+    if pedido in ("ajuda", "-h", "--help", "lista"):
+        print("uso: areia-jogo <jogo> [facil|normal|dificil] | placar | nova | parar\njogos:")
+        for nome, (titulo, curta, _) in areia.JOGOS.items():
+            print(f"  {nome:8s} {titulo}: {curta}")
+    elif pedido in ("placar", "status", "estado"):
+        s = areia.jogo_situacao()
+        if s["jogo"] is None:
+            print("Nenhum jogo de água ligado. Para começar: areia-jogo <jogo>")
+        else:
+            print(f"{areia.JOGOS.get(s['jogo'], (s['jogo'],))[0]}: {'rodada terminou' if s['fase'] == 'fim' else 'rodada correndo'}"
+                  f" ({s['rodadas']} rodadas). {s['aviso']}")
+    elif pedido in ("nova", "novo", "outra"):
+        areia.jogo_novo()
+        print("Rodada nova!")
+    elif pedido in ("parar", "tirar", "fim"):
+        areia.jogo_fim()
+        print("Jogo encerrado.")
+    else:
+        n, lv = areia.jogo(pedido, args[1] if len(args) > 1 else "normal")
+        titulo, _, como = areia.JOGOS[n]
+        print(f"{titulo} ligado (nível {lv})!\n{como}")
+    return 0
+
+
 if __name__ == "__main__":
     qual_cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     try:
-        sys.exit({"tesouro": tesouro, "animais": animais, "fossil": fossil, "labirinto": labirinto}[qual_cmd](sys.argv[2:]))
+        sys.exit({"tesouro": tesouro, "animais": animais, "fossil": fossil, "labirinto": labirinto, "jogo": jogo}[qual_cmd](sys.argv[2:]))
     except areia.Erro as err:
         print(err, file=sys.stderr)
         sys.exit(1)
     except KeyError:
-        sys.exit("uso: areia_brincar.py tesouro|animais|fossil|labirinto ...")
+        sys.exit("uso: areia_brincar.py tesouro|animais|fossil|labirinto|jogo ...")

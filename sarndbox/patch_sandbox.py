@@ -12,6 +12,9 @@
    labirinto [facil|normal|dificil] / labirintoNovo / labirintoFim (labirintoTeste: alvo na nascente)
                                                            labirinto de água: uma nascente joga água de
                                                            verdade; cavem canais até ela chegar ao alvo
+   jogo corrida|vila|fazenda|rota|lago|vulcao|barco|resgate [1|2|3] / jogoNovo / jogoFim
+                                                           jogos de água (Jogos.cpp); jogoTeste põe as
+                                                           peças em cima da primeira nascente
 Também mede quadros por segundo (linha "Desempenho:" no log a cada 30 s) em vez de encher o
 log com "Ran out of time" a cada quadro.
 """
@@ -49,7 +52,8 @@ if "FaceImage" not in h:
     h = rep(h, "\tfloat measureSandHeight(void) const; // Altura mediana da areia (cm acima do plano base)\n",
             "\tfloat measureSandHeight(void) const; // Altura mediana da areia (cm acima do plano base)\n"
             "\tvoid atualizaExtras(void); // Mapa de alturas, movimento e tesouro (a cada quadro)\n"
-            "\tfloat medeAguaNoAlvo(GLContextData& contextData) const; // Labirinto: água no alvo (cm)\n")
+            "\tfloat medeAguaNoAlvo(GLContextData& contextData) const; // Labirinto: água no alvo (cm)\n"
+            "\tvoid medeJogo(GLContextData& contextData) const; // Jogos de água: água em cada peça\n")
     open("Sandbox.h", "w").write(h)
 
 c = open("Sandbox.cpp").read()
@@ -438,6 +442,7 @@ void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
 			extras.labZerarAgua=true;
 		extras.labirinto=false;
 		extras.labEstado=0;
+		extras.fimDoJogo();
 		}
 """)
     c = rep(c, """				else if(isToken(tokens[0],"relevo"))""", """				else if(isToken(tokens[0],"labirinto"))
@@ -467,6 +472,54 @@ void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
 						extras.lty=extras.lsy;
 						std::cout<<"Labirinto: teste, alvo na nascente"<<std::endl;
 						}
+					}
+				else if(isToken(tokens[0],"jogo")&&tokens.size()>=2)
+					{
+					int j=Extras::jogoDoNome(tokens[1].c_str());
+					int n=tokens.size()>=3?atoi(tokens[2].c_str()):2;
+					if(tokens.size()>=3&&isToken(tokens[2],"facil")) n=1;
+					if(tokens.size()>=3&&isToken(tokens[2],"dificil")) n=3;
+					if(j>0)
+						{
+						setFaceMode(0,0);
+						extras.pedeJogo(j,n);
+						std::cout<<"Jogo pedido: "<<Extras::nomeDoJogo(j)<<" (nível "<<extras.jogoNivel<<")"<<std::endl;
+						}
+					else
+						std::cout<<"Jogo desconhecido: "<<tokens[1]<<std::endl;
+					}
+				else if(isToken(tokens[0],"jogoNovo"))
+					{
+					if(extras.jogo!=Extras::SEM_JOGO)
+						extras.pedeJogo(extras.jogo,extras.jogoNivel);
+					}
+				else if(isToken(tokens[0],"jogoTeste"))
+					{
+					/* Para o teste automático: as peças vão para cima da primeira nascente */
+					if(extras.jogo!=Extras::SEM_JOGO&&extras.nFontes>0)
+						{
+						for(int i=0;i<extras.nPecas;++i)
+							if(extras.pecas[i].tipo!=Extras::P_NASCENTE&&extras.pecas[i].tipo!=Extras::P_BARCO)
+								{
+								extras.pecas[i].x=extras.fontes[0].x;
+								extras.pecas[i].y=extras.fontes[0].y;
+								}
+						std::cout<<"Jogo: teste, peças na nascente"<<std::endl;
+						}
+					}
+				else if(isToken(tokens[0],"jogoInfo"))
+					{
+					/* Diagnóstico: cada peça (tipo, posição, estado, nível) e a correnteza do barco */
+					for(int i=0;i<extras.nPecas;++i)
+						std::cout<<"JogoInfo: peça "<<i<<" tipo "<<extras.pecas[i].tipo<<" x "<<extras.pecas[i].x<<" y "<<extras.pecas[i].y
+						         <<" estado "<<extras.pecas[i].estado<<" nível "<<extras.pecas[i].nivel<<std::endl;
+					std::cout<<"JogoInfo: correnteza "<<extras.vbx<<" "<<extras.vby<<" fase "<<extras.jogoFase<<std::endl;
+					}
+				else if(isToken(tokens[0],"jogoFim"))
+					{
+					if(extras.jogo!=Extras::SEM_JOGO)
+						std::cout<<"Jogo desligado"<<std::endl;
+					extras.fimDoJogo();
 					}
 				else if(isToken(tokens[0],"labirintoFim"))
 					{
@@ -511,6 +564,110 @@ void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
 		glEnd();
 		glPopAttrib();
 		}
+	
+	/* Jogos de água: cada nascente ativa joga água enquanto a rodada corre: */
+	if(extras.jogo!=Extras::SEM_JOGO&&extras.jogoFase==1&&waterSpeed>0.0)
+		{
+		glPushAttrib(GL_ENABLE_BIT);
+		glDisable(GL_CULL_FACE);
+		Vector z=waterTable->getBaseTransform().inverseTransform(Vector(0,0,1));
+		Vector x=Geometry::normal(z);
+		Vector y=Geometry::cross(z,x);
+		x.normalize();
+		y.normalize();
+		for(int k=0;k<extras.nFontes;++k)
+			{
+			const Extras::Fonte& f=extras.fontes[k];
+			if(!f.ativa)
+				continue;
+			Point centro=boxTransform.inverseTransform(Point(f.x,f.y,extras.referencia));
+			glVertexAttrib1fARB(1,GLfloat(extras.labVazao*f.vazao/waterSpeed));
+			glBegin(GL_POLYGON);
+			for(int i=0;i<24;++i)
+				{
+				Scalar angle=Scalar(2)*Math::Constants<Scalar>::pi*Scalar(i)/Scalar(24);
+				glVertex(centro+x*(Math::cos(angle)*Scalar(2))+y*(Math::sin(angle)*Scalar(2)));
+				}
+			glEnd();
+			}
+		glPopAttrib();
+		}
+	}
+
+void Sandbox::medeJogo(GLContextData& contextData) const
+	{
+	/* Lê a água (nível e quantidade de movimento, no centro das células) e o fundo (nos
+	   cantos) e mede, para cada peça, a maior e a média da profundidade dentro dela (cm);
+	   para o barquinho, também a velocidade da correnteza embaixo dele (cm/s, na caixa): */
+	float maxima[Extras::MAX_PECAS],media[Extras::MAX_PECAS];
+	for(int i=0;i<Extras::MAX_PECAS;++i)
+		maxima[i]=media[i]=0.0f;
+	float vx=0.0f,vy=0.0f;
+	GLint qw=0,qh=0,bw=0,bh=0;
+	waterTable->bindQuantityTexture(contextData);
+	glGetTexLevelParameteriv(GL_TEXTURE_RECTANGLE_ARB,0,GL_TEXTURE_WIDTH,&qw);
+	glGetTexLevelParameteriv(GL_TEXTURE_RECTANGLE_ARB,0,GL_TEXTURE_HEIGHT,&qh);
+	waterTable->bindBathymetryTexture(contextData);
+	glGetTexLevelParameteriv(GL_TEXTURE_RECTANGLE_ARB,0,GL_TEXTURE_WIDTH,&bw);
+	glGetTexLevelParameteriv(GL_TEXTURE_RECTANGLE_ARB,0,GL_TEXTURE_HEIGHT,&bh);
+	if(qw<=2||qh<=2||bw<=1||bh<=1)
+		{
+		glBindTexture(GL_TEXTURE_RECTANGLE_ARB,0);
+		return;
+		}
+	labFundo.resize(size_t(bw)*size_t(bh));
+	glGetTexImage(GL_TEXTURE_RECTANGLE_ARB,0,GL_RED,GL_FLOAT,&labFundo[0]);
+	waterTable->bindQuantityTexture(contextData);
+	labQuantidade.resize(size_t(qw)*size_t(qh)*3);
+	glGetTexImage(GL_TEXTURE_RECTANGLE_ARB,0,GL_RGB,GL_FLOAT,&labQuantidade[0]);
+	glBindTexture(GL_TEXTURE_RECTANGLE_ARB,0);
+	
+	const GLfloat* cs=waterTable->getCellSize();
+	int nj=std::min(int(qh),int(bh))-1,ni=std::min(int(qw),int(bw))-1;
+	for(int p=0;p<extras.nPecas;++p)
+		{
+		const Extras::Peca& pc=extras.pecas[p];
+		if(pc.tipo==Extras::P_NASCENTE)
+			continue;
+		Point pw=waterTable->getBaseTransform().transform(boxTransform.inverseTransform(Point(pc.x,pc.y,extras.referencia)));
+		double ci=(pw[0]-waterTable->getDomain().min[0])/cs[0];
+		double cj=(pw[1]-waterTable->getDomain().min[1])/cs[1];
+		double raio=std::max(1.0,double(pc.raio));
+		double ri=raio/cs[0],rj=raio/cs[1];
+		float maior=0.0f,soma=0.0f,mx=0.0f,my=0.0f,peso=0.0f;
+		int n=0;
+		for(int j=std::max(1,int(cj-rj));j<=std::min(nj,int(cj+rj));++j)
+			for(int i=std::max(1,int(ci-ri));i<=std::min(ni,int(ci+ri));++i)
+				{
+				double di=(i+0.5-ci)/ri,dj=(j+0.5-cj)/rj;
+				if(di*di+dj*dj>1.0)
+					continue;
+				float b=0.25f*(labFundo[(j-1)*bw+i-1]+labFundo[(j-1)*bw+i]+labFundo[j*bw+i-1]+labFundo[j*bw+i]);
+				const GLfloat* q=&labQuantidade[(size_t(j)*qw+i)*3];
+				float h=std::max(0.0f,q[0]-b);
+				maior=std::max(maior,h);
+				soma+=h;
+				++n;
+				if(h>0.05f)
+					{
+					mx+=q[1];
+					my+=q[2];
+					peso+=h;
+					}
+				}
+		maxima[p]=maior;
+		media[p]=n>0?soma/n:0.0f;
+		if(pc.tipo==Extras::P_BARCO&&peso>0.0f)
+			{
+			/* (hu, hv) somados / h somado = velocidade média; grade da água -> câmera -> caixa */
+			Vector vw(mx/peso,my/peso,0);
+			Vector vc=waterTable->getBaseTransform().inverseTransform(vw);
+			Vector vb=boxTransform.transform(vc);
+			vx=float(vb[0]);
+			vy=float(vb[1]);
+			}
+		}
+	extras.jogoLeitura(maxima,media,vx,vy);
 	}
 
 float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
@@ -582,6 +739,11 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
 			if(extras.aguaNoAlvo(medeAguaNoAlvo(contextData)))
 				std::cout<<"Labirinto: a água chegou! ("<<extras.labRodadas<<" rodadas vencidas, "<<int(extras.labChegou-extras.labInicio)<<" s)"<<std::endl;
 			}
+		if(extras.jogo!=Extras::SEM_JOGO&&extras.jogoFase==1&&Vrui::getApplicationTime()-labLeitura>0.5)
+			{
+			labLeitura=Vrui::getApplicationTime();
+			medeJogo(contextData);
+			}
 """)
     # "Ran out of time" a cada quadro enchia o log; conta e mostra junto do desempenho
     c = rep(c, """		if(totalTimeStep>1.0e-8f)
@@ -617,12 +779,18 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
 		std::cout<<"Labirinto: rodada nova, nascente em x "<<extras.lsx<<" y "<<extras.lsy<<", alvo em x "<<extras.ltx<<" y "<<extras.lty<<std::endl;
 		}
 
+	/* Jogos de água: regras, tempo e avisos no log (o painel lê as linhas "Jogo:"): */
+	extras.jogoPasso(dt);
+	for(size_t i=0;i<extras.mensagens.size();++i)
+		std::cout<<extras.mensagens[i]<<std::endl;
+	extras.mensagens.clear();
+
 	/* Movimento dos peixes e carrinhos: */
 	extras.passo(dt);""")
     open("Sandbox.cpp", "w").write(c)
 
 m = open("makefile").read()
 if "FaceImage.cpp" not in m:
-    m = rep(m, "                   DEM.cpp \\\n", "                   DEM.cpp \\\n                   FaceImage.cpp \\\n                   Extras.cpp \\\n")
+    m = rep(m, "                   DEM.cpp \\\n", "                   DEM.cpp \\\n                   FaceImage.cpp \\\n                   Extras.cpp \\\n                   Jogos.cpp \\\n")
     open("makefile", "w").write(m)
 print("Sandbox ok")

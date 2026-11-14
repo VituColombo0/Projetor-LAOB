@@ -52,13 +52,13 @@ class UmaBrincadeiraPorVez(Ambiente):
     def test_trocar_encerra_a_anterior(self):
         self.areia.animais("todos")
         self.areia.labirinto("facil")
-        self.assertEqual(self.cmds()[-3:], ["cmd fossilFim", "cmd animais nada", "cmd labirinto facil"])
+        self.assertEqual(self.cmds()[-3:], ["cmd jogoFim", "cmd animais nada", "cmd labirinto facil"])
         self.areia.tesouro()
-        self.assertEqual(self.cmds()[-3:], ["cmd labirintoFim", "cmd animais nada", "cmd tesouro 5.5"])
+        self.assertEqual(self.cmds()[-3:], ["cmd jogoFim", "cmd animais nada", "cmd tesouro 5.5"])
         self.areia.fossil("pegada")
-        self.assertEqual(self.cmds()[-3:], ["cmd labirintoFim", "cmd animais nada", "cmd fossil 5 5.5"])
+        self.assertEqual(self.cmds()[-3:], ["cmd jogoFim", "cmd animais nada", "cmd fossil 5 5.5"])
         self.areia.animais("peixes")
-        self.assertEqual(self.cmds()[-3:], ["cmd fossilFim", "cmd labirintoFim", "cmd animais peixes 10"])
+        self.assertEqual(self.cmds()[-3:], ["cmd labirintoFim", "cmd jogoFim", "cmd animais peixes 10"])
 
     def test_foto_encerra_as_brincadeiras(self):
         self.areia.animais("todos")
@@ -390,6 +390,79 @@ class Comando(Ambiente):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class JogosDeAgua(Ambiente):
+    def cmds(self):
+        return [c for c in self.comandos() if c.startswith("cmd")]
+
+    def test_todos_os_jogos_e_niveis(self):
+        self.assertEqual(len(self.areia.JOGOS), 8)
+        for nome in self.areia.JOGOS:
+            self.assertEqual(self.areia.jogo(nome, "dificil"), (nome, 3))
+            self.assertEqual(self.cmds()[-1], f"cmd jogo {nome} 3")
+        self.assertEqual(self.areia.jogo("Corrida de rios"), ("corrida", 2))
+        self.assertEqual(self.areia.jogo("barquinho", "Fácil"), ("barco", 1))
+        with self.assertRaisesRegex(self.areia.Erro, "jogo:"):
+            self.areia.jogo("xadrez")
+        with self.assertRaisesRegex(self.areia.Erro, "nível"):
+            self.areia.jogo("vila", "xyz")
+
+    def test_um_por_vez(self):
+        self.areia.labirinto()
+        self.areia.jogo("rota")
+        self.assertEqual(self.cmds()[-5:], ["cmd tesouroFim", "cmd fossilFim", "cmd labirintoFim", "cmd animais nada", "cmd jogo rota 2"])
+        self.areia.para_tudo()
+        self.assertEqual(self.cmds()[-1], "cmd jogoFim")
+
+    def test_situacao_pelo_registro(self):
+        self.assertIsNone(self.areia.jogo_situacao()["jogo"])
+        with self.assertRaisesRegex(self.areia.Erro, "nenhum jogo"):
+            self.areia.jogo_novo()
+        self.areia.jogo("fazenda")
+        log = os.path.join(self.D, "sandbox.log")
+        escreve(log, "Jogo pedido: fazenda (nível 2)\nJogo: irrigue a fazenda (4 plantações)\n")
+        s = self.areia.jogo_situacao()
+        self.assertEqual((s["jogo"], s["fase"], s["rodadas"]), ("fazenda", "correndo", 0))
+        escreve(log, "Jogo pedido: fazenda (nível 2)\nJogo: irrigue a fazenda\nJogo: uma plantação secou!\n"
+                     "Jogo: fim da rodada; 3 de 4 plantações vivas\n")
+        s = self.areia.jogo_situacao()
+        self.assertEqual((s["fase"], s["rodadas"], s["aviso"]), ("fim", 1, "3 de 4 plantações vivas"))
+        self.areia.jogo_novo()
+        self.assertEqual(self.cmds()[-1], "cmd jogoNovo")
+        for fim in ("Jogo desligado\n", "Modo Rosto: foto.png\n", "Labirinto: nascente em x 1 y 2\n"):
+            escreve(log, "Jogo pedido: vila (nível 1)\nJogo: salve a vila\n" + fim)
+            self.assertIsNone(self.areia.jogo_situacao()["jogo"])
+
+    def test_vulcao_troca_o_tema_e_depois_volta(self):
+        self.areia.escolhe_tema("oceano")
+        self.areia.jogo("vulcao")
+        self.assertEqual(self.areia.tema_atual(), "vulcao")
+        self.areia.jogo("barco")
+        self.assertEqual(self.areia.tema_atual(), "oceano")
+        self.areia.jogo("vulcao")
+        self.areia.para_tudo()
+        self.assertEqual(self.areia.tema_atual(), "oceano")
+        self.areia.jogo("vulcao")
+        self.areia.escolhe_tema("marte")   # escolheu outro tema no meio: fica o dele
+        self.areia.jogo_fim()
+        self.assertEqual(self.areia.tema_atual(), "marte")
+
+    def test_comando_de_terminal(self):
+        import importlib
+        import areia_brincar
+        ab = importlib.reload(areia_brincar)
+        saida = io.StringIO()
+        with redirect_stdout(saida):
+            ab.jogo(["ajuda"])
+            ab.jogo(["vulcao", "facil"])
+            ab.jogo(["placar"])
+            ab.jogo(["parar"])
+        out = saida.getvalue()
+        self.assertIn("resgate", out)
+        self.assertIn("Vulcão em erupção ligado", out)
+        self.assertIn("cmd jogo vulcao 1", self.cmds())
+        self.assertEqual(self.cmds()[-1], "cmd jogoFim")
 
 
 class Labirinto(Ambiente):

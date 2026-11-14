@@ -91,8 +91,8 @@ class Painel(Ambiente):
         self.assertEqual(self.comandos()[-1], "cmd tesouro 5.5")
         self.assertEqual(self.post("/brincar", json={"acao": "peixes"}).status_code, 200)
         self.assertEqual(self.post("/brincar", json={"acao": "parar"}).status_code, 200)
-        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-4:],
-                         ["cmd tesouroFim", "cmd fossilFim", "cmd animais nada", "cmd labirintoFim"])
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-5:],
+                         ["cmd tesouroFim", "cmd fossilFim", "cmd animais nada", "cmd labirintoFim", "cmd jogoFim"])
         self.assertIn(self.get("/estado").get_json()["tesouro"], ("nenhum", "escondido"))
 
     def test_niveis_willbert_e_reabrir(self):
@@ -116,6 +116,22 @@ class Painel(Ambiente):
         e = self.get("/estado").get_json()
         self.assertIn(e["labirinto"], ("nenhum", "correndo"))
         self.assertEqual(e["labirinto_rodadas"], 0)
+
+    def test_jogos_de_agua_pelo_painel(self):
+        pagina = self.get("/").get_data(as_text=True)
+        self.assertNotIn("__JOGOS__", pagina)
+        import areia
+        for nome, (titulo, curta, desc) in areia.JOGOS.items():
+            self.assertIn(titulo, pagina)
+            self.assertIn(desc[:40], pagina)   # a descrição de cada jogo está no painel
+        r = self.post("/brincar", json={"acao": "barco", "nivel": "facil"})
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertIn("Barquinho", r.get_json()["msg"])
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd jogo barco 1")
+        e = self.get("/estado").get_json()
+        self.assertIn("jogo", e)
+        self.assertIn(e["animais"], ("nada", "peixes", "carros", "todos"))
+        self.assertEqual(self.post("/brincar", json={"acao": "jogoNovo"}).status_code in (200, 400), True)
 
     def test_fossil_pelo_painel(self):
         r = self.post("/brincar", json={"acao": "triceratops"})

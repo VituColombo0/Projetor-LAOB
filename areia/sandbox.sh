@@ -86,7 +86,7 @@ case "${1:-estado}" in
   topografia)
     "$0" rosto >/dev/null 2>&1
     if [ "$(qual)" = rosto ]; then
-      for c in relevo tesouroFim fossilFim labirintoFim "animais nada" "efeito $(tema_nome)"; do manda "$FIFO" "$c" || true; done
+      for c in relevo tesouroFim fossilFim labirintoFim jogoFim "animais nada" "efeito $(tema_nome)"; do manda "$FIFO" "$c" || true; done
       echo topografia; exit 0
     fi
     "$0" original ;;

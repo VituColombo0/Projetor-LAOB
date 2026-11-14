@@ -361,6 +361,8 @@ def escolhe_tema(nome):
         raise Erro("não consegui trocar as cores agora (" + out + "); valem na próxima abertura")
     e = estado()
     e["tema"] = t
+    if t != "vulcao":
+        e.pop("tema_antes_do_vulcao", None)  # quem escolheu um tema manda nele
     salva(e)
     return t
 
@@ -369,11 +371,12 @@ def escolhe_tema(nome):
 
 # Uma brincadeira por vez: começar uma encerra as outras (antes elas se acumulavam: peixes,
 # carrinhos, labirinto e fóssil juntos; e os animais "voltavam" depois da foto). O tema fica.
-PARAR_BRINCADEIRAS = {"tesouro": ("fossilFim", "labirintoFim", "animais nada"),
-                      "fossil": ("tesouroFim", "labirintoFim", "animais nada"),
-                      "labirinto": ("tesouroFim", "fossilFim", "animais nada"),
-                      "animais": ("tesouroFim", "fossilFim", "labirintoFim"),
-                      "foto": ("tesouroFim", "fossilFim", "labirintoFim", "animais nada")}
+PARAR_BRINCADEIRAS = {"tesouro": ("fossilFim", "labirintoFim", "jogoFim", "animais nada"),
+                      "fossil": ("tesouroFim", "labirintoFim", "jogoFim", "animais nada"),
+                      "labirinto": ("tesouroFim", "fossilFim", "jogoFim", "animais nada"),
+                      "jogo": ("tesouroFim", "fossilFim", "labirintoFim", "animais nada"),
+                      "animais": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim"),
+                      "foto": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim", "animais nada")}
 
 
 def _encerra_outras(qual_brincadeira):
@@ -390,6 +393,22 @@ def _brincadeira(comando):
     e = estado()
     e["modo"] = "relevo"
     salva(e)
+    if comando != "jogo vulcao" and not comando.startswith("jogo vulcao "):
+        _volta_tema()
+
+
+def _volta_tema():
+    """O jogo do vulcão troca o tema para vulcão (lava); terminado, volta o tema que estava."""
+    e = estado()
+    antes = e.pop("tema_antes_do_vulcao", None)
+    if not antes:
+        return
+    salva(e)
+    if tema_atual() == "vulcao":
+        try:
+            escolhe_tema(antes)
+        except Erro:
+            pass
 
 
 def tesouro(dificuldade="normal"):
@@ -403,7 +422,7 @@ def _registro_caca():
     """Linhas do registro do programa da areia sobre o tesouro e os fósseis (mesmo mecanismo)."""
     try:
         with open(os.path.join(D, "sandbox.log"), errors="replace") as f:
-            return [l for l in f if l.startswith(("Tesouro", "Fossil", "Labirinto", "Animais", "Modo Rosto:", "Modo Esculpir:"))]
+            return [l for l in f if l.startswith(("Tesouro", "Fossil", "Labirinto", "Animais", "Jogo", "Modo Rosto:", "Modo Esculpir:"))]
     except OSError:
         return []
 
@@ -500,6 +519,18 @@ def animais(tipo, quantidade=None):
     return t, n
 
 
+def animais_situacao():
+    """peixes, carros, todos ou nada (último pedido no registro; outra brincadeira tira os animais)."""
+    if qual() != "rosto":
+        return "nada"
+    linhas = [l for l in _registro_caca() if l.startswith(("Animais", "Tesouro: escondendo", "Fossil: escondendo",
+                                                          "Labirinto: nascente", "Jogo pedido", "Modo Rosto:"))]
+    if not linhas or not linhas[-1].startswith("Animais: "):
+        return "nada"
+    t = linhas[-1].split()[1]
+    return t if t in ANIMAIS else "nada"
+
+
 def animais_fim():
     if qual() == "rosto":
         _comando("animais nada")
@@ -524,7 +555,7 @@ def labirinto(dificuldade="normal"):
 def _registro_labirinto():
     try:
         with open(os.path.join(D, "sandbox.log"), errors="replace") as f:
-            return [l for l in f if l.startswith(("Labirinto", "Tesouro", "Fossil", "Animais", "Modo Rosto:", "Modo Esculpir:"))]
+            return [l for l in f if l.startswith(("Labirinto", "Tesouro", "Fossil", "Animais", "Jogo", "Modo Rosto:", "Modo Esculpir:"))]
     except OSError:
         return []
 
@@ -557,10 +588,100 @@ def labirinto_fim():
         _comando("labirintoFim")
 
 
+# ---------- jogos de água (Jogos.cpp): a água da simulação decide quem ganha ----------
+
+# nome: (título, descrição curta, o que fazer)
+JOGOS = {
+    "corrida": ("Corrida de rios", "Dois times, duas nascentes e duas bandeiras.",
+                "Cada time cava o canal da sua nascente até a sua bandeira (azul ou vermelha). "
+                "Ganha quem fizer a água chegar primeiro. Dá para atrapalhar o outro time com diques!"),
+    "vila": ("Salve a vila", "Uma chuva forte cai de um lado; proteja as casinhas.",
+             "Casinhas aparecem nos lugares baixos e a água desce de uma borda. Levantem diques e "
+             "cavem valas para desviar a enchente. Ao fim do tempo, contam-se as casas secas."),
+    "fazenda": ("Irrigue a fazenda", "Plantações secam aos poucos; leve água até elas.",
+                "Cada plantação tem um anel que mostra a água que resta. Cavem canais da nascente "
+                "até as plantas antes que elas sequem. Vence quem manter mais plantas vivas por 90 s."),
+    "rota": ("Rota com paradas", "A água tem que passar pelos portões 1, 2, 3… na ordem.",
+             "O portão que pisca amarelo é o próximo. Façam um caminho que leve a água por todos "
+             "os portões, na ordem, até a bandeira. Pular um portão não vale."),
+    "lago": ("Encha o lago na medida", "Água limitada: encha o lago até a faixa certa.",
+             "A nascente joga água só por alguns segundos. O contorno do lago fica azul (falta), "
+             "verde (na medida) ou vermelho (transbordou). Afundem ou levantem as margens para acertar."),
+    "vulcao": ("Vulcão em erupção", "A lava desce do pico mais alto; muralhas salvam as casas.",
+               "O tema vira vulcão e a lava sai do ponto mais alto da areia. Construam muralhas e "
+               "valas para desviar a lava das casinhas até o fim da erupção."),
+    "barco": ("Barquinho", "O barquinho segue a correnteza até o porto.",
+              "Cavem um rio da nascente até o porto. O barco só anda onde tem água e vai para onde "
+              "a correnteza leva; se o rio ficar raso, ele encalha."),
+    "resgate": ("Resgate dos peixes", "Peixes presos em poças que secam.",
+                "Cada peixe tem um anel com o ar que resta. Levem a água da nascente até as poças "
+                "antes que sequem. Peixe salvo nada e brilha."),
+}
+NIVEIS_JOGO = {"facil": 1, "normal": 2, "dificil": 3, "1": 1, "2": 2, "3": 3, "medio": 2}
+
+
+def jogo(nome, nivel="normal"):
+    """Começa um jogo de água. Devolve (nome, nível 1-3). O vulcão troca o tema para vulcão (lava)."""
+    n = _chave_tema(str(nome or ""))
+    n = {"corrida-de-rios": "corrida", "rios": "corrida", "salve-a-vila": "vila", "enchente": "vila",
+         "irrigar": "fazenda", "irrigue": "fazenda", "portoes": "rota", "paradas": "rota",
+         "lava": "vulcao", "barquinho": "barco", "peixes": "resgate"}.get(n, n)
+    if n not in JOGOS:
+        raise Erro("jogo: " + ", ".join(JOGOS))
+    lv = NIVEIS_JOGO.get(_chave_tema(str(nivel or "normal")))
+    if lv is None:
+        raise Erro("nível: facil, normal ou dificil")
+    _brincadeira(f"jogo {n} {lv}")
+    if n == "vulcao" and tema_atual() != "vulcao":
+        antes = tema_atual()
+        try:
+            escolhe_tema("vulcao")  # a água vira lava no tema vulcão
+            e = estado()
+            e["tema_antes_do_vulcao"] = antes
+            salva(e)
+        except Erro:
+            pass
+    return n, lv
+
+
+def jogo_situacao():
+    """Dicionário com o jogo atual: nome, fase (correndo, fim ou nenhum), rodadas, último aviso."""
+    vazio = {"jogo": None, "fase": "nenhum", "rodadas": 0, "aviso": ""}
+    if qual() != "rosto":
+        return vazio
+    linhas = _registro_caca()
+    inicio = max((i for i, l in enumerate(linhas) if l.startswith("Jogo pedido:")), default=-1)
+    if inicio < 0:
+        return vazio
+    depois = [l.strip() for l in linhas[inicio:]]
+    if any(l.startswith(("Jogo desligado", "Tesouro: escondendo", "Fossil: escondendo", "Labirinto: nascente",
+                         "Modo Rosto:", "Modo Esculpir:")) for l in depois[1:]):
+        return vazio
+    nome = depois[0].split(":", 1)[1].split("(")[0].strip()
+    rodadas = sum(1 for l in depois if l.startswith("Jogo: fim da rodada"))
+    avisos = [l[len("Jogo: "):] for l in depois if l.startswith("Jogo: ") and not l.startswith("Jogo: teste")]
+    ult = avisos[-1] if avisos else ""
+    fase = "fim" if ult.startswith("fim da rodada") else "correndo"
+    return {"jogo": nome, "fase": fase, "rodadas": rodadas, "aviso": ult.replace("fim da rodada; ", "")}
+
+
+def jogo_novo():
+    if jogo_situacao()["jogo"] is None:
+        raise Erro("nenhum jogo de água ligado")
+    _comando("jogoNovo")
+
+
+def jogo_fim():
+    if qual() == "rosto":
+        _comando("jogoFim")
+    _volta_tema()
+
+
 def para_tudo():
     """Encerra todas as brincadeiras de uma vez (botão "Parar brincadeiras")."""
     if qual() == "rosto":
-        _comando("tesouroFim", "fossilFim", "animais nada", "labirintoFim")
+        _comando("tesouroFim", "fossilFim", "animais nada", "labirintoFim", "jogoFim")
+    _volta_tema()
 
 
 def reabre():

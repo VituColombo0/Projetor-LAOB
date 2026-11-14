@@ -25,7 +25,7 @@ for f in BoxLayout.txt ProjectorMatrix.dat HeightColorMap.cpt SARndbox.cfg; do
 done
 
 echo "[2/8] modo Foto: patches e compilação"
-cp "$REPO"/sarndbox/{FaceImage.h,FaceImage.cpp,Extras.h,Extras.cpp,patch_surface.py,patch_sandbox.py,patch_agua.py,projetor.cfg} "$DEST/"
+cp "$REPO"/sarndbox/{FaceImage.h,FaceImage.cpp,Extras.h,Extras.cpp,Jogos.cpp,patch_surface.py,patch_sandbox.py,patch_agua.py,projetor.cfg} "$DEST/"
 S=share/SARndbox-2.8/Shaders/SurfaceAddWaterColor.fs
 mkdir -p "$DEST/$(dirname "$S")" && cp "$ORIG/$S" "$DEST/$S"   # sempre do original, antes do patch
 ( cd "$DEST" && python3 patch_surface.py >/dev/null && python3 patch_sandbox.py >/dev/null && python3 patch_agua.py >/dev/null )
@@ -37,7 +37,7 @@ fi
 
 echo "[3/8] programas da pasta areia/"
 cp "$REPO"/areia/{areia.py,areia_foto.py,areia_tema.py,areia_brincar.py,rosto.py,painel.py,sandbox.sh,atualizar_papel_parede.py} "$DEST/"
-COMANDOS=(areia-foto areia-tema areia-topografia areia-tesouro areia-animais areia-fossil areia-labirinto areia-vigia)
+COMANDOS=(areia-foto areia-tema areia-topografia areia-tesouro areia-animais areia-fossil areia-labirinto areia-jogo areia-vigia)
 for c in "${COMANDOS[@]}"; do cp "$REPO/areia/$c" "$DEST/"; chmod +x "$DEST/$c"; done
 rm -f "$DEST"/gui-*.sh   # janelas dos atalhos da Área de Trabalho (substituídos pelo painel em 13/11)
 rm -f "$DEST"/*.bak "$DEST/patch_brincar.py" "$DEST/gui-willbert-estado.sh"   # sobras de edições manuais

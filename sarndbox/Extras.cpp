@@ -32,6 +32,23 @@ Extras::Extras(void)
 		ax[i]=ay[i]=ang[i]=vel[i]=vb[i]=parado[i]=0.0f;
 		tipo[i]=0.0f;
 		}
+	jogo=SEM_JOGO;
+	jogoFase=0;
+	jogoNivel=2;
+	jogoInicio=jogoFim=0.0;
+	jogoDuracao=0.0f;
+	jogoPontos=jogoTotal=jogoRodadas=0;
+	jogoVencedor=-1;
+	proximoPortao=1;
+	jogoPedido=false;
+	nPecas=nFontes=0;
+	vbx=vby=0.0f;
+	for(int i=0;i<MAX_PECAS;++i)
+		{
+		pecas[i].tipo=P_NADA;
+		pecas[i].x=pecas[i].y=pecas[i].raio=pecas[i].nivel=pecas[i].ang=0.0f;
+		pecas[i].time=pecas[i].ordem=pecas[i].estado=0;
+		}
 	}
 
 void Extras::setArea(const double areaMin[2],const double areaMax[2],const OGTransform& cameraToBox)
@@ -199,6 +216,9 @@ int Extras::efeitoDoTema(const char* nome)
 void Extras::novoLabirinto(int dificuldade)
 	{
 	labDificuldade=std::max(1,std::min(3,dificuldade));
+	jogo=SEM_JOGO; // um jogo de água por vez
+	jogoFase=0;
+	nPecas=nFontes=0;
 	float w=bmax[0]-bmin[0],h=bmax[1]-bmin[1],m=5.0f;
 	/* Nascente num lado (ou canto) sorteado; alvo do lado oposto. Fácil: alvo no meio do caminho. */
 	float ax,ay,bx,by;
@@ -489,7 +509,7 @@ void Extras::passo(float dt)
 /* ----------------------------------------------------------------- shader */
 
 const char* Extras::nomesUniforms[NUM_UNIFORMS]={"extrasCaixa","extrasAg","extrasTesouro","extrasInfo","extrasEfeito",
-	"extrasLab","extrasLab2"};
+	"extrasLab","extrasLab2","extrasJogo","extrasJogoInfo"};
 
 const char* Extras::glslVertexUniforms=R"GLSL(
 uniform mat4 extrasCaixa; // espaço da câmera -> caixa (cm)
@@ -507,6 +527,8 @@ uniform vec4 extrasInfo;     // tempo (s), achou, tesouro ligado, nível do lago
 uniform vec4 extrasEfeito;   // efeito do tema (0 nenhum, 1 lava, 2 neve, 3 poeira, 4 areia, 5 ondas, 6 brilho, 7 chuva), altura média da areia (cm)
 uniform vec4 extrasLab;      // labirinto: nascente (x, y) e alvo (x, y), cm
 uniform vec4 extrasLab2;     // labirinto: raio do alvo, estado (0 desligado, 1 correndo, 2 chegou), segundos no estado
+uniform vec4 extrasJogo[20]; // jogos de água: por peça (x, y, raio, tipo) e (estado, nível, ordem, time ou ângulo)
+uniform vec4 extrasJogoInfo; // jogo (0 nenhum), fase, segundos na fase, vencedor ou próximo portão
 float exCaixa(vec2 p,vec2 metade,float raio)
 	{
 	vec2 q=abs(p)-metade+vec2(raio);
@@ -835,6 +857,163 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			baseColor.rgb+=vec3(1.0,0.9,0.5)*faisca;
 			}
 		}
+	/* Jogos de água (Jogos.cpp): peças desenhadas sobre o relevo */
+	if(extrasJogoInfo.x>0.5)
+		{
+		float jfase=extrasJogoInfo.y;
+		float jt=extrasJogoInfo.z;
+		float jaux=extrasJogoInfo.w; // corrida/outros: vencedor (-1 nenhum); rota: próximo portão
+		for(int i=0;i<10;++i)
+			{
+			vec4 a=extrasJogo[2*i];
+			vec4 b=extrasJogo[2*i+1];
+			if(a.w<0.5)
+				continue;
+			vec2 q=ep.xy-a.xy;
+			float d=length(q);
+			float r=a.z;
+			if(d>r*2.2+2.5)
+				continue;
+			float tipo=a.w;
+			float est=b.x;
+			float ang=atan(q.y,q.x);
+			vec3 c=baseColor.rgb;
+			float ouro=(jfase>1.5&&est>0.5&&est<1.5)?(0.6+0.4*sin(et*5.0)):0.0;
+			if(tipo<1.5)
+				{
+				/* nascente: ondas azuis (some quando a rodada termina) */
+				float on=smoothstep(r*1.6,0.0,d)*(jfase<1.5?1.0:0.3);
+				float ondas=0.5+0.5*sin(d*3.0-et*6.0);
+				c=mix(c,mix(vec3(0.15,0.45,0.95),vec3(0.75,0.95,1.0),ondas),on*0.85);
+				}
+			else if(tipo<2.5)
+				{
+				/* bandeira (corrida: azul ou vermelha; rota: vermelha) */
+				vec3 cor=b.w<0.5?vec3(0.15,0.45,1.0):vec3(0.95,0.15,0.15);
+				float venceu=(jfase>1.5&&((b.w<1.5&&abs(jaux-b.w)<0.5)||est>0.5))?1.0:0.0;
+				float anel=smoothstep(0.35,0.0,abs(d-r))*step(0.0,sin(ang*8.0+et*2.5));
+				float pano=(q.x>0.0&&q.x<2.2&&q.y>0.3&&q.y<1.5-q.x*0.4)?1.0:0.0;
+				float mastro=(abs(q.x)<0.12&&q.y>-0.6&&q.y<1.6)?1.0:0.0;
+				c=mix(c,venceu>0.5?vec3(1.0,0.82,0.2):cor,max(anel,smoothstep(1.0,0.6,d)*0.8));
+				c=mix(c,cor,pano*(0.85+0.15*sin(et*6.0+q.x*3.0)));
+				c=mix(c,vec3(0.95),mastro);
+				if(venceu>0.5)
+					{
+					float onda=smoothstep(0.6,0.0,abs(d-mod(jt*7.0,14.0)))*smoothstep(8.0,1.0,jt);
+					c=mix(c,vec3(1.0,0.85,0.25),onda);
+					}
+				}
+			else if(tipo<3.5)
+				{
+				/* casa: paredes, telhado e porta; alagada = água por cima; salva = brilho verde */
+				float s=r/2.6;
+				vec2 p=q/s;
+				bool corpo=abs(p.x)<1.1&&p.y>-1.2&&p.y<0.3;
+				bool telhado=p.y>=0.3&&p.y<1.5&&abs(p.x)<(1.5-p.y)*1.3;
+				bool porta=abs(p.x)<0.28&&p.y>-1.2&&p.y<-0.45;
+				if(corpo||telhado)
+					{
+					vec3 cc=corpo?vec3(0.96,0.9,0.74):vec3(0.78,0.2,0.14);
+					if(porta)
+						cc=vec3(0.45,0.28,0.15);
+					if(est>1.5)
+						cc=mix(cc,vec3(0.2,0.45,0.9),0.55+0.15*sin(et*4.0+p.x*3.0));
+					c=cc*mix(1.0,0.7,smoothstep(0.85,1.1,max(abs(p.x)/1.1,0.0)));
+					}
+				else if(est>0.5&&est<1.5&&d<r*1.5)
+					c=mix(c,vec3(0.3,0.95,0.4),smoothstep(r*1.5,r*1.1,d)*0.6);
+				}
+			else if(tipo<4.5)
+				{
+				/* plantação: broto com duas folhas; seca devagar (verde -> marrom); anel = água que resta */
+				float s=r/2.8;
+				vec2 p=q/s;
+				vec3 verde=mix(vec3(0.55,0.4,0.15),vec3(0.2,0.75,0.2),clamp(b.y,0.0,1.0));
+				if(est>1.5)
+					verde=vec3(0.45,0.38,0.3);
+				vec2 f1=p-vec2(0.55,0.35),f2=p+vec2(0.55,-0.35);
+				bool folha=(f1.x*f1.x/0.36+f1.y*f1.y/0.1<1.0)||(f2.x*f2.x/0.36+f2.y*f2.y/0.1<1.0);
+				bool caule=abs(p.x)<0.1&&p.y>-0.9&&p.y<0.4;
+				bool terra=length(p+vec2(0.0,0.95))<0.45;
+				if(folha||caule)
+					c=verde;
+				else if(terra)
+					c=vec3(0.4,0.26,0.14);
+				float fr=fract(ang/6.2831853+1.0);
+				float arco=smoothstep(0.3,0.0,abs(d-r*1.15))*(fr<b.y?1.0:0.25);
+				c=mix(c,mix(vec3(0.9,0.25,0.15),vec3(0.2,0.6,1.0),b.y),arco*(est>1.5?0.0:1.0));
+				c=mix(c,vec3(0.3,0.95,0.4),smoothstep(0.4,0.0,abs(d-r*1.3))*ouro);
+				}
+			else if(tipo<5.5)
+				{
+				/* portão numerado: anel com o número em bolinhas; o próximo pisca amarelo */
+				vec3 cor=est>0.5?vec3(0.2,0.9,0.35):(abs(b.z-jaux)<0.5?mix(vec3(1.0,0.85,0.1),vec3(1.0),0.5+0.5*sin(et*6.0)):vec3(0.95));
+				float anel=smoothstep(0.45,0.15,abs(d-r));
+				float bolas=0.0;
+				for(int k=0;k<4;++k)
+					{
+					if(float(k)>=b.z)
+						break;
+					vec2 cb=vec2((float(k)-(b.z-1.0)*0.5)*0.9,0.0);
+					bolas=max(bolas,smoothstep(0.38,0.28,length(q-cb)));
+					}
+				c=mix(c,cor,max(anel,bolas));
+				}
+			else if(tipo<6.5)
+				{
+				/* lago: contorno tracejado girando; cor pela água que tem (azul falta, verde na medida, vermelho demais) */
+				vec3 cor=b.z<0.5?vec3(0.3,0.55,1.0):(b.z<1.5?vec3(0.25,0.95,0.4):vec3(1.0,0.3,0.2));
+				float tracos=step(0.0,sin(ang*12.0-et*1.5));
+				float anel=smoothstep(0.35,0.0,abs(d-r))*tracos;
+				float dentroL=smoothstep(r,r-0.6,d);
+				c=mix(c,cor,max(anel,dentroL*0.18));
+				if(jfase>1.5)
+					c=mix(c,est<1.5?vec3(1.0,0.85,0.25):vec3(1.0,0.3,0.2),smoothstep(0.6,0.0,abs(d-mod(jt*6.0,r*2.0)))*0.8);
+				}
+			else if(tipo<7.5)
+				{
+				/* barquinho: casco de madeira e vela branca, apontando para onde a água leva */
+				float ca=cos(b.w),sa=sin(b.w);
+				vec2 p=vec2(ca*q.x+sa*q.y,-sa*q.x+ca*q.y)/(r/1.8);
+				bool casco=(p.x*p.x/2.2+p.y*p.y/0.35<1.0)&&p.x>-1.4;
+				bool vela=p.x>-0.6&&p.x<0.6&&p.y>0.05&&p.y<(0.6-p.x)*1.4&&p.y<1.3;
+				if(vela)
+					c=vec3(0.97);
+				else if(casco)
+					c=mix(vec3(0.55,0.32,0.15),vec3(0.75,0.5,0.25),smoothstep(0.6,0.0,abs(p.y)));
+				c=mix(c,vec3(1.0,0.82,0.2),smoothstep(0.5,0.0,abs(d-r*1.5))*ouro);
+				}
+			else if(tipo<8.5)
+				{
+				/* porto: tábuas de madeira dentro de um anel */
+				float anel=smoothstep(0.35,0.0,abs(d-r))*step(0.0,sin(ang*10.0+et*1.5));
+				bool tabuas=abs(q.x)<r*0.5&&abs(q.y)<r*0.25;
+				float linhas=step(0.82,fract(q.x*1.2));
+				if(tabuas)
+					c=mix(vec3(0.62,0.42,0.22),vec3(0.35,0.22,0.1),linhas);
+				c=mix(c,est>0.5?vec3(1.0,0.82,0.2):vec3(0.85,0.65,0.4),anel);
+				}
+			else
+				{
+				/* peixe preso na poça: anel = ar que resta; salvo = nada e brilha; perdido = cinza parado */
+				float s=r/2.4;
+				float onda=est<1.5?0.25*sin(et*(est>0.5?10.0:4.0)+q.x*2.0):0.0;
+				vec2 p=vec2(q.x,q.y+onda)/s;
+				bool corpo=p.x*p.x/1.4+p.y*p.y/0.4<1.0;
+				bool rabo=p.x<-0.9&&p.x>-1.8&&abs(p.y)<(-p.x-0.9)*0.9;
+				vec3 cor=est>1.5?vec3(0.55):vec3(1.0,0.55,0.15);
+				if(corpo||rabo)
+					c=corpo&&distance(p,vec2(0.6,0.15))<0.15?vec3(0.05):cor;
+				else if(d<r)
+					c=mix(c,vec3(0.25,0.55,0.95),0.35);
+				float fr=fract(ang/6.2831853+1.0);
+				float arco=smoothstep(0.3,0.0,abs(d-r*1.15))*(fr<b.y?1.0:0.2);
+				c=mix(c,mix(vec3(0.9,0.25,0.15),vec3(0.35,0.75,1.0),b.y),arco*(est<0.5?1.0:0.0));
+				c=mix(c,vec3(0.3,0.95,0.6),smoothstep(0.4,0.0,abs(d-r*1.2))*(est>0.5&&est<1.5?0.8:0.0));
+				}
+			baseColor.rgb=c;
+			}
+		}
 	}
 )GLSL";
 
@@ -857,4 +1036,18 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 	glUniform4fARB(locations[5],lsx,lsy,ltx,lty);
 	glUniform4fARB(locations[6],lraio,labirinto?GLfloat(labEstado):0.0f,
 	               labEstado==2?GLfloat(tempo-labChegou):GLfloat(tempo-labInicio),0.0f);
+	GLfloat jg[MAX_PECAS*8];
+	for(int i=0;i<MAX_PECAS;++i)
+		{
+		const Peca& p=pecas[i];
+		bool vale=jogo!=SEM_JOGO&&i<nPecas;
+		GLfloat* v=jg+i*8;
+		v[0]=p.x; v[1]=p.y; v[2]=p.raio; v[3]=vale?GLfloat(p.tipo):0.0f;
+		v[4]=GLfloat(p.estado); v[5]=p.nivel; v[6]=GLfloat(p.ordem);
+		v[7]=p.tipo==P_BARCO?p.ang:GLfloat(p.time);
+		}
+	glUniform4fvARB(locations[7],MAX_PECAS*2,jg);
+	glUniform4fARB(locations[8],GLfloat(jogo!=SEM_JOGO&&jogoFase>0?jogo:0),GLfloat(jogoFase),
+	               GLfloat(jogoFase==2?tempo-jogoFim:tempo-jogoInicio),
+	               jogo==ROTA?GLfloat(proximoPortao):GLfloat(jogoVencedor));
 	}

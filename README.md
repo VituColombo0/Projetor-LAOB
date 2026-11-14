@@ -1,8 +1,8 @@
 # Projetor-LAOB
 
-> Caixa de areia de realidade aumentada do Laboratório LAOB: projeta relevo colorido, fotos que se deformam com a areia e brincadeiras (tesouro, fósseis, peixes, labirinto de água) a partir de um Kinect e um projetor.
+> Caixa de areia de realidade aumentada do Laboratório LAOB: projeta relevo colorido, fotos que se deformam com a areia e brincadeiras e jogos de água (tesouro, fósseis, peixes, labirinto, corrida de rios, vulcão e outros) a partir de um Kinect e um projetor.
 
-![SARndbox](https://img.shields.io/badge/base-SARndbox%202.8-blue) ![Kinect](https://img.shields.io/badge/sensor-Kinect%20v1-lightgrey) ![Testes](https://img.shields.io/badge/testes-53-brightgreen) ![Licença GPL-2.0](https://img.shields.io/badge/licença-GPL--2.0-orange)
+![SARndbox](https://img.shields.io/badge/base-SARndbox%202.8-blue) ![Kinect](https://img.shields.io/badge/sensor-Kinect%20v1-lightgrey) ![Testes](https://img.shields.io/badge/testes-69-brightgreen) ![Licença GPL-2.0](https://img.shields.io/badge/licença-GPL--2.0-orange)
 
 ## Sumário
 
@@ -27,8 +27,20 @@ abre a **topografia** de sempre; por comando, atalho, painel do celular ou pelo
 - **Caça ao tesouro** e **fósseis de dinossauro** (T-Rex, Triceratops, Pterodáctilo, pegada): cave para achar.
 - **Peixes e carrinhos:** peixes em cardume nos lagos, carrinhos seguindo os vales.
 - **Labirinto de água:** leve a água da nascente até o alvo, com placar.
+- **Jogos de água** (fácil, normal, difícil; nova rodada 20 s após o fim):
+
+  | Jogo | Objetivo |
+  | :--- | :--- |
+  | Corrida de rios | Dois times; ganha quem levar a água primeiro à sua bandeira |
+  | Salve a vila | Diques e valas protegem as casinhas da enchente (10 s para se preparar) |
+  | Irrigue a fazenda | Canais levam água às plantações antes que sequem |
+  | Rota com paradas | A água passa pelos portões 1, 2, 3… na ordem até a bandeira |
+  | Encha o lago na medida | Água limitada; o lago tem que parar na faixa certa |
+  | Vulcão em erupção | A lava sai do pico mais alto; muralhas salvam as casas (tema vulcão, depois volta o anterior) |
+  | Barquinho | O barco segue a correnteza até o porto; encalha no raso |
+  | Resgate dos peixes | Levar água às poças antes que os peixes fiquem sem ar |
 - **Uma brincadeira por vez:** começar uma encerra as outras; o tema de cor fica.
-- **Painel no navegador** (:8090): controla tudo (modos, temas, brincadeiras com nível, fotos, Willbert, "Reabrir a areia"); a Área de Trabalho tem só o atalho para ele.
+- **Painel no navegador** (:8090): controla tudo (modos, temas, jogos em cartões com a descrição ao passar o mouse ou tocar, nível, fotos, Willbert, "Reabrir a areia"); a Área de Trabalho tem só o atalho para ele.
 - **Vigia:** reabre a topografia se ela fechar, se ficar parada (sem desenhar por 2 min) ou se o GNOME travar.
 
 ## Arquitetura
@@ -100,6 +112,7 @@ O jeito normal é o painel (`http://localhost:8090`, atalho na Área de Trabalho
 | `areia-fossil trex [facil\|dificil]` | Fóssil: `trex`, `triceratops`, `pterodactilo`, `pegada` (também `achou`, `parar`) |
 | `areia-animais todos [n]` | `peixes`, `carros` ou `todos` (também `parar`) |
 | `areia-labirinto [facil\|normal\|dificil\|nova\|placar\|parar]` | Labirinto de água |
+| `areia-jogo <jogo> [facil\|normal\|dificil]` | Jogo de água: `corrida`, `vila`, `fazenda`, `rota`, `lago`, `vulcao`, `barco`, `resgate` (também `placar`, `nova`, `parar`, `ajuda`) |
 | `areia-vigia pausa` / `liga` | Pausa ou religa o vigia da topografia |
 
 **Painel do celular:** `http://<IP-DO-LAOB>:8090` — selfie, foto salva ou câmera do laboratório,
@@ -149,13 +162,15 @@ hora pelo `colorMap` do SARndbox (~0,1 s). Pontos ajustados aos morros de ~8–1
 
 **Extras** (`sarndbox/Extras.*`): mapa de alturas de 1,5 cm por célula, 2× por segundo, simulação
 na CPU e desenho no shader. Comandos: `tesouro [cm]`, `tesouroFim`, `animais peixes|carros|todos|nada [n]`,
-`labirinto [nível]`, `labirintoNovo`, `labirintoFim`, `labirintoTeste`.
+`labirinto [nível]`, `labirintoNovo`, `labirintoFim`, `labirintoTeste`,
+`jogo <nome> [1-3]`, `jogoNovo`, `jogoFim`, `jogoTeste`, `jogoInfo`.
 
 - **Tesouro:** sorteado onde há areia acima da média; aparece ao cavar; brilha dourado a menos de 2,5 cm; "Tesouro encontrado!" vai para o `sandbox.log`. Achado, reaparece em outro lugar após 20 s.
 - **Fósseis:** mesmo mecanismo (`tipoTesouro` 2–5), raio maior, quadrícula de escavação e esqueleto em marfim; outro aparece em 30 s.
 - **Peixes:** água = 1,5 cm abaixo da mediana; cardume com separação de ~5,5 cm, curvas suaves (até 2,8 rad/s); preso numa poça por 4 s, reaparece num lago de verdade.
 - **Carrinhos:** seguem a curva de nível dos vales, evitam rampas e lagos, freiam só para o de número menor; travado 3 s, dá meia-volta.
 - **Labirinto:** a nascente (disco de 2 cm) usa a água do próprio SARndbox (`addWater`); 2× por segundo mede a profundidade no alvo (`glGetTexImage`); com 0,25 cm escreve "Labirinto: a água chegou!", e após 20 s começa rodada nova.
+- **Jogos de água** (`sarndbox/Jogos.cpp`): até 4 nascentes e 10 peças (casa, planta, portão, lago, barco, porto, peixe, bandeira) desenhadas no shader. 2× por segundo a GPU devolve a água (`glGetTexImage` do nível e do fundo) e mede a maior e a média da profundidade em cada peça; com 0,3 cm conta como molhada. O barco usa a quantidade de movimento (hu, hv) da simulação como correnteza. Os avisos vão para o `sandbox.log` como linhas `Jogo: …`, que o painel e `areia-jogo placar` leem.
 - **Fluidez:** grade de água em 320×240 (`-wts 320 240`; 640×480 não dava conta na GTX 750 Ti). O log mostra `Desempenho: N quadros/s` a cada 30 s.
 
 **Willbert:** o gesto das duas mãos manda a foto já recortada para `POST /foto` (só aceita a
@@ -176,7 +191,7 @@ própria máquina, à rede local e à Tailscale; o resto recebe 403.
 Projetor-LAOB/
 ├── instalar.sh          # instala/atualiza tudo no PC
 ├── requirements.txt     # Python do venv (OpenCV, NumPy, Flask, waitress)
-├── sarndbox/            # modo Foto e Extras: FaceImage, Extras, patches, projetor.cfg
+├── sarndbox/            # modo Foto, Extras e Jogos de água: FaceImage, Extras, Jogos, patches, projetor.cfg
 ├── areia/               # areia.py, comandos areia-*, painel.py, rosto.py, temas/
 ├── area-de-trabalho/    # atalho .desktop do painel
 ├── sistema/             # serviços e timers de usuário (painel, vigia, papel de parede)

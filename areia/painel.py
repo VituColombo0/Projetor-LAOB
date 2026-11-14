@@ -4,6 +4,7 @@ Responde à própria máquina, à rede local (10/8, 172.16/12, 192.168/16: abert
 Rodar com o venv da pasta:  venv/bin/python painel.py
 """
 import ipaddress
+import json
 import os
 import re
 import subprocess
@@ -60,6 +61,8 @@ def ver_estado():
     e["fossil"] = areia.fossil_situacao()
     e["willbert"] = willbert_estado()
     e["labirinto"], e["labirinto_rodadas"] = areia.labirinto_situacao()
+    e["jogo"] = areia.jogo_situacao()
+    e["animais"] = areia.animais_situacao()
     e["tema"] = areia.tema_atual()
     e["temas"] = [[t, areia.NOMES_TEMAS.get(t, t)] for t in areia.temas()]
     e["fotos_salvas"] = [os.path.basename(f) for f in areia.imagens()]
@@ -150,6 +153,12 @@ def brincar():
         if acao == "labirintoNovo":
             areia.labirinto_novo()
             return "Nova rodada iniciada"
+        if acao in areia.JOGOS:
+            n, lv = areia.jogo(acao, nivel)
+            return f"{areia.JOGOS[n][0]} ({('fácil', 'normal', 'difícil')[lv - 1]})"
+        if acao == "jogoNovo":
+            areia.jogo_novo()
+            return "Nova rodada iniciada"
         if acao in areia.ANIMAIS:
             t, n = areia.animais(acao)
             return f"{n} {t} na areia"
@@ -237,313 +246,372 @@ PAGINA = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1720">
 <title>Caixa de Areia</title>
 <style>
 :root {
-  --bg: #f5f5f7;
-  --surface: #ffffff;
-  --border: #e2e4e8;
-  --border-strong: #c5c8cf;
-  --fg: #1d1d1f;
-  --muted: #6e6e73;
-  --accent: #2c2c2e;
+  --bg: #f4efe6;
+  --bg2: #ebe3d4;
+  --surface: #fffdf8;
+  --surface2: #f8f3ea;
+  --border: #e3d9c7;
+  --border-strong: #cdbfa6;
+  --fg: #2a2218;
+  --muted: #7a6d5a;
+  --accent: #1f7a8c;
+  --accent-soft: #d8eef1;
   --accent-fg: #ffffff;
-  --danger-bg: #fff1f0;
-  --danger-border: #ffccc7;
-  --danger-fg: #cf1322;
+  --gold: #c9971c;
+  --ok: #2f8f4e;
+  --danger-bg: #fdecea;
+  --danger-border: #f3c2bc;
+  --danger-fg: #b3261e;
+  --shadow: 0 1px 2px rgba(60,45,20,.06), 0 6px 18px rgba(60,45,20,.06);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #000000;
-    --surface: #1c1c1e;
-    --border: #2c2c2e;
-    --border-strong: #3a3a3c;
-    --fg: #f5f5f7;
-    --muted: #8e8e93;
-    --accent: #f5f5f7;
-    --accent-fg: #000000;
-    --danger-bg: #2a1215;
-    --danger-border: #431418;
-    --danger-fg: #ff7875;
+    --bg: #0f1720;
+    --bg2: #131e29;
+    --surface: #17222e;
+    --surface2: #1c2936;
+    --border: #253545;
+    --border-strong: #35495c;
+    --fg: #eef2f5;
+    --muted: #8da0b2;
+    --accent: #4cc3d9;
+    --accent-soft: #163a45;
+    --accent-fg: #06222a;
+    --gold: #f0c04a;
+    --ok: #5fd08a;
+    --danger-bg: #2c1618;
+    --danger-border: #55252a;
+    --danger-fg: #ff8a80;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25);
   }
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; }
 body {
-  background: var(--bg);
+  background: radial-gradient(1200px 500px at 50% -200px, var(--bg2), var(--bg));
+  background-color: var(--bg);
+  min-height: 100vh;
   color: var(--fg);
-  font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  letter-spacing: -0.01em;
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
-main {
-  max-width: 440px;
-  margin: 0 auto;
-  padding: 24px 14px 60px;
-}
+main { max-width: 720px; margin: 0 auto; padding: 20px 16px 72px; }
 header {
-  margin-bottom: 20px;
+  position: sticky; top: 0; z-index: 5;
+  margin: -20px -16px 18px; padding: 16px 16px 12px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
 }
-.header-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+.top { display: flex; align-items: center; gap: 12px; }
+.logo {
+  width: 40px; height: 40px; border-radius: 12px; flex: none;
+  background: linear-gradient(160deg, #e9c98f 0%, #c99a55 55%, #2a8aa0 56%, #1f6f86 100%);
+  box-shadow: var(--shadow);
 }
-h1 {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--fg);
-  letter-spacing: -0.02em;
+h1 { font-size: 1.2rem; font-weight: 700; letter-spacing: -.02em; }
+.sub { font-size: .82rem; color: var(--muted); }
+.pills { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.pill {
+  font-size: .76rem; font-weight: 600; padding: 4px 10px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--border); color: var(--muted);
+  display: inline-flex; align-items: center; gap: 6px;
 }
-.status-tag {
-  font-size: 0.82rem;
-  font-weight: 500;
-  color: var(--muted);
+.pill i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.pill.on i { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); }
+.pill.on { color: var(--fg); }
+#msg { font-size: .84rem; margin-top: 8px; min-height: 1.25em; color: var(--muted); transition: color .2s; }
+#msg.err { color: var(--danger-fg); }
+#msg.okm { color: var(--ok); }
+
+section.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+  padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow);
 }
-.status-tag b {
-  color: var(--fg);
-  font-weight: 600;
+h2 {
+  font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
 }
-#msg {
-  font-size: 0.82rem;
-  font-weight: 500;
-  margin-top: 6px;
-  color: var(--muted);
-  min-height: 1.2em;
-}
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 14px;
-  margin-bottom: 14px;
-}
-.card-header {
-  font-size: 0.72rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-  margin-bottom: 10px;
-}
-.btn-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-}
-.btn-grid-4 {
-  grid-template-columns: repeat(4, 1fr);
-}
-.btn-grid-3 {
-  grid-template-columns: repeat(3, 1fr);
-}
-.full-width {
-  grid-column: 1 / -1;
-}
+h2 .extra { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; }
+.hint { font-size: .84rem; color: var(--muted); margin-bottom: 12px; }
+.grid { display: grid; gap: 8px; grid-template-columns: repeat(2, 1fr); }
+.g3 { grid-template-columns: repeat(3, 1fr); }
+.g4 { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 420px) { .g4 { grid-template-columns: repeat(2, 1fr); } }
+.full { grid-column: 1 / -1; }
 button, label.btn {
-  appearance: none;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--fg);
-  padding: 11px 10px;
-  border-radius: 8px;
-  font-size: 0.88rem;
-  font-weight: 500;
-  text-align: center;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  user-select: none;
-  transition: all 0.12s ease;
-  min-height: 42px;
+  appearance: none; font: inherit; font-size: .9rem; font-weight: 600;
+  border: 1px solid var(--border); background: var(--surface2); color: var(--fg);
+  padding: 10px 12px; min-height: 44px; border-radius: 11px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px; text-align: center;
+  transition: background .15s, border-color .15s, transform .08s, box-shadow .15s;
+  user-select: none; -webkit-tap-highlight-color: transparent;
 }
-button:hover, label.btn:hover {
-  border-color: var(--border-strong);
+button:hover, label.btn:hover { border-color: var(--border-strong); }
+button:active, label.btn:active { transform: scale(.97); }
+button:focus-visible, label.btn:focus-within, .jogo:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.danger { background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger-fg); }
+button:disabled { opacity: .55; cursor: progress; }
+input[type=file] { display: none; }
+[hidden] { display: none !important; }
+
+.seg { display: inline-flex; background: var(--surface2); border: 1px solid var(--border); border-radius: 11px; padding: 3px; gap: 2px; }
+.seg button { min-height: 34px; padding: 6px 12px; border: 0; background: transparent; font-size: .84rem; border-radius: 8px; }
+.seg button.active { background: var(--accent); color: var(--accent-fg); }
+
+/* temas */
+.temas { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.temas button { flex-direction: column; gap: 6px; padding: 8px; font-size: .8rem; }
+.temas button .sw { width: 100%; height: 18px; border-radius: 6px; }
+.temas button.active { background: var(--accent-soft); color: var(--fg); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* jogos */
+.jogos { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.jogo {
+  position: relative; border: 1px solid var(--border); background: var(--surface2);
+  border-radius: 14px; padding: 12px; cursor: pointer; outline: none;
+  display: flex; flex-direction: column; gap: 6px;
+  transition: border-color .15s, box-shadow .15s, transform .15s;
 }
-button:active, label.btn:active {
-  transform: scale(0.98);
+.jogo:hover, .jogo.aberto { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow); }
+.jogo .cab { display: flex; align-items: center; gap: 10px; }
+.jogo .ic {
+  width: 38px; height: 38px; border-radius: 11px; flex: none; font-size: 1.3rem;
+  display: grid; place-items: center; background: var(--accent-soft);
 }
-button.active {
-  background: var(--accent);
-  color: var(--accent-fg);
-  border-color: var(--accent);
-  font-weight: 600;
+.jogo .t { font-weight: 700; font-size: .95rem; line-height: 1.2; }
+.jogo .c { font-size: .8rem; color: var(--muted); }
+.jogo .tag { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); }
+.jogo .desc {
+  font-size: .84rem; color: var(--fg); line-height: 1.45;
+  max-height: 0; overflow: hidden; opacity: 0;
+  transition: max-height .25s ease, opacity .2s ease, margin .2s;
 }
-button.primary-btn {
-  background: var(--accent);
-  color: var(--accent-fg);
-  border-color: var(--accent);
-  font-weight: 600;
+.jogo .acoes { display: none; gap: 6px; }
+.jogo .acoes button { flex: 1; min-height: 38px; font-size: .84rem; }
+.jogo:hover .desc, .jogo.aberto .desc { max-height: 220px; opacity: 1; margin-top: 2px; }
+.jogo.aberto .acoes { display: flex; }
+@media (hover: hover) { .jogo:hover .acoes { display: flex; } }
+.jogo.ativo { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold), var(--shadow); }
+.jogo.ativo .ic { background: color-mix(in srgb, var(--gold) 25%, transparent); }
+.badge {
+  position: absolute; top: 10px; right: 10px; font-size: .68rem; font-weight: 700;
+  padding: 2px 8px; border-radius: 999px; background: var(--gold); color: #2a1f00; display: none;
 }
-button.danger-btn {
-  background: var(--danger-bg);
-  border-color: var(--danger-border);
-  color: var(--danger-fg);
-  font-weight: 600;
+.jogo.ativo .badge { display: inline-block; }
+.placar {
+  display: none; margin-bottom: 12px; padding: 10px 12px; border-radius: 12px;
+  background: color-mix(in srgb, var(--gold) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--border));
+  font-size: .88rem;
 }
-button.danger-btn:active {
-  background: var(--danger-fg);
-  color: #ffffff;
+.placar b { font-weight: 700; }
+.barra { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.barra .lbl { font-size: .82rem; color: var(--muted); }
+.barra .sp { flex: 1; }
+
+/* fotos */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.chip {
+  font-size: .78rem; color: var(--muted); border: 1px solid var(--border); background: var(--surface2);
+  padding: 5px 10px; border-radius: 999px; cursor: pointer; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-input[type=file] {
-  display: none;
-}
-.saved-photos {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
-}
-.saved-label {
-  font-size: 0.72rem;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 6px;
-}
-.tag-container {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.photo-tag {
-  font-size: 0.78rem;
-  color: var(--muted);
-  border: 1px solid var(--border);
-  background: var(--bg);
-  padding: 5px 9px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: color 0.1s, border-color 0.1s;
-}
-.photo-tag:hover {
-  color: var(--fg);
-  border-color: var(--border-strong);
-}
+.chip:hover { color: var(--fg); border-color: var(--border-strong); }
 img#prev {
-  display: block;
-  width: 100%;
-  max-height: 180px;
-  object-fit: contain;
-  margin-top: 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
+  display: block; width: 100%; max-height: 220px; object-fit: contain; margin-top: 12px;
+  border-radius: 12px; border: 1px solid var(--border);
+  background: repeating-conic-gradient(var(--surface2) 0 25%, var(--surface) 0 50%) 50% / 16px 16px;
 }
+details summary { cursor: pointer; font-size: .84rem; color: var(--muted); margin-top: 12px; list-style: none; }
+details summary::-webkit-details-marker { display: none; }
+footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top: 8px; }
 </style>
 </head>
 <body>
 <main>
   <header>
-    <div class="header-row">
-      <h1>Caixa de Areia</h1>
-      <div class="status-tag"><span id="sb">Topografia</span> · <b id="tes">Normal</b></div>
+    <div class="top">
+      <div class="logo" aria-hidden="true"></div>
+      <div>
+        <h1>Caixa de Areia</h1>
+        <div class="sub">Laboratório LAOB · painel do projetor</div>
+      </div>
     </div>
-    <div id="msg"></div>
+    <div class="pills">
+      <span class="pill" id="p-sb"><i></i><span id="sb">…</span></span>
+      <span class="pill" id="p-sit"><i></i><span id="sit">Nenhuma brincadeira</span></span>
+      <span class="pill" id="p-wb"><i></i><span id="wb">Willbert</span></span>
+    </div>
+    <div id="msg" role="status" aria-live="polite"></div>
   </header>
 
-  <!-- TÓPICO 1: FOTOS -->
-  <div class="card">
-    <div class="card-header">Fotos na Areia</div>
-    <div class="btn-grid">
-      <button id="cam" class="primary-btn full-width">Tirar foto pela câmera</button>
-      <label class="btn">Tirar foto no aparelho<input id="selfie" type="file" accept="image/*" capture="user"></label>
-      <label class="btn">Escolher arquivo<input id="galeria" type="file" accept="image/*"></label>
-      <button id="girar">Girar imagem 90°</button>
-      <button id="espelhar">Espelhar imagem</button>
+  <section class="card" id="sec-jogos">
+    <h2>Jogos e brincadeiras <span class="extra" id="njogos"></span></h2>
+    <div class="placar" id="placar"></div>
+    <div class="barra">
+      <span class="lbl">Nível</span>
+      <div class="seg" id="niveis">
+        <button data-n="facil">Fácil</button>
+        <button data-n="normal" class="active">Normal</button>
+        <button data-n="dificil">Difícil</button>
+      </div>
+      <span class="sp"></span>
+      <button class="danger" data-b="parar">Parar tudo</button>
     </div>
-    <div id="box-fotos" class="saved-photos" style="display:none">
-      <div class="saved-label">Fotos salvas</div>
-      <div id="chips" class="tag-container"></div>
-    </div>
-    <img id="prev" alt="" hidden>
-  </div>
+    <p class="hint">Passe o mouse ou toque num jogo para ver como se joga.</p>
+    <div class="jogos" id="jogos"></div>
+  </section>
 
-  <!-- TÓPICO 2: MODOS DO PROJETOR -->
-  <div class="card">
-    <div class="card-header">Modos do Projetor</div>
-    <div class="btn-grid btn-grid-4" id="modos">
-      <button data-m="original">Topografia</button>
-      <button data-m="rosto">Foto</button>
-      <button data-m="relevo">Relevo</button>
-      <button data-m="esculpir">Esculpir</button>
+  <section class="card">
+    <h2>Fotos na areia</h2>
+    <div class="grid">
+      <button id="cam" class="primary full">📷 Tirar foto pela câmera</button>
+      <label class="btn">🤳 Foto no aparelho<input id="selfie" type="file" accept="image/*" capture="user"></label>
+      <label class="btn">🖼️ Escolher arquivo<input id="galeria" type="file" accept="image/*"></label>
+      <button id="girar">↻ Girar 90°</button>
+      <button id="espelhar">⇋ Espelhar</button>
     </div>
-  </div>
-
-  <!-- TÓPICO 3: CORES DO RELEVO -->
-  <div class="card">
-    <div class="card-header">Cores do Relevo</div>
-    <div class="btn-grid btn-grid-4" id="temas"></div>
-  </div>
-
-  <!-- TÓPICO 4: BRINCADEIRAS -->
-  <div class="card">
-    <div class="card-header">Brincadeiras</div>
-    <div class="btn-grid">
-      <button data-b="tesouro">Caça ao tesouro</button>
-      <button data-b="trex">Fóssil de T-Rex</button>
-      <button data-b="peixes">Peixes</button>
-      <button data-b="carros">Carrinhos</button>
-      <button data-b="todos" class="full-width">Peixes e carrinhos</button>
-      <button data-b="labirinto">Labirinto de água</button>
-      <button data-b="labirintoNovo">Nova rodada</button>
-      <button data-b="parar" class="danger-btn full-width">Parar brincadeiras</button>
+    <div id="box-fotos" hidden>
+      <div class="chips" id="chips"></div>
     </div>
-    <div class="saved-label" style="margin-top:12px">Nível do tesouro, fóssil e labirinto</div>
-    <div class="btn-grid btn-grid-3" id="niveis">
-      <button data-n="facil">Fácil</button>
-      <button data-n="normal" class="active">Normal</button>
-      <button data-n="dificil">Difícil</button>
-    </div>
-  </div>
+    <img id="prev" alt="Foto que está na areia" hidden>
+  </section>
 
-  <!-- TÓPICO 5: WILLBERT -->
-  <div class="card">
-    <div class="card-header">Willbert <span id="wb" class="saved-label"></span></div>
-    <p class="saved-label">Para a foto na areia: as duas mãos abertas ao lado do rosto, perto da câmera.</p>
-    <div class="btn-grid">
-      <button data-w="ligar">Ligar Willbert</button>
-      <button data-w="desligar">Desligar Willbert</button>
+  <section class="card">
+    <h2>Modo do projetor</h2>
+    <div class="grid g4" id="modos">
+      <button data-m="original">⛰️ Topografia</button>
+      <button data-m="rosto">🖼️ Foto</button>
+      <button data-m="relevo">🎨 Relevo</button>
+      <button data-m="esculpir">✋ Esculpir</button>
     </div>
-  </div>
+  </section>
 
-  <!-- TÓPICO 6: SE ALGO TRAVAR -->
-  <div class="card">
-    <div class="card-header">Se a areia travar</div>
-    <p class="saved-label">A imagem parou ou não responde aos botões? Este botão fecha e abre a areia de novo (uns 10 s).</p>
-    <button id="reabrir" class="danger-btn full-width">Reabrir a areia</button>
-  </div>
+  <section class="card">
+    <h2>Cores do relevo</h2>
+    <div class="temas" id="temas"></div>
+  </section>
+
+  <section class="card">
+    <h2>Willbert</h2>
+    <p class="hint">Foto na areia pelo Willbert: as duas mãos abertas ao lado do rosto, perto da câmera.</p>
+    <div class="grid">
+      <button data-w="ligar">Ligar</button>
+      <button data-w="desligar">Desligar</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Se a areia travar</h2>
+    <p class="hint">A imagem parou ou não responde? Este botão fecha e abre a areia de novo (uns 10 s).</p>
+    <button id="reabrir" class="danger" style="width:100%">Reabrir a areia</button>
+  </section>
+  <footer>Projetor-LAOB</footer>
 </main>
 
 <script>
 const $ = s => document.querySelector(s);
-let E = {};
+const $$ = s => document.querySelectorAll(s);
+let E = {}, NIVEL = 'normal';
+const AGUA = __JOGOS__;
+const OUTROS = [
+  {id: 'labirinto', ic: '🌊', t: 'Labirinto de água', c: 'Leve a água da nascente até a bandeira.', tag: 'Água',
+   d: 'Uma nascente joga água de verdade. Cavem canais e levantem paredes de areia para a água chegar à bandeira. Quando chega, o alvo fica dourado e outra rodada começa em 20 s.'},
+  {id: 'tesouro', ic: '💰', t: 'Caça ao tesouro', c: 'Um baú escondido embaixo da areia.', tag: 'Escavar',
+   d: 'O baú fica enterrado num lugar sorteado. Cavem procurando: quanto mais perto, mais o sinal brilha. Achou? Ele reaparece em outro lugar depois de 20 s. O nível muda a profundidade.'},
+  {id: 'trex', ic: '🦖', t: 'Fóssil de dinossauro', c: 'Escavação de um esqueleto de T-Rex.', tag: 'Escavar',
+   d: 'Aparece a quadrícula de escavação. Cavando até a profundidade certa, o esqueleto surge na rocha. O nível muda a profundidade.'},
+  {id: 'peixes', ic: '🐟', t: 'Peixes no lago', c: 'Um cardume nada nas partes baixas.', tag: 'Animação',
+   d: 'Os peixes nadam onde a areia está mais funda (o lago). Cavem um lago novo ou abram um canal e eles vão atrás.'},
+  {id: 'carros', ic: '🚗', t: 'Carrinhos', c: 'Carrinhos andam pelos vales.', tag: 'Animação',
+   d: 'Os carrinhos andam pelos lugares planos e desviam de montanhas. Façam estradas na areia para eles passarem.'},
+  {id: 'todos', ic: '🐠', t: 'Peixes e carrinhos', c: 'Os dois juntos na areia.', tag: 'Animação',
+   d: 'Peixes no lago e carrinhos nos vales ao mesmo tempo.'},
+];
+const ICONES = {corrida: '🏁', vila: '🏘️', fazenda: '🌱', rota: '🚩', lago: '🎯', vulcao: '🌋', barco: '⛵', resgate: '🐡'};
+const TODOS = [...AGUA.map(j => ({id: j[0], ic: ICONES[j[0]] || '💧', t: j[1], c: j[2], d: j[3], tag: 'Jogo de água'})), ...OUTROS];
 
-function msg(t, err) {
+function msg(t, tipo) {
   const el = $('#msg');
   el.textContent = t || '';
-  el.style.color = err ? 'var(--danger-fg)' : 'var(--muted)';
+  el.className = tipo || '';
 }
 
 async function post(u, b, isForm) {
-  msg('Enviando...');
+  msg('Enviando…');
   try {
-    const r = await fetch(u, {
-      method: 'POST',
-      body: isForm ? b : JSON.stringify(b),
-      headers: isForm ? {} : {'Content-Type': 'application/json'}
-    });
+    const r = await fetch(u, {method: 'POST', body: isForm ? b : JSON.stringify(b),
+                              headers: isForm ? {} : {'Content-Type': 'application/json'}});
     let j = {};
-    try { j = await r.json(); } catch(e) {}
-    if (!r.ok || j.ok === false) {
-      msg(j.msg || 'Erro', true);
-    } else {
-      msg(j.msg || 'Pronto');
-    }
+    try { j = await r.json(); } catch (e) {}
+    if (!r.ok || j.ok === false) msg(j.msg || 'Erro', 'err'); else msg(j.msg || 'Pronto', 'okm');
     await carrega();
     return j;
-  } catch(e) {
-    msg('Erro de conexão', true);
+  } catch (e) { msg('Sem conexão com a areia', 'err'); }
+}
+
+function monta() {
+  const box = $('#jogos');
+  for (const j of TODOS) {
+    const el = document.createElement('div');
+    el.className = 'jogo';
+    el.tabIndex = 0;
+    el.dataset.id = j.id;
+    el.setAttribute('role', 'button');
+    el.setAttribute('aria-expanded', 'false');
+    el.innerHTML = '<span class="badge">Jogando</span><div class="cab"><div class="ic"></div><div><div class="tag"></div><div class="t"></div></div></div>'
+      + '<div class="c"></div><div class="desc"></div><div class="acoes"><button class="primary jogar">▶ Jogar</button></div>';
+    el.querySelector('.ic').textContent = j.ic;
+    el.querySelector('.tag').textContent = j.tag;
+    el.querySelector('.t').textContent = j.t;
+    el.querySelector('.c').textContent = j.c;
+    el.querySelector('.desc').textContent = j.d;
+    if (j.id === 'labirinto' || AGUA.some(a => a[0] === j.id)) {
+      const nova = document.createElement('button');
+      nova.className = 'nova';
+      nova.textContent = '↻ Nova rodada';
+      nova.hidden = true;
+      el.querySelector('.acoes').appendChild(nova);
+      nova.onclick = ev => { ev.stopPropagation(); post('/brincar', {acao: j.id === 'labirinto' ? 'labirintoNovo' : 'jogoNovo'}); };
+    }
+    el.querySelector('.jogar').onclick = ev => { ev.stopPropagation(); post('/brincar', {acao: j.id, nivel: NIVEL}); };
+    const abre = () => {
+      const ja = el.classList.contains('aberto');
+      $$('.jogo.aberto').forEach(x => { x.classList.remove('aberto'); x.setAttribute('aria-expanded', 'false'); });
+      if (!ja) { el.classList.add('aberto'); el.setAttribute('aria-expanded', 'true'); }
+    };
+    el.onclick = abre;
+    el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); abre(); } };
+    box.appendChild(el);
   }
+  $('#njogos').textContent = TODOS.length + ' opções';
+}
+
+function ativo() {
+  if (E.jogo && E.jogo.jogo) return E.jogo.jogo;
+  if (E.labirinto && E.labirinto !== 'nenhum') return 'labirinto';
+  if (E.tesouro && E.tesouro !== 'nenhum') return 'tesouro';
+  if (E.fossil && E.fossil !== 'nenhum') return 'trex';
+  if (E.animais && E.animais !== 'nada') return E.animais;
+  return null;
+}
+
+function situacao(a) {
+  if (!a) return 'Nenhuma brincadeira';
+  if (E.jogo && E.jogo.jogo) {
+    const n = (AGUA.find(x => x[0] === E.jogo.jogo) || [0, E.jogo.jogo])[1];
+    return n + (E.jogo.fase === 'fim' ? ' · fim da rodada' : ' · valendo');
+  }
+  if (a === 'labirinto') return E.labirinto === 'chegou' ? 'A água chegou!' : 'Labirinto · água correndo';
+  if (a === 'tesouro') return E.tesouro === 'achado' ? 'Tesouro achado!' : 'Tesouro enterrado';
+  if (a === 'trex') return E.fossil === 'achado' ? 'Fóssil escavado!' : 'Fóssil enterrado';
+  return 'Animação na areia';
 }
 
 async function carrega() {
@@ -551,64 +619,79 @@ async function carrega() {
     const r = await fetch('/estado');
     if (!r.ok) return;
     E = await r.json();
-
-    $('#sb').textContent = {
-      rosto: 'Modo Foto',
-      original: 'Topografia',
-      relevo: 'Relevo',
-      esculpir: 'Esculpir',
-      nenhum: 'Desligado'
-    }[E.sandbox] || E.sandbox;
-
-    document.querySelectorAll('#modos button').forEach(b => {
+    const sb = {rosto: E.modo === 'rosto' ? 'Modo Foto' : (E.modo === 'esculpir' ? 'Esculpir' : 'Relevo'),
+                original: 'Topografia', nenhum: 'Areia desligada'}[E.sandbox] || E.sandbox;
+    $('#sb').textContent = sb;
+    $('#p-sb').classList.toggle('on', E.sandbox !== 'nenhum');
+    $$('#modos button').forEach(b => {
       const m = b.dataset.m;
       b.classList.toggle('active', E.sandbox === 'original' ? m === 'original' : (E.sandbox === 'rosto' && m === E.modo));
     });
 
-    let sit = 'Normal';
-    if (E.tesouro === 'achado') sit = 'Tesouro achado!';
-    else if (E.tesouro === 'escondido') sit = 'Tesouro enterrado';
-    else if (E.fossil === 'achado') sit = 'Fóssil escavado!';
-    else if (E.fossil === 'escondido') sit = 'Fóssil enterrado';
-    else if (E.labirinto === 'chegou') sit = 'Água chegou' + (E.labirinto_rodadas ? ' (' + E.labirinto_rodadas + ')' : '');
-    else if (E.labirinto === 'correndo') sit = 'Água correndo';
+    const a = ativo();
+    $('#sit').textContent = situacao(a);
+    $('#p-sit').classList.toggle('on', !!a);
+    $$('.jogo').forEach(el => {
+      const on = el.dataset.id === a;
+      el.classList.toggle('ativo', on);
+      const nv = el.querySelector('.nova');
+      if (nv) nv.hidden = !on;
+    });
+    const pl = $('#placar');
+    let txt = '';
+    if (E.jogo && E.jogo.jogo) {
+      const n = (AGUA.find(x => x[0] === E.jogo.jogo) || [0, E.jogo.jogo])[1];
+      txt = '<b></b> · rodada ' + (E.jogo.rodadas + (E.jogo.fase === 'fim' ? 0 : 1)) + '<br><span></span>';
+      pl.innerHTML = txt;
+      pl.querySelector('b').textContent = n;
+      pl.querySelector('span').textContent = E.jogo.aviso ? (E.jogo.fase === 'fim' ? '🏆 ' : '') + E.jogo.aviso + (E.jogo.fase === 'fim' ? ' — nova rodada em 20 s' : '') : '';
+    } else if (a === 'labirinto') {
+      pl.innerHTML = '<b>Labirinto de água</b> · rodadas vencidas: ' + (E.labirinto_rodadas || 0);
+      txt = 'x';
+    }
+    pl.style.display = txt ? 'block' : 'none';
 
-    $('#tes').textContent = sit;
-    $('#wb').textContent = E.willbert ? '· ' + E.willbert : '';
+    $('#wb').textContent = E.willbert ? 'Willbert ' + E.willbert : 'Willbert';
+    $('#p-wb').classList.toggle('on', E.willbert === 'ligado');
 
     const T = $('#temas');
-    if (T && !T.children.length && E.temas) {
+    if (!T.children.length && E.temas) {
+      const CORES = {classico: 'linear-gradient(90deg,#2b5fd9,#3fae4f,#e8d36a,#b0703a,#fff)',
+        vulcao: 'linear-gradient(90deg,#1a0d08,#7a1c0c,#e2471a,#ffb02e)',
+        inverno: 'linear-gradient(90deg,#24406e,#8fb5df,#e6f0fb,#fff)',
+        marte: 'linear-gradient(90deg,#3a160c,#8c3a1c,#c8673a,#e8b48a)',
+        deserto: 'linear-gradient(90deg,#8a5a2b,#c9934d,#e9c98f,#f6e7c4)',
+        oceano: 'linear-gradient(90deg,#04163a,#0a4f8a,#1ea0c8,#bfeaf3)',
+        'arco-iris': 'linear-gradient(90deg,#e33,#f93,#fd3,#3c6,#39f,#93f)',
+        mapa: 'linear-gradient(90deg,#9cc9e8,#cfe3c2,#e9dca8,#c9a77c)'};
       for (const [t, n] of E.temas) {
         const b = document.createElement('button');
-        b.textContent = n;
+        const sw = document.createElement('span');
+        sw.className = 'sw';
+        sw.style.background = CORES[t] || 'var(--border)';
+        b.appendChild(sw);
+        b.appendChild(document.createTextNode(n));
         b.dataset.t = t;
         b.onclick = () => post('/tema', {tema: t});
         T.appendChild(b);
       }
     }
-    if (T) T.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.t === E.tema));
+    T.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.t === E.tema));
 
-    const chipsEl = $('#chips');
-    const boxEl = $('#box-fotos');
     const fotos = [...(E.fotos_salvas || []), ...(E.fotos_willbert || [])];
-    if (fotos.length) {
-      boxEl.style.display = 'block';
-      chipsEl.innerHTML = '';
-      fotos.forEach(nome => {
-        const tag = document.createElement('span');
-        tag.className = 'photo-tag';
-        tag.textContent = nome.length > 22 ? nome.slice(0, 19) + '...' : nome;
-        tag.title = nome;
-        tag.onclick = () => post('/escolher', {imagem: nome});
-        chipsEl.appendChild(tag);
-      });
-    }
-
-    if (E.tem_foto) {
-      $('#prev').hidden = false;
-      $('#prev').src = '/previa.png?' + Date.now();
-    }
-  } catch(e) {}
+    $('#box-fotos').hidden = !fotos.length;
+    const C = $('#chips');
+    C.innerHTML = '';
+    fotos.forEach(nome => {
+      const tag = document.createElement('span');
+      tag.className = 'chip';
+      tag.textContent = nome;
+      tag.title = 'Projetar ' + nome;
+      tag.onclick = () => post('/escolher', {imagem: nome});
+      C.appendChild(tag);
+    });
+    if (E.tem_foto) { $('#prev').hidden = false; $('#prev').src = '/previa.png?' + Date.now(); }
+  } catch (e) {}
 }
 
 function envia(inp) {
@@ -621,26 +704,26 @@ function envia(inp) {
   };
 }
 
+monta();
 envia($('#selfie'));
 envia($('#galeria'));
 $('#cam').onclick = () => post('/foto', new FormData(), true);
-let NIVEL = 'normal';
-document.querySelectorAll('[data-n]').forEach(b => b.onclick = () => {
+$$('[data-n]').forEach(b => b.onclick = () => {
   NIVEL = b.dataset.n;
-  document.querySelectorAll('[data-n]').forEach(x => x.classList.toggle('active', x === b));
+  $$('[data-n]').forEach(x => x.classList.toggle('active', x === b));
 });
-document.querySelectorAll('[data-b]').forEach(b => b.onclick = () => post('/brincar', {acao: b.dataset.b, nivel: NIVEL}));
-document.querySelectorAll('[data-w]').forEach(b => b.onclick = () => post('/willbert', {acao: b.dataset.w}));
+$$('[data-b]').forEach(b => b.onclick = () => post('/brincar', {acao: b.dataset.b, nivel: NIVEL}));
+$$('[data-w]').forEach(b => b.onclick = () => post('/willbert', {acao: b.dataset.w}));
+$$('[data-m]').forEach(b => b.onclick = () => post('/modo', {modo: b.dataset.m}));
 $('#reabrir').onclick = () => post('/reabrir', {});
 $('#espelhar').onclick = () => post('/ajuste', {espelho: !E.espelho});
-document.querySelectorAll('[data-m]').forEach(b => b.onclick = () => post('/modo', {modo: b.dataset.m}));
-$('#girar').onclick = () => post('/ajuste', {giro: (E.giro + 90) % 360});
-
+$('#girar').onclick = () => post('/ajuste', {giro: ((E.giro || 0) + 90) % 360});
 carrega();
-setInterval(carrega, 5000);
+setInterval(carrega, 4000);
 </script>
 </body>
-</html>"""
+</html>""".replace(
+    "__JOGOS__", json.dumps([[k, *v] for k, v in areia.JOGOS.items()], ensure_ascii=False))
 
 if __name__ == "__main__":
     try:  # papel de parede com o endereço do painel (o timer atualizar-papel-parede repete a cada minuto)
