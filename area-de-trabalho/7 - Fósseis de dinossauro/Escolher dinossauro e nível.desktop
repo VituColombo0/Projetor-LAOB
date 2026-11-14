@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Escolher dinossauro e nível
-Comment=Escolhe o dinossauro e a profundidade, ou vê o placar
-Exec=/home/laob/SARndbox-rosto/gui-fossil.sh
-Icon=preferences-other
-Terminal=false

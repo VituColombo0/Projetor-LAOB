@@ -25,12 +25,19 @@ class Painel(Ambiente):
     def post(self, url, **kw):
         return self.c.post(url, environ_base=TAILSCALE, **kw)
 
-    def test_so_local_e_tailscale(self):
-        self.assertEqual(self.get("/", "127.0.0.1").status_code, 200)
-        self.assertEqual(self.get("/", "100.64.0.1").status_code, 200)
-        self.assertEqual(self.get("/", "::ffff:100.64.0.9").status_code, 200)
-        for ip in ("192.168.0.50", "10.0.0.2", "8.8.8.8", "::ffff:192.168.0.5"):
+    def test_so_local_rede_do_lab_e_tailscale(self):
+        for ip in ("127.0.0.1", "100.64.0.1", "::ffff:100.64.0.9", "192.168.0.50", "10.0.0.2",
+                   "172.17.173.5", "::ffff:192.168.0.5"):
+            self.assertEqual(self.get("/", ip).status_code, 200, ip)
+        for ip in ("8.8.8.8", "200.136.1.1", "::ffff:8.8.4.4", "2001:db8::1"):
             self.assertEqual(self.get("/estado", ip).status_code, 403, ip)
+
+    def test_escolher_so_foto_das_pastas(self):
+        self.poe("a.jpg")
+        self.assertEqual(self.post("/escolher", json={"imagem": "a.jpg"}).status_code, 200)
+        self.assertEqual(self.post("/escolher", json={"imagem": "/etc/x.jpg"}).status_code, 400)
+        self.assertEqual(self.post("/escolher", json={}).status_code, 400)
+        self.assertEqual(self.post("/ajuste", json={"giro": "abc"}).status_code, 400)
 
     def test_estado(self):
         j = self.get("/estado").get_json()
@@ -55,7 +62,7 @@ class Painel(Ambiente):
                         data={"foto": (io.BytesIO(jpg.tobytes()), "willbert-Victor.jpg")},
                         content_type="multipart/form-data")
         self.assertEqual(r.status_code, 200, r.get_json())
-        nomes = os.listdir(self.PASTA)
+        nomes = os.listdir(os.path.join(self.PASTA, self.areia.PASTA_WILLBERT))  # subpasta desde 2026-11-11
         self.assertTrue(nomes[0].startswith("willbert-Victor-") and nomes[0].endswith(".jpg"), nomes)
         self.assertEqual(self.rodando(), "rosto")
 
@@ -81,7 +88,7 @@ class Painel(Ambiente):
         self.assertEqual(self.post("/brincar", json={"acao": "xyz"}).status_code, 400)
         r = self.post("/brincar", json={"acao": "tesouro"})
         self.assertEqual(r.status_code, 200, r.get_json())
-        self.assertEqual(self.comandos()[-1], "cmd tesouro 3")
+        self.assertEqual(self.comandos()[-1], "cmd tesouro 5.5")
         self.assertEqual(self.post("/brincar", json={"acao": "peixes"}).status_code, 200)
         self.assertEqual(self.post("/brincar", json={"acao": "parar"}).status_code, 200)
         self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-4:],
@@ -100,7 +107,7 @@ class Painel(Ambiente):
         r = self.post("/brincar", json={"acao": "triceratops"})
         self.assertEqual(r.status_code, 200, r.get_json())
         self.assertIn("Triceratops", r.get_json()["msg"])
-        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd fossil 3 3")
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd fossil 3 5.5")
         self.assertIn("fossil", self.get("/estado").get_json())
 
     def test_ajustes(self):

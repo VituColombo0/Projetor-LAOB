@@ -18,9 +18,9 @@ else
   echo "  (shellcheck não instalado: só a sintaxe)"
 fi
 echo "== atalhos da Área de Trabalho"
-for at in "$R"/area-de-trabalho/*/*.desktop; do
+for at in "$R"/area-de-trabalho/*.desktop "$R"/area-de-trabalho/*/*.desktop; do
   exe=$(sed -n 's/^Exec=//p' "$at" | awk '{print $1}')
-  [ -f "$R/areia/$(basename "$exe")" ] || { echo "  atalho aponta para algo que não existe: $at -> $exe"; falhas=1; }
+  [ "$exe" = xdg-open ] || [ -f "$R/areia/$(basename "$exe")" ] || { echo "  atalho aponta para algo que não existe: $at -> $exe"; falhas=1; }
   for k in Type Name Exec Icon; do grep -q "^$k=" "$at" || { echo "  falta $k em $at"; falhas=1; }; done
   for c in $(sed -n 's/^Exec=.*gui-rodar.sh "[^"]*" [^ ]* \([^ ]*\).*/\1/p' "$at"); do
     [ -f "$R/areia/$c" ] || { echo "  comando inexistente em $at: $c"; falhas=1; }
@@ -29,4 +29,5 @@ done
 for p in "$R"/area-de-trabalho/*/; do [ -s "$p/COMO USAR.txt" ] || { echo "  falta o manual em $p"; falhas=1; }; done
 echo "== testes Python ($PY)"
 ( cd "$R/testes" && "$PY" -m unittest -v test_rosto test_areia test_painel ) || falhas=1
+"$PY" -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$R/areia/atualizar_papel_parede.py" || falhas=1
 [ $falhas = 0 ] && echo "TUDO OK" || { echo "HÁ FALHAS"; exit 1; }

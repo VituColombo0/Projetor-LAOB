@@ -22,6 +22,7 @@ if ! lsusb -d 045e:02ae >/dev/null 2>&1; then
 fi
 
 python3 "$D/areia.py" marca-topografia 2>/dev/null || registra "não consegui anotar o estado"
+python3 "$D/atualizar_papel_parede.py" >/dev/null 2>&1 &
 
 for tentativa in 1 2 3; do
   "$D/sandbox.sh" topografia >/dev/null 2>&1

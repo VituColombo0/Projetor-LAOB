@@ -65,7 +65,7 @@ No PC tudo fica numa pasta só, `~/SARndbox-rosto` (cópia do SARndbox + os arqu
     bash testes/rodar.sh       # 53 testes: imagem, área iluminada, relevo, pasta, cache, comando,
                                # painel (com projetor falso) + sintaxe/shellcheck dos scripts
     bash testes/integracao.sh  # no lab2, depois do instalar.sh: compila, confere tudo instalado,
-                               # o painel (aceita Tailscale, recusa a rede local) e o projetor de verdade
+                               # o painel (aceita rede local e Tailscale, recusa a internet) e o projetor de verdade
                                # (~1 min), terminando na topografia
 
 ## Caça ao tesouro, peixes e carrinhos
@@ -117,9 +117,15 @@ do próprio SARndbox (~0,1 s, sem fechar o programa). Vale também no modo Relev
 Os pontos foram ajustados à areia do lab2 (morros de ~8–10 cm): lava e ilhas aparecem nos picos.
 
 ## Painel do celular
-`painel.py` (serviço de usuário `sandbox-painel`) em http://100.114.194.28:8090: escuta em todas as
-interfaces mas só responde à própria máquina e à rede Tailscale (outros recebem 403): tirar selfie, escolher foto ou usar a câmera do laboratório, trocar de modo,
-girar/espelhar e ajustar deformação, sombra e mistura com as cores de relevo.
+`painel.py` (serviço de usuário `sandbox-painel`) em `http://<IP-DO-LAB2>:8090`: escuta em todas as
+interfaces e responde à própria máquina, à rede local do laboratório (10/8, 172.16/12, 192.168/16) e à
+Tailscale (o resto recebe 403): tirar selfie, escolher foto ou usar a câmera do laboratório, trocar de modo,
+escolher uma das fotos salvas, cores do relevo, brincadeiras e girar a imagem (espelho, deformação, sombra e
+mistura continuam aceitos em `POST /ajuste`, sem botão na página desde 2026-11-11).
+
+O endereço atual aparece no canto do papel de parede do lab2: `atualizar_papel_parede.py`
+(timer de usuário `atualizar-papel-parede`, a cada minuto) desenha o IP sobre `~/Pictures/logo-original.png`
+e só redesenha quando ele muda. Na Área de Trabalho, o atalho "Abrir painel da caixa de areia" abre o painel.
 
 ## Comandos internos (sandbox.sh)
     ./sandbox.sh rosto

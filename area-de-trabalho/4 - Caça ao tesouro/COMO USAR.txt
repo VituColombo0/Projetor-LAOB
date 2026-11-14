@@ -1,46 +1,28 @@
 CAÇA AO TESOURO
 ===============
 
-Um baú de tesouro fica escondido embaixo da areia, num lugar sorteado.
-Cavem para achar! Quando estiverem perto, a areia começa a brilhar
-dourado. Quando cavarem fundo o bastante, o baú aparece brilhando.
-Uns 20 segundos depois ele some e se esconde de novo em OUTRO lugar:
-é só continuar procurando!
+Um baú de tesouro fica escondido embaixo da areia, num lugar sorteado, em
+uma parte mais profunda da caixa (5.5 cm). Cavem para achar!
+
+Quando estiverem perto, a areia começa a brilhar dourado. Ao cavarem fundo
+o bastante, o baú aparece brilhando comemorando! Uns 20 segundos depois
+ele some e se esconde de novo em OUTRO lugar para continuar a busca.
 
 
 COMO USAR (PELOS ATALHOS - MAIS FÁCIL)
 --------------------------------------
 - Para começar direto: dê dois cliques em "Iniciar caça ao tesouro"
 - Para parar o jogo: dê dois cliques em "Parar caça ao tesouro"
-- Para escolher nível (fácil/difícil) ou ver status: dê dois cliques em
-  "Opções do tesouro (fácil, difícil, placar)"
+- Para voltar ao relevo: "Voltar para a topografia"
+
+
+OU PELO PAINEL WEB NO CELULAR
+-----------------------------
+Abra o endereço mostrado no canto inferior do papel de parede e toque em "Caça ao tesouro".
 
 
 OU PELO TERMINAL
 ----------------
-1. Abra o Terminal: aperte Ctrl + Alt + T
-2. Digite o comando e aperte Enter:
-
-    areia-tesouro           esconde um tesouro (3 cm embaixo da areia)
-
-  Outras opções:
-    areia-tesouro facil     mais raso (2 cm), bom para crianças
-    areia-tesouro dificil   mais fundo (5 cm)
-    areia-tesouro achou     diz se está escondido e quantos já acharam
-    areia-tesouro parar     tira o tesouro
-
-  Para recomeçar a contagem, rode  areia-tesouro  de novo.
-
-
-DICAS
------
-- Antes de começar, alise a areia e deixe uns morrinhos: o tesouro
-  costuma ficar onde tem mais areia.
-- Dá para jogar junto com os peixes e carrinhos (pasta 5).
-- Pelo celular: http://100.114.194.28:8090 (botão "Caça ao tesouro").
-
-
-VOLTAR PARA A TOPOGRAFIA
-------------------------
-Dê dois cliques em "Voltar para a topografia", aqui nesta pasta.
-Ou no terminal:  areia-topografia
+    areia-tesouro           esconde o baú (profundidade: 5.5 cm)
+    areia-tesouro achou     mostra se está escondido e quantos já acharam
+    areia-tesouro parar     encerra o tesouro

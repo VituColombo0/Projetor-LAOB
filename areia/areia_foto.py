@@ -98,7 +98,7 @@ def main(argv):
         img = menu(e)
     else:
         caminho = os.path.expanduser(cmd)
-        de_fora = os.path.isfile(caminho) and os.path.dirname(os.path.abspath(caminho)) != areia.pasta()
+        de_fora = os.path.isfile(caminho) and not os.path.abspath(caminho).startswith(areia.pasta())
         img = areia.acha(cmd)
         if de_fora:
             print(f"Copiada para a pasta Areia: {os.path.basename(img)}")

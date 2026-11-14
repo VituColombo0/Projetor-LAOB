@@ -1,0 +1,9 @@
+[Unit]
+Description=Atualiza papel de parede com IP do painel da areia
+
+[Service]
+Type=oneshot
+ExecStart=%h/SARndbox-rosto/venv/bin/python %h/SARndbox-rosto/atualizar_papel_parede.py
+
+[Install]
+WantedBy=default.target

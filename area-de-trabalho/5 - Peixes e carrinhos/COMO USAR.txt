@@ -37,7 +37,7 @@ Os carrinhos gostam dos vales (as partes baixas entre os morros).
 DICAS
 -----
 - Dá para jogar junto com a caça ao tesouro (pasta 4).
-- Pelo celular: http://100.114.194.28:8090 (botões "Peixes", "Carrinhos").
+- Pelo celular: o endereço mostrado no canto inferior do papel de parede (botões "Peixes", "Carrinhos").
 
 
 VOLTAR PARA A TOPOGRAFIA

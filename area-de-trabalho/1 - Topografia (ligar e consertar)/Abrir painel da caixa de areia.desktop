@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Abrir painel da caixa de areia
+Comment=Controle da caixa de areia pelo navegador (http://localhost:8090)
+Exec=xdg-open http://localhost:8090
+Icon=applications-internet
+Terminal=false

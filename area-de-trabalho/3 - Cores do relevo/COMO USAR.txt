@@ -46,4 +46,4 @@ Ou no terminal:  areia-topografia
 DICAS
 -----
 - Pode digitar com ou sem acento: areia-tema vulcão também funciona.
-- Pelo celular: http://100.114.194.28:8090 (botões "Cores do relevo").
+- Pelo celular: o endereço mostrado no canto inferior do papel de parede (botões "Cores do relevo").

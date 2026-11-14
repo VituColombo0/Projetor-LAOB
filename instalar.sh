@@ -36,7 +36,7 @@ fi
 [ $SO_COMPILAR = 1 ] && { echo "compilado em $DEST/bin/SARndbox"; exit 0; }
 
 echo "[3/8] programas da pasta areia/"
-cp "$REPO"/areia/{areia.py,areia_foto.py,areia_tema.py,areia_brincar.py,rosto.py,painel.py,sandbox.sh} "$DEST/"
+cp "$REPO"/areia/{areia.py,areia_foto.py,areia_tema.py,areia_brincar.py,rosto.py,painel.py,sandbox.sh,atualizar_papel_parede.py} "$DEST/"
 COMANDOS=(areia-foto areia-tema areia-topografia areia-tesouro areia-animais areia-fossil areia-labirinto areia-vigia)
 for c in "${COMANDOS[@]}"; do cp "$REPO/areia/$c" "$DEST/"; chmod +x "$DEST/$c"; done
 cp "$REPO"/areia/gui-*.sh "$DEST/" && chmod +x "$DEST"/gui-*.sh   # janelas dos atalhos
@@ -82,6 +82,12 @@ for origem in "$AD"/*/; do
     gio set "$destino" metadata::trusted true 2>/dev/null || true
   done
 done
+for at in "$AD"/*.desktop; do   # atalhos soltos na Área de Trabalho (ex.: painel da caixa de areia)
+  [ -e "$at" ] || continue
+  destino="$MESA/$(basename "$at")"
+  sed "s#/home/laob#$HOME#g" "$at" > "$destino"; chmod +x "$destino"
+  gio set "$destino" metadata::trusted true 2>/dev/null || true
+done
 B=$HOME/.config/gtk-3.0/bookmarks; mkdir -p "$(dirname "$B")"
 grep -v "file://$MESA/Areia " "$B" 2>/dev/null | grep -v "Fotos%20na%20areia" > "$B.tmp"; mv "$B.tmp" "$B"
 echo "file://${FOTOS_DIR// /%20} Fotos na areia" >> "$B"
@@ -103,6 +109,12 @@ systemctl --user enable --now sandbox-painel >/dev/null 2>&1 && systemctl --user
 cp "$REPO/sistema/areia-vigia.service" "$REPO/sistema/areia-vigia.timer" "$HOME/.config/systemd/user/"
 systemctl --user daemon-reload
 systemctl --user enable --now areia-vigia.timer >/dev/null 2>&1 || true
+# papel de parede com o endereço do painel (muda sozinho se o IP mudar)
+mkdir -p "$HOME/Pictures"
+[ -s "$HOME/Pictures/logo-original.png" ] || cp "$REPO/sistema/logo-laob.png" "$HOME/Pictures/logo-original.png"
+cp "$REPO/sistema/atualizar-papel-parede.service" "$REPO/sistema/atualizar-papel-parede.timer" "$HOME/.config/systemd/user/"
+systemctl --user daemon-reload
+systemctl --user enable --now atualizar-papel-parede.timer >/dev/null 2>&1 || true
 
 echo
 echo "Pronto. Manuais na Área de Trabalho (uma pasta para cada coisa). Teste completo: bash testes/integracao.sh"

@@ -52,13 +52,13 @@ class UmaBrincadeiraPorVez(Ambiente):
     def test_trocar_encerra_a_anterior(self):
         self.areia.animais("todos")
         self.areia.labirinto("facil")
-        self.assertEqual(self.cmds()[-3:], ["cmd tesouroFim", "cmd animais nada", "cmd labirinto facil"])
+        self.assertEqual(self.cmds()[-3:], ["cmd fossilFim", "cmd animais nada", "cmd labirinto facil"])
         self.areia.tesouro()
-        self.assertEqual(self.cmds()[-3:], ["cmd labirintoFim", "cmd animais nada", "cmd tesouro 3"])
+        self.assertEqual(self.cmds()[-3:], ["cmd labirintoFim", "cmd animais nada", "cmd tesouro 5.5"])
         self.areia.fossil("pegada")
-        self.assertEqual(self.cmds()[-3:], ["cmd labirintoFim", "cmd animais nada", "cmd fossil 5 3"])
+        self.assertEqual(self.cmds()[-3:], ["cmd labirintoFim", "cmd animais nada", "cmd fossil 5 5.5"])
         self.areia.animais("peixes")
-        self.assertEqual(self.cmds()[-3:], ["cmd tesouroFim", "cmd labirintoFim", "cmd animais peixes 10"])
+        self.assertEqual(self.cmds()[-3:], ["cmd fossilFim", "cmd labirintoFim", "cmd animais peixes 10"])
 
     def test_foto_encerra_as_brincadeiras(self):
         self.areia.animais("todos")
@@ -74,18 +74,17 @@ class UmaBrincadeiraPorVez(Ambiente):
 
 
 class FotosDoWillbert(Ambiente):
-    def test_antigas_saem_do_menu_mas_ficam_guardadas(self):
-        import time as _t
-        for i in range(5):
-            c = self.poe(f"willbert-Lucas-{i}.png")
-            os.utime(c, (1000 + i, 1000 + i))
+    def test_fotos_do_willbert_ficam_na_subpasta(self):
+        for i in range(3):
+            self.poe(f"willbert-Lucas-{i}.png")
         self.poe("minha-foto.jpg")
-        self.assertEqual(self.areia.arquiva_willbert(manter=2), 3)
-        nomes = [os.path.basename(c) for c in self.areia.imagens()]
-        self.assertEqual(sorted(nomes), ["minha-foto.jpg", "willbert-Lucas-3.png", "willbert-Lucas-4.png"])
-        guardadas = os.listdir(os.path.join(self.PASTA, self.areia.PASTA_ANTIGAS_WILLBERT))
-        self.assertEqual(sorted(guardadas), ["willbert-Lucas-0.png", "willbert-Lucas-1.png", "willbert-Lucas-2.png"])
-        self.assertEqual(self.areia.arquiva_willbert(manter=2), 0)
+        self.assertEqual(self.areia.arquiva_willbert(), 3)
+        self.assertEqual([os.path.basename(c) for c in self.areia.imagens()], ["minha-foto.jpg"])
+        sub = os.path.join(self.PASTA, self.areia.PASTA_WILLBERT)
+        self.assertEqual(sorted(os.listdir(sub)), [f"willbert-Lucas-{i}.png" for i in range(3)])
+        self.assertEqual(self.areia.arquiva_willbert(), 0)
+        # pelo nome, acha a mais nova da subpasta
+        self.assertEqual(os.path.basename(self.areia.acha("Lucas-2")), "willbert-Lucas-2.png")
 
 
 class Estado(Ambiente):
@@ -230,10 +229,10 @@ class Temas(Ambiente):
 
 class Brincadeiras(Ambiente):
     def test_tesouro_sobe_a_versao_com_foto(self):
-        self.assertEqual(self.areia.tesouro(), 3.0)
+        self.assertEqual(self.areia.tesouro(), 5.5)  # mais fundo desde 2026-11-11 (Victor)
         self.assertEqual(self.rodando(), "rosto")
-        self.assertEqual(self.comandos()[-1], "cmd tesouro 3")
-        self.assertEqual(self.areia.tesouro("Difícil"), 5.0)
+        self.assertEqual(self.comandos()[-1], "cmd tesouro 5.5")
+        self.assertEqual(self.areia.tesouro("Difícil"), 7.0)
         self.assertEqual(self.areia.tesouro("2,5"), 2.5)
         for ruim in ("xyz", "50"):
             with self.assertRaises(self.areia.Erro):
@@ -285,7 +284,7 @@ class Brincadeiras(Ambiente):
             ab.animais(["parar"])
             ab.tesouro(["parar"])
         out = saida.getvalue()
-        self.assertIn("Tesouro escondido a 2 cm", out)
+        self.assertIn("Tesouro escondido a 4 cm", out)
         self.assertIn("3 carrinhos na areia!", out)
         self.assertIn("Animais removidos.", out)
         self.assertEqual(self.comandos()[-1], "cmd tesouroFim")
@@ -296,18 +295,18 @@ class Fosseis(Ambiente):
         return [c for c in self.comandos() if c.startswith("cmd")]
 
     def test_dinossauros_e_niveis(self):
-        self.assertEqual(self.areia.fossil(), ("Tiranossauro Rex", 3.0))
-        self.assertEqual(self.cmds()[-1], "cmd fossil 2 3")
+        self.assertEqual(self.areia.fossil(), ("Tiranossauro Rex", 5.5))
+        self.assertEqual(self.cmds()[-1], "cmd fossil 2 5.5")
         self.assertEqual(self.areia.fossil("Triceratops")[0], "Triceratops")
-        self.assertEqual(self.cmds()[-1], "cmd fossil 3 3")
+        self.assertEqual(self.cmds()[-1], "cmd fossil 3 5.5")
         self.areia.fossil("pegada", "facil")
-        self.assertEqual(self.cmds()[-1], "cmd fossil 5 2")
+        self.assertEqual(self.cmds()[-1], "cmd fossil 5 4")
         self.areia.fossil("ptero", "dificil")
-        self.assertEqual(self.cmds()[-1], "cmd fossil 4 5")
+        self.assertEqual(self.cmds()[-1], "cmd fossil 4 7")
 
     def test_dificuldade_sozinha_vale_para_o_trex(self):
-        self.assertEqual(self.areia.fossil("facil"), ("Tiranossauro Rex", 2.0))
-        self.assertEqual(self.cmds()[-1], "cmd fossil 2 2")
+        self.assertEqual(self.areia.fossil("facil"), ("Tiranossauro Rex", 4.0))
+        self.assertEqual(self.cmds()[-1], "cmd fossil 2 4")
 
     def test_erros(self):
         with self.assertRaisesRegex(self.areia.Erro, "dinossauro"):
@@ -341,8 +340,8 @@ class Fosseis(Ambiente):
             ab.fossil(["achou"])
             ab.fossil(["parar"])
         out = saida.getvalue()
-        self.assertIn("Fóssil de Tiranossauro Rex enterrado a 3 cm", out)
-        self.assertIn("Fóssil de Triceratops enterrado a 5 cm", out)
+        self.assertIn("Fóssil de Tiranossauro Rex enterrado a 5.5 cm", out)
+        self.assertIn("Fóssil de Triceratops enterrado a 7 cm", out)
         self.assertIn("Escavação encerrada.", out)
         self.assertEqual(self.cmds()[-1], "cmd fossilFim")
 

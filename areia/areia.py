@@ -27,7 +27,7 @@ AJUSTE = {"zoom": 0.03, "desloc": 0.0, "mistura": 0.0, "sombra": 1.0}
 PADRAO = {"modo": "original", "giro": 0, "espelho": False, "imagem": None, "fundo": "", "ajuste": AJUSTE}
 MANTER_NO_CACHE = 40
 PASTA_FOTOS = "2 - Fotos na areia"  # na Área de Trabalho (antes se chamava "Areia")
-DIFICULDADE = {"facil": 2.0, "normal": 3.0, "dificil": 5.0}  # cm de areia em cima do tesouro
+DIFICULDADE = {"facil": 4.0, "normal": 5.5, "dificil": 7.0}  # cm de areia em cima do tesouro
 ANIMAIS = ("peixes", "carros", "todos")
 TEMAS = os.path.join(D, "temas")
 TEMA_ATUAL = os.path.join(TEMAS, "atual.cpt")
@@ -41,6 +41,9 @@ class Erro(Exception):
 
 # ---------- pasta Areia ----------
 
+PASTA_WILLBERT = "Fotos do Willbert"
+
+
 def pasta():
     """A pasta das fotos, na Área de Trabalho (criada se não existir)."""
     p = os.environ.get("AREIA_PASTA")
@@ -52,6 +55,13 @@ def pasta():
             mesa = ""
         casa = os.path.expanduser("~")
         p = os.path.join(mesa if mesa and mesa != casa else os.path.join(casa, "Desktop"), PASTA_FOTOS)
+    os.makedirs(p, exist_ok=True)
+    return p
+
+
+def pasta_willbert():
+    """Subpasta para fotos tiradas pelo Willbert ou pela câmera do laboratório."""
+    p = os.path.join(pasta(), PASTA_WILLBERT)
     os.makedirs(p, exist_ok=True)
     return p
 
@@ -81,20 +91,31 @@ def acha(pedido, lista=None):
         raise Erro(f"não há imagem número {n}")
     caminho = os.path.expanduser(pedido)
     if os.path.isfile(caminho):
+        if os.path.abspath(caminho).startswith(pasta()):
+            return caminho
         return guarda(caminho)
     achadas = [c for c in lista if pedido.casefold() in os.path.basename(c).casefold()]
     if len(achadas) == 1:
         return achadas[0]
+    pw = pasta_willbert()
+    if os.path.isdir(pw):
+        achadas_w = [os.path.join(pw, f) for f in sorted(os.listdir(pw), key=_ordem)
+                     if f.lower().endswith(EXT) and pedido.casefold() in f.casefold()]
+        if len(achadas_w) == 1:
+            return achadas_w[0]
+        if achadas_w:
+            return max(achadas_w, key=os.path.getmtime)
     if achadas:
         raise Erro(f'mais de uma imagem com "{pedido}": use o número')
     raise Erro(f'nenhuma imagem com "{pedido}"')
 
 
-def guarda(caminho, nome=None):
-    """Copia um arquivo para a pasta Areia (sem sobrescrever outro de mesmo nome)."""
+def guarda(caminho, nome=None, pasta_destino=None):
+    """Copia um arquivo para a pasta das fotos (ou subpasta indicada)."""
     if not caminho.lower().endswith(EXT) and not (nome or "").lower().endswith(EXT):
         raise Erro("formato não suportado: use .jpg, .png, .webp ou .bmp (HEIC do iPhone: converta antes)")
-    p = pasta()
+    p = pasta_destino or pasta()
+    os.makedirs(p, exist_ok=True)
     nome = nome or os.path.basename(caminho)
     destino = os.path.join(p, nome)
     if os.path.abspath(caminho) == os.path.abspath(destino):
@@ -110,28 +131,17 @@ def guarda(caminho, nome=None):
     return destino
 
 
-FOTOS_WILLBERT_NO_MENU = 30
-PASTA_ANTIGAS_WILLBERT = "antigas do Willbert"
-
-
-def arquiva_willbert(manter=FOTOS_WILLBERT_NO_MENU):
-    """Cada gesto deixa uma foto willbert-* na pasta das fotos; as mais antigas que as `manter`
-    últimas vão para a subpasta "antigas do Willbert" (continuam guardadas, só saem do menu).
-    Devolve quantas foram movidas."""
+def arquiva_willbert():
+    """Garante que fotos do Willbert fiquem organizadas na subpasta Fotos do Willbert."""
     p = pasta()
-    fotos = sorted((c for c in imagens() if os.path.basename(c).startswith("willbert-")),
-                   key=os.path.getmtime, reverse=True)
-    velhas = fotos[manter:]
-    if not velhas:
-        return 0
-    destino = os.path.join(p, PASTA_ANTIGAS_WILLBERT)
-    os.makedirs(destino, exist_ok=True)
-    for c in velhas:
+    pw = pasta_willbert()
+    soltas = [f for f in os.listdir(p) if f.startswith("willbert-") and os.path.isfile(os.path.join(p, f))]
+    for f in soltas:
         try:
-            os.replace(c, os.path.join(destino, os.path.basename(c)))
+            os.replace(os.path.join(p, f), os.path.join(pw, f))
         except OSError:
             pass
-    return len(velhas)
+    return len(soltas)
 
 
 def _mesmo_conteudo(a, b):
@@ -299,13 +309,13 @@ def reorienta(giro=None, espelho=None):
 
 
 def foto_da_camera():
-    """Foto pela câmera do laboratório (comando liberado do Willbert), guardada na pasta Areia."""
+    """Foto pela câmera do laboratório (comando liberado do Willbert), guardada na pasta Fotos do Willbert."""
     r = subprocess.run(["sudo", "-n", "/usr/local/sbin/willbert-controle", "foto"],
                        capture_output=True, text=True, timeout=90)
     origem = os.path.join(FOTOS, "camera.jpg")
     if r.returncode != 0 or not os.path.isfile(origem):
         raise Erro("não consegui a foto da câmera (o Willbert está configurado?)")
-    return guarda(origem, time.strftime("camera-%Y-%m-%d-%H%M%S.jpg"))
+    return guarda(origem, time.strftime("camera-%Y-%m-%d-%H%M%S.jpg"), pasta_destino=pasta_willbert())
 
 
 # ---------- temas de cor do relevo ----------
@@ -358,11 +368,11 @@ def escolhe_tema(nome):
 
 # Uma brincadeira por vez: começar uma encerra as outras (antes elas se acumulavam: peixes,
 # carrinhos, labirinto e fóssil juntos; e os animais "voltavam" depois da foto). O tema fica.
-PARAR_BRINCADEIRAS = {"tesouro": ("labirintoFim", "animais nada"),
-                      "fossil": ("labirintoFim", "animais nada"),
-                      "labirinto": ("tesouroFim", "animais nada"),
-                      "animais": ("tesouroFim", "labirintoFim"),
-                      "foto": ("tesouroFim", "labirintoFim", "animais nada")}
+PARAR_BRINCADEIRAS = {"tesouro": ("fossilFim", "labirintoFim", "animais nada"),
+                      "fossil": ("tesouroFim", "labirintoFim", "animais nada"),
+                      "labirinto": ("tesouroFim", "fossilFim", "animais nada"),
+                      "animais": ("tesouroFim", "fossilFim", "labirintoFim"),
+                      "foto": ("tesouroFim", "fossilFim", "labirintoFim", "animais nada")}
 
 
 def _encerra_outras(qual_brincadeira):
@@ -394,7 +404,7 @@ def _registro_caca():
     """Linhas do registro do programa da areia sobre o tesouro e os fósseis (mesmo mecanismo)."""
     try:
         with open(os.path.join(D, "sandbox.log"), errors="replace") as f:
-            return [l for l in f if l.startswith(("Tesouro", "Fossil", "Modo Rosto:"))]
+            return [l for l in f if l.startswith(("Tesouro", "Fossil", "Labirinto", "Animais", "Modo Rosto:", "Modo Esculpir:"))]
     except OSError:
         return []
 
@@ -515,7 +525,7 @@ def labirinto(dificuldade="normal"):
 def _registro_labirinto():
     try:
         with open(os.path.join(D, "sandbox.log"), errors="replace") as f:
-            return [l for l in f if l.startswith(("Labirinto", "Modo Rosto:", "Modo Esculpir:"))]
+            return [l for l in f if l.startswith(("Labirinto", "Tesouro", "Fossil", "Animais", "Modo Rosto:", "Modo Esculpir:"))]
     except OSError:
         return []
 
