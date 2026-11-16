@@ -9,6 +9,8 @@
    fossilFim                                               encerra a escavação
    animais peixes|carros|pessoas|todos|nada [quantidade]   peixes no lago, carrinhos e pessoas andando
    mundo <giro> <n com rosto> <painel|-> <moradores> [NOME[+]...] / mundoRosto NOME   a cidade LAOB (Mundo.cpp)
+   mar peixe=N tubarao=N tartaruga=N aguaviva=N polvo=N arraia=N   animais marinhos escolhidos
+   chuva <x 0-1> <y 0-1> [s] / secar                         nuvem de chuva num ponto; tira toda a água
    membros <giro> <n com rosto> <painel|-> [NOME[+]...]    membros andando com rosto e nome (+ = presente agora)
    efeito <tema>                                           animação do tema (lava, neve, poeira...)
    labirinto [facil|normal|dificil] / labirintoNovo / labirintoFim (labirintoTeste: alvo na nascente)
@@ -298,6 +300,16 @@ void Sandbox::toggleDEM(DEM* dem)
 						std::cout<<"Efeito: "<<tokens[1]<<std::endl;
 						}
 					}
+				else if(isToken(tokens[0],"tesouroTeste"))
+					{
+					/* Para ver o desenho (e para o teste automático): mostra o baú ou o fóssil como se tivesse sido achado */
+					if(extras.tesouro)
+						{
+						extras.achado=true;
+						extras.quandoAchou=extras.tempo;
+						std::cout<<"Tesouro: teste, mostrando"<<std::endl;
+						}
+					}
 				else if(isToken(tokens[0],"tesouroFim"))
 					{
 					extras.tesouro=false;
@@ -375,6 +387,43 @@ void Sandbox::toggleDEM(DEM* dem)
 					{
 					if(extras.mundoRosto(tokens[1].c_str()))
 						std::cout<<"Mundo: mostrando o rosto de "<<tokens[1]<<std::endl;
+					}
+				else if(isToken(tokens[0],"mar"))
+					{
+					/* mar peixe=8 tubarao=1 tartaruga=2 ...: os animais marinhos escolhidos no painel */
+					int q[Extras::NUM_ESPECIES];
+					int total=0;
+					for(int k=0;k<Extras::NUM_ESPECIES;++k)
+						q[k]=0;
+					for(size_t t=1;t<tokens.size();++t)
+						{
+						size_t ig=tokens[t].find('=');
+						if(ig==std::string::npos)
+							continue;
+						for(int k=0;k<Extras::NUM_ESPECIES;++k)
+							if(tokens[t].substr(0,ig)==Extras::nomeEspecie(k))
+								{
+								q[k]=std::max(0,std::min(24,atoi(tokens[t].substr(ig+1).c_str())));
+								total+=q[k];
+								}
+						}
+					setFaceMode(0,0);
+					extras.mar(q);
+					std::cout<<"Animais: mar ("<<std::min(total,int(Extras::MAX_AGENTES))<<")"<<std::endl;
+					}
+				else if(isToken(tokens[0],"chuva")&&tokens.size()>=3)
+					{
+					/* chuva <x 0-1> <y 0-1> [segundos]: uma nuvem joga água nesse ponto da areia */
+					float seg=tokens.size()>=4?float(atof(tokens[3].c_str())):8.0f;
+					extras.chove(float(atof(tokens[1].c_str())),float(atof(tokens[2].c_str())),seg);
+					std::cout<<"Chuva: nuvem por "<<seg<<" s"<<std::endl;
+					}
+				else if(isToken(tokens[0],"secar"))
+					{
+					extras.labZerarAgua=true;
+					for(int k=0;k<Extras::MAX_CHUVAS;++k)
+						extras.chuvas[k].ate=-1.0;
+					std::cout<<"Chuva: a água foi seca"<<std::endl;
 					}
 				else if(isToken(tokens[0],"animais"))
 					{
@@ -603,6 +652,33 @@ void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
 		glPopAttrib();
 		}
 	
+	/* Chuva pelo painel: cada nuvem ligada joga água no seu ponto: */
+	if(extras.temChuva&&waterSpeed>0.0)
+		{
+		glPushAttrib(GL_ENABLE_BIT);
+		glDisable(GL_CULL_FACE);
+		Vector z=waterTable->getBaseTransform().inverseTransform(Vector(0,0,1));
+		Vector x=Geometry::normal(z);
+		Vector y=Geometry::cross(z,x);
+		x.normalize();
+		y.normalize();
+		for(int k=0;k<Extras::MAX_CHUVAS;++k)
+			{
+			if(extras.chuvas[k].ate<=extras.tempo)
+				continue;
+			Point centro=boxTransform.inverseTransform(Point(extras.chuvas[k].x,extras.chuvas[k].y,extras.referencia));
+			glVertexAttrib1fARB(1,GLfloat(0.7/waterSpeed));
+			glBegin(GL_POLYGON);
+			for(int i=0;i<24;++i)
+				{
+				Scalar angle=Scalar(2)*Math::Constants<Scalar>::pi*Scalar(i)/Scalar(24);
+				glVertex(centro+x*(Math::cos(angle)*Scalar(3))+y*(Math::sin(angle)*Scalar(3)));
+				}
+			glEnd();
+			}
+		glPopAttrib();
+		}
+
 	/* Jogos de água: cada nascente ativa joga água enquanto a rodada corre: */
 	if(extras.jogo!=Extras::SEM_JOGO&&extras.jogoFase==1&&waterSpeed>0.0)
 		{
@@ -778,6 +854,43 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
 				std::cout<<"Labirinto: a água chegou! ("<<extras.labRodadas<<" rodadas vencidas, "<<int(extras.labChegou-extras.labInicio)<<" s)"<<std::endl;
 			else if(extras.nPecas>0)
 				medeJogo(contextData); // armadilhas: a água não pode encostar nelas
+			}
+		/* Animais marinhos: a profundidade da água da chuva em cada célula do mapa, 2x por segundo */
+		static double aguaSimLeitura=0.0;
+		if(extras.querAguaSim()&&extras.celulasX()>0&&Vrui::getApplicationTime()-aguaSimLeitura>0.5)
+			{
+			aguaSimLeitura=Vrui::getApplicationTime();
+			GLint qw=0,qh=0,bw=0,bh=0;
+			waterTable->bindQuantityTexture(contextData);
+			glGetTexLevelParameteriv(GL_TEXTURE_RECTANGLE_ARB,0,GL_TEXTURE_WIDTH,&qw);
+			glGetTexLevelParameteriv(GL_TEXTURE_RECTANGLE_ARB,0,GL_TEXTURE_HEIGHT,&qh);
+			waterTable->bindBathymetryTexture(contextData);
+			glGetTexLevelParameteriv(GL_TEXTURE_RECTANGLE_ARB,0,GL_TEXTURE_WIDTH,&bw);
+			glGetTexLevelParameteriv(GL_TEXTURE_RECTANGLE_ARB,0,GL_TEXTURE_HEIGHT,&bh);
+			if(qw>2&&qh>2&&bw>1&&bh>1)
+				{
+				labFundo.resize(size_t(bw)*size_t(bh));
+				glGetTexImage(GL_TEXTURE_RECTANGLE_ARB,0,GL_RED,GL_FLOAT,&labFundo[0]);
+				waterTable->bindQuantityTexture(contextData);
+				labQuantidade.resize(size_t(qw)*size_t(qh));
+				glGetTexImage(GL_TEXTURE_RECTANGLE_ARB,0,GL_RED,GL_FLOAT,&labQuantidade[0]);
+				int gx=extras.celulasX(),gy=extras.celulasY();
+				extras.aguaSim.assign(size_t(gx)*size_t(gy),0.0f);
+				const GLfloat* cs=waterTable->getCellSize();
+				for(int cy=0;cy<gy;++cy)
+					for(int cx=0;cx<gx;++cx)
+						{
+						Point pb(extras.cantoMin()[0]+(cx+0.5f)*extras.celulaCm(),extras.cantoMin()[1]+(cy+0.5f)*extras.celulaCm(),extras.referencia);
+						Point pw=waterTable->getBaseTransform().transform(boxTransform.inverseTransform(pb));
+						int i=int((pw[0]-waterTable->getDomain().min[0])/cs[0]);
+						int j=int((pw[1]-waterTable->getDomain().min[1])/cs[1]);
+						if(i<1||j<1||i>=std::min(int(qw),int(bw))||j>=std::min(int(qh),int(bh)))
+							continue;
+						float b=0.25f*(labFundo[(j-1)*bw+i-1]+labFundo[(j-1)*bw+i]+labFundo[j*bw+i-1]+labFundo[j*bw+i]);
+						extras.aguaSim[size_t(cy)*gx+cx]=std::max(0.0f,labQuantidade[size_t(j)*qw+i]-b);
+						}
+				}
+			glBindTexture(GL_TEXTURE_RECTANGLE_ARB,0);
 			}
 		if(extras.jogo!=Extras::SEM_JOGO&&extras.jogoFase==1&&Vrui::getApplicationTime()-labLeitura>0.5)
 			{

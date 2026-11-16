@@ -33,7 +33,7 @@ ANIMAIS = ("peixes", "carros", "pessoas", "todos")
 TEMAS = os.path.join(D, "temas")
 TEMA_ATUAL = os.path.join(TEMAS, "atual.cpt")
 NOMES_TEMAS = {"classico": "Clássico", "vulcao": "Vulcão", "inverno": "Inverno", "marte": "Marte",
-               "deserto": "Deserto", "oceano": "Oceano", "arco-iris": "Arco-íris", "mapa": "Mapa de papel"}
+               "deserto": "Deserto", "oceano": "Oceano", "arco-iris": "Arco-íris"}
 
 
 class Erro(Exception):
@@ -393,6 +393,7 @@ PARAR_BRINCADEIRAS = {"tesouro": ("fossilFim", "labirintoFim", "jogoFim", "anima
                       "jogo": ("tesouroFim", "fossilFim", "labirintoFim", "animais nada"),
                       "animais": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim"),
                       "membros": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim"),
+                      "mar": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim"),
                       "mundo": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim"),
                       "foto": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim", "animais nada")}
 
@@ -585,7 +586,71 @@ def animais_situacao():
     if not linhas or not linhas[-1].startswith("Animais: "):
         return "nada"
     t = linhas[-1].split()[1]
-    return t if t in ANIMAIS or t in ("membros", "mundo") else "nada"
+    return t if t in ANIMAIS or t in ("membros", "mundo", "mar") else "nada"
+
+
+# ---------- animais marinhos à escolha (nadam no lago e na água da chuva) ----------
+
+# nome do comando: (rótulo, figurinha)
+ESPECIES = {"peixe": ("Peixes", "🐟"), "tubarao": ("Tubarões", "🦈"), "tartaruga": ("Tartarugas", "🐢"),
+            "aguaviva": ("Águas-vivas", "🪼"), "polvo": ("Polvos", "🐙"), "arraia": ("Arraias", "🐠")}
+MAR_PADRAO = {"peixe": 8, "tubarao": 1, "tartaruga": 2, "aguaviva": 2, "polvo": 1, "arraia": 1}
+MAX_BICHOS = 24
+
+
+def mar_escolhido():
+    """A última escolha de animais marinhos (ou a padrão)."""
+    e = estado().get("mar")
+    sel = dict(MAR_PADRAO)
+    if isinstance(e, dict):
+        sel = {k: max(0, min(MAX_BICHOS, int(e.get(k) or 0))) for k in ESPECIES}
+    return sel
+
+
+def mar(selecao=None):
+    """Solta os animais marinhos escolhidos: {"peixe": 8, "tubarao": 1, ...}. Sem escolha, a última.
+    Devolve a escolha usada (o total é limitado a 24)."""
+    sel = mar_escolhido() if selecao is None else {}
+    if selecao is not None:
+        for k in ESPECIES:
+            try:
+                sel[k] = max(0, min(MAX_BICHOS, int(selecao.get(k) or 0)))
+            except (TypeError, ValueError, AttributeError):
+                raise Erro("quantidade inválida")
+    falta = MAX_BICHOS
+    for k in ESPECIES:   # corta o que passar de 24, na ordem da lista
+        sel[k] = min(sel[k], falta)
+        falta -= sel[k]
+    if sum(sel.values()) == 0:
+        raise Erro("escolha pelo menos um animal")
+    _brincadeira("mar " + " ".join(f"{k}={n}" for k, n in sel.items() if n))
+    e = estado()
+    e["mar"] = sel
+    salva(e)
+    return sel
+
+
+# ---------- chuva pelo painel (além da mão aberta sobre a areia) ----------
+
+def chuva(fx, fy, segundos=8):
+    """Uma nuvem joga água no ponto (fx, fy), de 0 a 1 dentro da área iluminada (0, 0 = canto de
+    baixo, à esquerda, de quem olha a imagem do projetor)."""
+    try:
+        fx, fy, segundos = float(fx), float(fy), float(segundos)
+    except (TypeError, ValueError):
+        raise Erro("ponto inválido")
+    if not (0 <= fx <= 1 and 0 <= fy <= 1) or not 1 <= segundos <= 60:
+        raise Erro("ponto fora da areia")
+    if qual() != "rosto":
+        raise Erro("a areia não está aberta")
+    _comando(f"chuva {fx:.3f} {fy:.3f} {segundos:g}")
+
+
+def secar():
+    """Tira toda a água da areia (a da chuva e a dos jogos)."""
+    if qual() != "rosto":
+        raise Erro("a areia não está aberta")
+    _comando("secar")
 
 
 # ---------- membros do laboratório andando na areia (quem o Willbert está vendo) ----------

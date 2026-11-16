@@ -24,7 +24,7 @@ class Extras
 	public:
 	enum {MAX_AGENTES=24};
 	enum Modo {NADA=0,PEIXES=1,CARROS=2,TODOS=3,PESSOAS=4,MEMBROS=5,MUNDO=6}; // MUNDO: a cidade LAOB (Mundo.cpp) // TODOS = peixes, carrinhos e pessoas
-	enum {NUM_UNIFORMS=14};
+	enum {NUM_UNIFORMS=15};
 	enum {MAX_NOMES=8,MAX_LETRAS=8}; // membros do laboratório andando na areia, com o nome em cima
 	/* Efeito animado de cada tema de cor: */
 	enum Efeito {SEM_EFEITO=0,LAVA=1,NEVE=2,POEIRA=3,AREIA=4,ONDAS=5,BRILHO=6,CHUVA=7};
@@ -64,7 +64,7 @@ class Extras
 	/* Ligado: o shader precisa do código extra (tesouro, lago ou agentes): */
 	bool ativo(void) const
 		{
-		return tesouro||modo!=NADA||efeito!=SEM_EFEITO||labirinto||jogo!=SEM_JOGO;
+		return tesouro||modo!=NADA||efeito!=SEM_EFEITO||labirinto||jogo!=SEM_JOGO||temChuva;
 		}
 
 	void setArea(const double areaMin[2],const double areaMax[2],const OGTransform& cameraToBox);
@@ -133,6 +133,21 @@ class Extras
 	void jogoLeitura(const float* maxima,const float* media,float vx,float vy);
 	bool jogoPrecisaVelocidade(void) const {return jogo==BARCO&&jogoFase==1;}
 	void jogoPasso(float dt);
+	/* Animais marinhos: espécie = parte inteira do tipo (1 peixe, 4 tubarão, 5 tartaruga, 6 água-viva,
+	   7 polvo, 8 arraia). Nadam no lago (areia baixa) e na água da chuva (aguaSim, medida pelo Sandbox). */
+	enum {NUM_ESPECIES=6};
+	static const char* nomeEspecie(int k);    // "peixe", "tubarao", ...
+	static int codigoEspecie(int k);          // 1, 4, 5, 6, 7, 8
+	void mar(const int quantidades[NUM_ESPECIES]);
+	std::vector<float> aguaSim;               // profundidade da água da chuva por célula do mapa (cm)
+	bool querAguaSim(void) const {return modo==PEIXES||modo==TODOS;}
+	int celulasX(void) const {return gw;} int celulasY(void) const {return gh;}
+	float celulaCm(void) const {return celula;} const float* cantoMin(void) const {return bmin;}
+	/* Chuva pelo painel: até quatro nuvens que jogam água num ponto por alguns segundos */
+	enum {MAX_CHUVAS=4};
+	struct Chuva {float x,y; double ate;};
+	Chuva chuvas[MAX_CHUVAS]; bool temChuva;
+	void chove(float fx,float fy,float segundos); // fx, fy = 0..1 dentro da área iluminada
 	char nomes[MAX_NOMES][MAX_LETRAS+1]; int nNomes,giroNomes;
 	bool presente[MAX_NOMES]; // o Willbert está vendo esse membro no laboratório agora
 	int nFotos; // os primeiros nFotos nomes têm rosto no painel de rostos (na mesma ordem)

@@ -45,6 +45,9 @@ rm -f "$DEST"/gui-*.sh   # janelas dos atalhos da Área de Trabalho (substituíd
 rm -f "$DEST"/*.bak "$DEST/patch_brincar.py" "$DEST/gui-willbert-estado.sh"   # sobras de edições manuais
 chmod +x "$DEST/sandbox.sh"
 mkdir -p "$DEST/temas" && cp "$REPO"/areia/temas/*.cpt "$DEST/temas/"   # o tema escolhido (temas/atual.cpt) fica
+# o tema "mapa de papel" saiu em 16/11/2026: se era o escolhido, volta o clássico
+rm -f "$DEST/temas/mapa.cpt"
+[ "$(readlink "$DEST/temas/atual.cpt" 2>/dev/null)" = mapa.cpt ] && ln -sfn classico.cpt "$DEST/temas/atual.cpt"
 rm -f "$DEST/Sandbox.cpp.antes-area"  # sobra de versões antigas
 
 echo "[4/8] Python próprio (venv) com OpenCV e Flask"

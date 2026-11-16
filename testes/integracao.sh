@@ -64,6 +64,8 @@ confere "tesouro: situação" "areia-tesouro achou | grep -qiE 'escondido|achara
 confere "escavação de fóssil" "areia-fossil triceratops facil >/dev/null && sleep 2 && grep -q 'Fossil escondido' '$D/sandbox.log' && areia-fossil achou | grep -qiE 'enterrado|escavado'"
 confere "peixes e carrinhos" "areia-animais todos 12 >/dev/null && grep -q 'Animais: todos (12)' '$D/sandbox.log'"
 confere "mundo LAOB: cidade montada e bonecos com rotina" "areia-animais mundo >/dev/null && for _ in \$(seq 1 30); do grep -q '^Mundo: cidade montada' '$D/sandbox.log' && break; sleep 0.5; done; grep -q '^Animais: mundo' '$D/sandbox.log' && grep -q '^Mundo: cidade montada' '$D/sandbox.log' && curl -s -m 5 localhost:8090/estado | grep -q '\"animais\":\"mundo\"'"
+confere "animais marinhos à escolha" "areia-animais mar peixe=6 tubarao=1 tartaruga=1 aguaviva=1 polvo=1 arraia=1 >/dev/null && grep -q 'Animais: mar (11)' '$D/sandbox.log'"
+confere "chuva pelo painel e secar" "curl -s -m 5 -X POST -H 'Content-Type: application/json' -d '{\"x\":0.5,\"y\":0.5}' localhost:8090/chuva | grep -q '\"ok\":true' && sleep 1 && grep -q '^Chuva: nuvem' '$D/sandbox.log' && curl -s -m 5 -X POST -H 'Content-Type: application/json' -d '{\"secar\":true}' localhost:8090/chuva | grep -q '\"ok\":true' && sleep 1 && grep -q '^Chuva: a água foi seca' '$D/sandbox.log'"
 confere "pessoas andando" "areia-animais pessoas 8 >/dev/null && grep -q 'Animais: pessoas (8)' '$D/sandbox.log'"
 confere "labirinto de água liga" "areia-labirinto facil >/dev/null && sleep 1 && grep -q '^Labirinto: nascente' '$D/sandbox.log' && areia-labirinto placar | grep -qiE 'correndo|chegou'"
 confere "labirinto: a água chega ao alvo e é medida" "'$D/sandbox.sh' cmd labirintoTeste >/dev/null && for _ in \$(seq 1 40); do grep -q '^Labirinto: a água chegou' '$D/sandbox.log' && break; sleep 0.5; done; grep -q '^Labirinto: a água chegou' '$D/sandbox.log' && areia-labirinto placar | grep -q 'chegou'"
@@ -83,7 +85,7 @@ confere "jogo: parar" "areia-jogo parar >/dev/null && areia-jogo placar | grep -
 confere "parar brincadeiras" "areia-animais parar >/dev/null && areia-tesouro parar >/dev/null && areia-labirinto parar >/dev/null && areia-labirinto placar | grep -q 'não está ligado'"
 confere "desempenho medido no log" "grep -q '^Desempenho: ' '$D/sandbox.log' || { sleep 31; grep -q '^Desempenho: ' '$D/sandbox.log'; }"
 confere "log sem a enxurrada de 'Ran out of time'" "! grep -q 'Ran out of time' '$D/sandbox.log'"
-for t in vulcao inverno marte deserto oceano arco-iris mapa classico; do
+for t in vulcao inverno marte deserto oceano arco-iris classico; do
   confere "efeito do tema $t" "areia-tema $t >/dev/null && sleep 0.5 && [ \"\$(grep '^Efeito: ' '$D/sandbox.log' | tail -n 1)\" = 'Efeito: $t' ]"
 done
 confere "sem erro de shader com os efeitos" "! grep -qiE 'shader.*(error|erro)|GLSL|compile error' '$D/sandbox.log'"

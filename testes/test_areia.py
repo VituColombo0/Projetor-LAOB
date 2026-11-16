@@ -193,7 +193,8 @@ class Temas(Ambiente):
 
     def test_lista_e_padrao(self):
         self.assertEqual(self.areia.temas()[:2], ["classico", "vulcao"])
-        self.assertEqual(len(self.areia.temas()), 8)
+        self.assertEqual(len(self.areia.temas()), 7)   # o mapa de papel saiu em 16/11/2026
+        self.assertNotIn("mapa", self.areia.temas())
         self.assertEqual(self.areia.tema_atual(), "classico")
 
     def test_escolhe_com_acento_e_abreviado(self):
@@ -559,6 +560,42 @@ class MundoLaob(MembrosNaAreia):
         self.assertTrue(self.areia.membros_atualiza())
         self.assertEqual(self.cmds()[-1], "cmd mundo 0 2 - 8 GAZZIRO+ VICTOR+")
         self.assertFalse(self.areia.membros_atualiza())
+
+
+class MarEChuva(Ambiente):
+    def cmds(self):
+        return [c for c in self.comandos() if c.startswith("cmd")]
+
+    def test_animais_marinhos_a_escolha(self):
+        self.assertEqual(sorted(self.areia.ESPECIES), ["aguaviva", "arraia", "peixe", "polvo", "tartaruga", "tubarao"])
+        self.assertEqual(self.areia.mar_escolhido(), self.areia.MAR_PADRAO)
+        sel = self.areia.mar({"peixe": 5, "tubarao": 2, "polvo": 0})
+        self.assertEqual(sel, {"peixe": 5, "tubarao": 2, "tartaruga": 0, "aguaviva": 0, "polvo": 0, "arraia": 0})
+        self.assertEqual(self.cmds()[-1], "cmd mar peixe=5 tubarao=2")
+        self.assertIn("cmd jogoFim", self.cmds()[-5:])                       # uma brincadeira por vez
+        self.assertEqual(self.areia.mar_escolhido()["tubarao"], 2)          # a escolha fica guardada
+        self.areia.mar()                                                     # sem escolha: repete a última
+        self.assertEqual(self.cmds()[-1], "cmd mar peixe=5 tubarao=2")
+        sel = self.areia.mar({"peixe": 20, "arraia": 9})                     # no máximo 24 no total
+        self.assertEqual((sel["peixe"], sel["arraia"]), (20, 4))
+        with self.assertRaisesRegex(self.areia.Erro, "pelo menos um"):
+            self.areia.mar({"peixe": 0})
+        with self.assertRaisesRegex(self.areia.Erro, "inválida"):
+            self.areia.mar({"peixe": "muitos"})
+        escreve(os.path.join(self.D, "sandbox.log"), "Animais: mar (24)\n")
+        self.assertEqual(self.areia.animais_situacao(), "mar")
+
+    def test_chuva_e_secar(self):
+        self.areia.animais("peixes")                                         # abre a versão que aceita comandos
+        self.areia.chuva(0.25, 0.8)
+        self.assertEqual(self.cmds()[-1], "cmd chuva 0.250 0.800 8")
+        self.areia.chuva("0.5", "0.5", 20)
+        self.assertEqual(self.cmds()[-1], "cmd chuva 0.500 0.500 20")
+        for ruim in ((1.2, 0.5, 8), (0.5, -0.1, 8), ("x", 0.5, 8), (0.5, 0.5, 500)):
+            with self.assertRaises(self.areia.Erro):
+                self.areia.chuva(*ruim)
+        self.areia.secar()
+        self.assertEqual(self.cmds()[-1], "cmd secar")
 
 
 class Labirinto(Ambiente):

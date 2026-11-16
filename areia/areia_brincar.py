@@ -8,6 +8,7 @@
 
   areia-animais peixes       peixes nadando no lago (cave um buraco e ele vira lago)
   areia-animais carros       carrinhos andando pelos vales
+  areia-animais mar [peixe=8 tubarao=1 tartaruga=2 aguaviva=2 polvo=1 arraia=1]   animais marinhos à escolha
   areia-animais pessoas      pessoinhas passeando pela areia
   areia-animais mundo        o mundo LAOB: os membros vivendo numa cidadezinha (fotos em membros/)
   areia-animais todos        tudo junto (pode pôr a quantidade: areia-animais peixes 15)
@@ -68,6 +69,18 @@ def animais(args):
             print("Moram lá: " + ", ".join(n.capitalize() + (" (no laboratório agora)" if n in presentes else "") for n in nomes) + ".")
         else:
             print(f"Sem fotos de membros: só moradores sem nome. Fotos em {areia.PASTA_MEMBROS} (Nome.jpg).")
+    elif pedido == "mar":
+        sel = None
+        if len(args) > 1:
+            sel = {}
+            for par in args[1:]:
+                nome, _, n = par.partition("=")
+                if nome not in areia.ESPECIES or not n.isdigit():
+                    raise areia.Erro("use: areia-animais mar peixe=8 tubarao=1 (espécies: " + ", ".join(areia.ESPECIES) + ")")
+                sel[nome] = int(n)
+        sel = areia.mar(sel)
+        print("No mar: " + ", ".join(f"{n} {areia.ESPECIES[k][0].lower()}" for k, n in sel.items() if n)
+              + ". Eles nadam no lago e na água da chuva.")
     else:
         print("Soltando os animais...")
         t, n = areia.animais(pedido, args[1] if len(args) > 1 else None)

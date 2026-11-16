@@ -35,6 +35,12 @@ Extras::Extras(void)
 		tipo[i]=0.0f;
 		}
 	nNomes=giroNomes=nFotos=0;
+	temChuva=false;
+	for(int k=0;k<MAX_CHUVAS;++k)
+		{
+		chuvas[k].x=chuvas[k].y=0.0f;
+		chuvas[k].ate=-1.0;
+		}
 	mundoPedido=false;
 	camX=camAlvo=0.0f;
 	camTroca=0.0;
@@ -139,10 +145,68 @@ bool Extras::dentro(float x,float y,float margem) const
 	return x>bmin[0]+margem&&x<bmax[0]-margem&&y>bmin[1]+margem&&y<bmax[1]-margem;
 	}
 
+namespace {
+inline bool aquatico(float t) {return t>0.5f&&(t<2.0f||t>=4.0f);}  // peixe e os outros animais marinhos
+inline bool terrestre(float t) {return t>=2.0f&&t<4.0f;}           // carrinho ou pessoa
+inline bool ehPessoa(float t) {return t>=3.0f&&t<4.0f;}
+}
+
+const char* Extras::nomeEspecie(int k)
+	{
+	static const char* nomes[NUM_ESPECIES]={"peixe","tubarao","tartaruga","aguaviva","polvo","arraia"};
+	return k>=0&&k<NUM_ESPECIES?nomes[k]:"";
+	}
+
+int Extras::codigoEspecie(int k)
+	{
+	static const int codigos[NUM_ESPECIES]={1,4,5,6,7,8};
+	return k>=0&&k<NUM_ESPECIES?codigos[k]:1;
+	}
+
+void Extras::mar(const int quantidades[NUM_ESPECIES])
+	{
+	/* O mar escolhido no painel: tantos de cada espécie (até MAX_AGENTES no total) */
+	povoa(PEIXES,0);
+	int n=0;
+	for(int k=0;k<NUM_ESPECIES;++k)
+		for(int c=0;c<quantidades[k]&&n<MAX_AGENTES;++c,++n)
+			{
+			tipo[n]=float(codigoEspecie(k))+0.05f+0.9f*aleatorio();
+			vel[n]=0.0f;
+			if(mapaOk)
+				nasce(n);
+			}
+	quantos=n;
+	}
+
+void Extras::chove(float fx,float fy,float segundos)
+	{
+	/* uma nuvem nova no lugar da que acaba primeiro */
+	int livre=0;
+	for(int k=1;k<MAX_CHUVAS;++k)
+		if(chuvas[k].ate<chuvas[livre].ate)
+			livre=k;
+	chuvas[livre].x=bmin[0]+std::max(0.05f,std::min(0.95f,fx))*(bmax[0]-bmin[0]);
+	chuvas[livre].y=bmin[1]+std::max(0.05f,std::min(0.95f,fy))*(bmax[1]-bmin[1]);
+	chuvas[livre].ate=tempo+std::max(1.0f,std::min(60.0f,segundos));
+	temChuva=true;
+	}
+
 bool Extras::agua(float x,float y) const
 	{
 	float h=altura(x,y);
-	return h>SEM+1.0f&&h<nivelAgua&&dentro(x,y,1.0f);
+	if(h<SEM+1.0f||!dentro(x,y,1.0f))
+		return false;
+	if(h<nivelAgua)
+		return true; // lago: areia baixa
+	/* água da chuva (a que cai da mão aberta ou das nuvens do painel): os animais marinhos entram nela */
+	if(aguaSim.size()==size_t(gw)*size_t(gh)&&nivelAgua>SEM+1.0f)
+		{
+		int cx=int((x-bmin[0])/celula),cy=int((y-bmin[1])/celula);
+		if(cx>=0&&cy>=0&&cx<gw&&cy<gh&&aguaSim[cy*gw+cx]>=0.45f)
+			return true;
+		}
+	return false;
 	}
 
 bool Extras::aguaLarga(float x,float y,float raio) const
@@ -255,7 +319,7 @@ int Extras::efeitoDoTema(const char* nome)
 	{
 	static const struct {const char* tema;int efeito;} tabela[]={
 		{"classico",SEM_EFEITO},{"vulcao",LAVA},{"inverno",NEVE},{"marte",POEIRA},{"deserto",AREIA},
-		{"oceano",ONDAS},{"arco-iris",BRILHO},{"mapa",SEM_EFEITO},{"nada",SEM_EFEITO}};
+		{"oceano",ONDAS},{"arco-iris",BRILHO},{"nada",SEM_EFEITO}};
 	for(unsigned i=0;i<sizeof(tabela)/sizeof(tabela[0]);++i)
 		if(std::strcmp(nome,tabela[i].tema)==0)
 			return tabela[i].efeito;
@@ -332,7 +396,7 @@ bool Extras::horaDeReesconder(void) const
 
 void Extras::nasce(int i)
 	{
-	bool peixe=tipo[i]<2.0f;
+	bool peixe=aquatico(tipo[i]);
 	float x,y;
 	if(!sorteiaPonto(peixe,x,y))
 		{
@@ -342,7 +406,11 @@ void Extras::nasce(int i)
 	ax[i]=x;
 	ay[i]=y;
 	ang[i]=aleatorio()*2.0f*PI;
-	vb[i]=peixe?(4.0f+aleatorio()*3.0f):tipo[i]>=3.0f?(2.2f+aleatorio()*1.4f):(6.0f+aleatorio()*4.0f); // pessoa anda devagar
+	int esp=int(tipo[i]);
+	/* cada um no seu ritmo: tubarão rápido, tartaruga e polvo devagar, água-viva quase parada */
+	vb[i]=esp==4?(5.0f+aleatorio()*1.8f):esp==5?(1.7f+aleatorio()*0.9f):esp==6?(0.8f+aleatorio()*0.6f):
+	      esp==7?(1.5f+aleatorio()*1.0f):esp==8?(2.6f+aleatorio()*1.0f):
+	      peixe?(4.0f+aleatorio()*3.0f):ehPessoa(tipo[i])?(2.2f+aleatorio()*1.4f):(6.0f+aleatorio()*4.0f);
 	vel[i]=vb[i];
 	parado[i]=0.0f;
 	}
@@ -466,6 +534,12 @@ static float difAng(float a) // ângulo em -pi..pi
 void Extras::passo(float dt)
 	{
 	tempo+=dt;
+	if(temChuva)
+		{
+		temChuva=false;
+		for(int k=0;k<MAX_CHUVAS;++k)
+			temChuva=temChuva||chuvas[k].ate>tempo;
+		}
 	if(!mapaOk||modo==NADA)
 		return;
 	dt=std::min(dt,0.1f);
@@ -480,7 +554,7 @@ void Extras::passo(float dt)
 			continue;
 		if(modo==MUNDO&&(escondido[i]||nPecas==0))
 			continue; // dentro de uma construção (ou a cidade ainda não foi montada)
-		bool peixe=tipo[i]<2.0f;
+		bool peixe=aquatico(tipo[i]);
 		if(vel[i]==0.0f)
 			{
 			if(aleatorio()<dt) // tenta aparecer de vez em quando
@@ -501,7 +575,7 @@ void Extras::passo(float dt)
 			int n=0;
 			for(int j=0;j<quantos;++j)
 				{
-				if(j==i||tipo[j]<0.5f||tipo[j]>=2.0f||vel[j]==0.0f)
+				if(j==i||!aquatico(tipo[j])||int(tipo[j])!=int(tipo[i])||vel[j]==0.0f) // cardume só com os da mesma espécie
 					continue;
 				float dx=ax[j]-ax[i],dy=ay[j]-ay[i],d2=dx*dx+dy*dy;
 				if(d2<0.01f||d2>100.0f)
@@ -578,7 +652,7 @@ void Extras::passo(float dt)
 			const float desvios[]={0.0f,0.35f,-0.35f,0.7f,-0.7f,1.1f,-1.1f};
 			/* Pessoa (tipo 3): mesmo jeito de andar do carrinho, com corpo menor, passo curto e um
 			   vai-e-vem de quem passeia */
-			const bool pessoa=tipo[i]>=3.0f;
+			const bool pessoa=ehPessoa(tipo[i]);
 			const float rc=pessoa?1.7f:2.2f,olha=pessoa?3.5f:4.0f,perto=pessoa?5.5f:7.0f;
 			float melhor=1e9f,escolha=PI,hEscolha=h0;
 			for(int k=0;k<7;++k)
@@ -604,7 +678,7 @@ void Extras::passo(float dt)
 					nota=0.4f*std::abs(h-h0)+0.9f*std::abs(desvios[k]-rumo);
 					}
 				for(int j=0;j<quantos;++j)
-					if(j!=i&&tipo[j]>=2.0f&&vel[j]!=0.0f)
+					if(j!=i&&terrestre(tipo[j])&&vel[j]!=0.0f)
 						{
 						float d=std::sqrt((ax[j]-px)*(ax[j]-px)+(ay[j]-py)*(ay[j]-py));
 						if(d<perto)
@@ -622,7 +696,7 @@ void Extras::passo(float dt)
 			float frente=1e9f;
 			for(int j=0;j<i;++j)
 				{
-				if(tipo[j]<2.0f||vel[j]==0.0f)
+				if(!terrestre(tipo[j])||vel[j]==0.0f)
 					continue;
 				float dx=ax[j]-ax[i],dy=ay[j]-ay[i];
 				float adiante=dx*c0+dy*s0,lado=-dx*s0+dy*c0;
@@ -657,10 +731,10 @@ void Extras::passo(float dt)
 			/* Carrinhos lado a lado (o freio só vale para o da frente): empurra para se separarem */
 			for(int j=0;j<quantos;++j)
 				{
-				if(j==i||tipo[j]<2.0f||vel[j]==0.0f)
+				if(j==i||!terrestre(tipo[j])||vel[j]==0.0f)
 					continue;
 				float dx=ax[i]-ax[j],dy=ay[i]-ay[j],d2=dx*dx+dy*dy;
-				float junto=(pessoa&&tipo[j]>=3.0f)?3.8f:4.5f; // duas pessoas chegam mais perto que dois carros
+				float junto=(pessoa&&ehPessoa(tipo[j]))?3.8f:4.5f; // duas pessoas chegam mais perto que dois carros
 				if(d2<junto*junto&&d2>1e-4f) // ~4,5 cm (um carrinho tem ~4,3 x 2,1 cm)
 					{
 					float d=std::sqrt(d2),empurra=std::min(0.5f,(junto-d)*0.25f);
@@ -687,7 +761,7 @@ void Extras::passo(float dt)
 /* ----------------------------------------------------------------- shader */
 
 const char* Extras::nomesUniforms[NUM_UNIFORMS]={"extrasCaixa","extrasAg","extrasTesouro","extrasInfo","extrasEfeito",
-	"extrasLab","extrasLab2","extrasJogo","extrasJogoInfo","extrasNomes","extrasNomesCfg","extrasRostos","extrasMundo","extrasMundo2"};
+	"extrasLab","extrasLab2","extrasJogo","extrasJogoInfo","extrasNomes","extrasNomesCfg","extrasRostos","extrasMundo","extrasMundo2","extrasChuva"};
 
 const char* Extras::glslVertexUniforms=R"GLSL(
 uniform mat4 extrasCaixa; // espaço da câmera -> caixa (cm)
@@ -709,6 +783,8 @@ uniform vec4 extrasJogo[32]; // jogos de água: por peça (x, y, raio, tipo) e (
 uniform vec4 extrasJogoInfo; // jogo (0 nenhum), fase, segundos na fase, vencedor ou próximo portão
 uniform float extrasNomes[72]; // membros: por pessoa, nº de letras e 8 letras (desenho 3x5 em bits)
 uniform vec4 extrasNomesCfg;  // quantos nomes, giro do texto (quartos de volta), quantos têm rosto no painel
+uniform vec4 extrasChuva[4]; // nuvens de chuva do painel: x, y (cm), ligada (1)
+float extrasMarca;          // 1 onde há um animal marinho (o shader da água o deixa à vista)
 uniform vec4 extrasMundo;   // cidade LAOB: deslocamento da imagem (cm), largura e altura da caixa, ligada (1)
 uniform vec4 extrasMundo2;  // canto da caixa (x, y)
 uniform sampler2D extrasRostos; // painel de rostos dos membros (8 quadros lado a lado, com transparência)
@@ -729,6 +805,14 @@ float exRuido(vec2 p)
 	f=f*f*(3.0-2.0*f);
 	return mix(mix(exHash(i),exHash(i+vec2(1.0,0.0)),f.x),mix(exHash(i+vec2(0.0,1.0)),exHash(i+vec2(1.0,1.0)),f.x),f.y);
 	}
+/* Um osso: haste entre dois pontos, mais grossa nas juntas */
+float exOsso(vec2 p,vec2 a,vec2 b,float w)
+	{
+	vec2 pa=p-a;
+	vec2 ba=b-a;
+	float d=length(pa-ba*clamp(dot(pa,ba)/dot(ba,ba),0.0,1.0));
+	return max(smoothstep(w,w*0.4,d),smoothstep(w*1.8,w*0.9,min(length(pa),length(p-b))));
+	}
 /* Pontinhos que andam (neve, brilhos): grade de células com no máximo um ponto cada */
 float exPontos(vec2 p,float tamanho,float chance)
 	{
@@ -746,6 +830,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 	/* Projetor-LAOB: efeito do tema, lago, tesouro e animais sobre o relevo */
 	vec3 ep=extrasPos;
 	float et=extrasInfo.x;
+	extrasMarca=0.0;
 	float ef=extrasEfeito.x;
 	float ref=extrasEfeito.y;
 	if(extrasEfeito.w>0.5)
@@ -824,47 +909,76 @@ const char* Extras::glslFragmentMain=R"GLSL(
 		}
 	if(extrasInfo.z>0.5)
 		{
-		float d=distance(ep.xy,extrasTesouro.xy);
-		if(d<extrasTesouro.z)
+		/* Tesouro e fósseis: só o objeto aparece onde a areia foi cavada até ele (sem disco em volta) */
+		vec2 q=(ep.xy-extrasTesouro.xy)/extrasTesouro.z;
+		float r=length(q);
+		float falta=ep.z-extrasTesouro.w;
+		bool achou=extrasInfo.y>0.5;
+		bool visto=falta<=0.0||achou;
+		if(max(abs(q.x),abs(q.y))<1.3)
 			{
-			float falta=ep.z-extrasTesouro.w;
 			if(extrasInfo.z<1.5)
 				{
-				if(falta<=0.0||extrasInfo.y>0.5)
+				/* Baú de madeira visto de cima: tábuas, cintas de ferro com rebites, cantoneiras e fechadura;
+				   achado, a tampa abre e aparecem as moedas */
+				vec2 p=q*1.25;
+				float corpo=exCaixa(p,vec2(0.8,0.52),0.07);
+				if(visto)
 					{
-					vec2 q=(ep.xy-extrasTesouro.xy)/extrasTesouro.z;
-					float brilho=0.75+0.25*sin(et*6.0-length(q)*8.0);
-					vec3 cor=vec3(0.95,0.75,0.15)*brilho;
-				if(abs(q.x)<0.7&&abs(q.y)<0.45)
+					if(corpo<0.0)
+						{
+						float veio=exRuido(vec2(p.x*4.0,p.y*46.0))*0.6+exRuido(p*90.0)*0.4;
+						vec3 cor=mix(vec3(0.33,0.18,0.07),vec3(0.56,0.34,0.15),veio);
+						cor*=mix(0.62,1.0,smoothstep(0.0,0.04,abs(fract(p.y*4.8+0.5)-0.5)-0.02));     // frestas entre as tábuas
+						float cinta=abs(abs(p.x)-0.5);
+						if(cinta<0.075)
+							{
+							cor=mix(vec3(0.2,0.2,0.19),vec3(0.46,0.45,0.42),exRuido(p*34.0));              // ferro batido
+							if(distance(vec2(cinta,fract(p.y*3.4)),vec2(0.0,0.5))<0.035)
+								cor=vec3(0.72,0.68,0.55);                                                  // rebites
+							}
+						if(abs(p.x)>0.66&&abs(p.y)>0.38)
+							cor=mix(vec3(0.5,0.38,0.12),vec3(0.82,0.66,0.26),exRuido(p*40.0));             // cantoneiras de latão
+						if(achou&&p.y>0.04)
+							{
+							/* tampa aberta: moedas de ouro que cintilam */
+							float moeda=exPontos(p*11.0,0.42,0.92);
+							cor=mix(vec3(0.42,0.26,0.06),vec3(1.0,0.84,0.3),moeda)*(0.85+0.15*sin(et*7.0+p.x*23.0+p.y*17.0));
+							}
+						else
+							{
+							if(abs(p.y-0.04)<0.018)
+								cor*=0.4;                                                                  // linha da tampa
+							if(abs(p.x)<0.1&&abs(p.y+0.03)<0.13)
+								cor=length(p-vec2(0.0,-0.05))<0.036?vec3(0.08):mix(vec3(0.6,0.46,0.14),vec3(0.9,0.74,0.3),exRuido(p*50.0)); // fechadura
+							}
+						cor*=mix(1.0,0.55,smoothstep(-0.06,0.0,corpo));                                    // contorno
+						cor*=0.82+0.3*smoothstep(-0.6,0.5,p.y-p.x*0.3);                                    // luz de um lado
+						baseColor=vec4(cor,1.0);
+						}
+					else if(exCaixa(p-vec2(0.08,-0.08),vec2(0.8,0.52),0.07)<0.0)
+						baseColor.rgb*=0.55;                                                               // sombra na areia
+					if(achou)
+						baseColor.rgb+=vec3(1.0,0.9,0.5)*pow(max(0.0,sin(atan(q.y,q.x)*7.0+et*2.0)),40.0)*smoothstep(1.25,0.3,r);
+					}
+				else if(falta<2.5&&corpo<0.25)
 					{
-					cor=vec3(0.45,0.25,0.08);
-					if(abs(q.x)>0.6||abs(q.y)>0.37||abs(q.y)<0.05)
-						cor=vec3(1.0,0.8,0.2)*brilho;
-					if(abs(q.x)<0.08&&abs(q.y)<0.12)
-						cor=vec3(0.15);
+					/* perto: grãozinhos dourados piscando na areia em cima dele */
+					float pisca=exPontos(ep.xy*1.4+vec2(floor(et*2.5)*3.7,floor(et*2.5)*1.3),0.16,0.3);
+					baseColor.rgb=mix(baseColor.rgb,vec3(1.0,0.88,0.4),pisca*(1.0-falta/2.5));
 					}
-					float estrela=pow(max(0.0,sin(atan(q.y,q.x)*6.0+et*2.0)),30.0)*(1.0-length(q));
-					baseColor=vec4(cor+vec3(estrela),1.0);
-					}
-				else if(falta<2.5)
-					baseColor=mix(baseColor,vec4(1.0,0.82,0.25,1.0),(1.0-falta/2.5)*(0.35+0.25*sin(et*5.0)));
 				}
 			else
 				{
-				vec2 q=(ep.xy-extrasTesouro.xy)/extrasTesouro.z;
-				float r=length(q);
-				if(falta<=0.0||extrasInfo.y>0.5)
+				/* Fóssil: só os ossos, cor de marfim manchado, meio presos na areia */
+				if(visto)
 					{
-					float ru=exRuido(q*7.0);
-					vec3 rocha=mix(vec3(0.30,0.26,0.21),vec3(0.40,0.34,0.27),ru);
-					float fissura=smoothstep(0.08,0.0,abs(sin(q.y*16.0+ru*2.0)));
-					rocha=mix(rocha,vec3(0.18,0.14,0.11),fissura*0.5);
-
 					float osso=0.0;
 					int tf=int(extrasInfo.z+0.5);
 					if(tf<=2)
 						{
-						vec2 qc=q-vec2(0.15,-0.05);
+						/* Tiranossauro inteiro, de lado: crânio, pescoço, espinha até a cauda, costelas, bacia, perna e bracinho */
+						vec2 qc=(q-vec2(0.56,0.24))*2.1;
 						float cabeca=smoothstep(0.40,0.32,length(qc*vec2(1.2,1.7)));
 						float orbita=smoothstep(0.06,0.09,length((qc-vec2(0.06,0.12))*vec2(1.3,1.0)));
 						float narina=smoothstep(0.04,0.07,length((qc-vec2(0.25,0.06))*vec2(1.2,1.0)));
@@ -872,9 +986,25 @@ const char* Extras::glslFragmentMain=R"GLSL(
 						float dentes=abs(sin(qc.x*45.0))*boca;
 						float cranio=max(0.0,cabeca*orbita*narina-boca*0.8)+dentes*0.9;
 						float mand=smoothstep(0.06,0.02,abs(qc.y+0.16+qc.x*0.12))*step(-0.25,qc.x)*step(qc.x,0.30);
-						float vert=smoothstep(0.06,0.02,abs(q.y+0.1+q.x*0.15))*step(-0.85,q.x)*step(q.x,-0.1);
-						float cost=abs(sin(q.x*22.0))*smoothstep(0.28,0.0,abs(q.y+0.25))*step(-0.75,q.x)*step(q.x,-0.15);
-						osso=max(max(cranio,mand),max(vert,cost));
+						osso=max(cranio,mand);
+						osso=max(osso,exOsso(q,vec2(0.3,0.1),vec2(0.44,0.2),0.04));                        // pescoço
+						for(int k=0;k<12;++k)
+							{
+							float fk=float(k);
+							vec2 v=vec2(0.3-0.105*fk,0.1-0.004*fk*fk);                                     // espinha e cauda caindo
+							osso=max(osso,smoothstep(0.055-0.002*fk,0.02,distance(q,v)));
+							}
+						for(int k=0;k<5;++k)
+							{
+							float fk=float(k);
+							float x0=0.24-0.095*fk;
+							osso=max(osso,exOsso(q,vec2(x0,0.07-0.004*fk),vec2(x0-0.07,-0.2+0.035*abs(fk-1.5)),0.02)); // costelas
+							}
+						osso=max(osso,smoothstep(0.14,0.08,length((q-vec2(-0.28,0.0))*vec2(1.0,1.5))));     // bacia
+						osso=max(osso,exOsso(q,vec2(-0.28,-0.02),vec2(-0.17,-0.38),0.042));                // fêmur
+						osso=max(osso,exOsso(q,vec2(-0.17,-0.38),vec2(-0.31,-0.7),0.03));                  // tíbia
+						osso=max(osso,exOsso(q,vec2(-0.31,-0.7),vec2(-0.1,-0.77),0.024));                  // pé
+						osso=max(osso,exOsso(q,vec2(0.2,-0.04),vec2(0.31,-0.2),0.016));                    // bracinho
 						}
 					else if(tf==3)
 						{
@@ -905,21 +1035,25 @@ const char* Extras::glslFragmentMain=R"GLSL(
 						osso=max(max(d1,d2),max(d3,calcanhar));
 						}
 
-					vec3 corOsso=mix(vec3(0.92,0.89,0.78),vec3(0.78,0.72,0.60),ru);
-					vec3 fossil=mix(rocha,corOsso,clamp(osso,0.0,1.0));
-
-					float aura=extrasInfo.y>0.5?(0.75+0.25*sin(et*5.0))*(1.0-r):0.0;
-					float brilho=pow(max(0.0,sin(atan(q.y,q.x)*6.0+et*1.8)),25.0)*(1.0-r)*0.8;
-					baseColor=vec4(fossil+vec3(aura*0.35,aura*0.28,aura*0.1)+vec3(brilho),1.0);
+					osso=clamp(osso,0.0,1.0);
+					float miolo=smoothstep(0.35,0.62,osso);
+					vec3 marfim=mix(vec3(0.94,0.9,0.78),vec3(0.66,0.57,0.43),exRuido(q*22.0)*0.55+exRuido(q*75.0)*0.45);
+					marfim*=0.72+0.28*osso;                                                                // bordas mais escuras: volume
+					baseColor.rgb*=1.0-0.4*smoothstep(0.02,0.3,osso)*(1.0-miolo);                          // sombra em volta de cada osso
+					baseColor.rgb=mix(baseColor.rgb,marfim,miolo);
+					if(achou)
+						baseColor.rgb+=vec3(0.3,0.24,0.1)*(0.6+0.4*sin(et*5.0))*miolo;
 					}
 				else if(falta<3.0)
 					{
+					/* perto: o quadro de escavação (estacas nos cantos e barbante esticado) */
 					float prox=1.0-falta/3.0;
-					float gridX=smoothstep(0.05,0.0,abs(fract(q.x*3.5)-0.5));
-					float gridY=smoothstep(0.05,0.0,abs(fract(q.y*3.5)-0.5));
-					float grid=(gridX+gridY)*(1.0-r)*prox;
-					vec3 ambar=vec3(0.85,0.68,0.42);
-					baseColor=mix(baseColor,vec4(ambar+vec3(grid*0.4),1.0),prox*(0.35+0.25*sin(et*4.0)));
+					float lado=max(abs(q.x),abs(q.y));
+					float corda=smoothstep(0.03,0.0,abs(lado-0.95));
+					corda=max(corda,0.5*step(lado,0.95)*max(smoothstep(0.02,0.0,abs(abs(q.x)-0.32)),smoothstep(0.02,0.0,abs(abs(q.y)-0.32))));
+					baseColor.rgb=mix(baseColor.rgb,vec3(0.97,0.93,0.8),corda*prox*0.75);
+					if(distance(abs(q),vec2(0.95))<0.07)
+						baseColor.rgb=mix(baseColor.rgb,vec3(0.5,0.32,0.14),prox);
 					}
 				}
 			}
@@ -1376,6 +1510,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			float sombra=(fs.x*fs.x)/5.3+(fs.y*fs.y)/0.9;
 			if(corpo<1.0||cauda||nad)
 				{
+				extrasMarca=1.0;
 				vec3 pc=cor;
 				if(corpo<1.0)
 					{
@@ -1411,14 +1546,137 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				baseColor.rgb=mix(baseColor.rgb,vec3(0.9,0.97,1.0),clamp(rastro*0.35+bolhas*0.8,0.0,1.0));
 				}
 			}
+		else if(a.w>=4.0)
+			{
+			/* Outros animais marinhos (espécie = parte inteira): tubarão, tartaruga, água-viva, polvo e arraia */
+			float fase=float(i)*1.7;
+			vec3 cb=baseColor.rgb;
+			bool desenhou=true;
+			if(a.w<5.0)
+				{
+				/* tubarão: corpo comprido cinza-azulado que serpenteia, cauda em meia-lua, nadadeiras e barbatana */
+				float onda=0.3*sin(et*5.0+l.x*0.9+fase)*smoothstep(1.5,-3.5,l.x);
+				vec2 f=vec2(l.x,l.y+onda);
+				float corpoT=(f.x*f.x)/11.5+(f.y*f.y)/(1.05*1.05*(1.0-0.55*clamp(-f.x/3.4,0.0,1.0)));
+				bool caudaT=f.x<-3.0&&f.x>-4.4&&abs(f.y)<(-f.x-3.0)*1.1&&!(f.x<-3.9&&abs(f.y)<(-f.x-3.9)*1.0);
+				bool peitoral=f.x>-0.2&&f.x<1.0&&abs(f.y)>0.8&&abs(f.y)<0.8+(1.0-f.x)*1.1&&abs(f.y)<2.1;
+				if(corpoT<1.0)
+					{
+					cb=mix(vec3(0.42,0.5,0.58),vec3(0.2,0.26,0.33),smoothstep(0.0,0.9,abs(f.y)));
+					cb=mix(cb,vec3(0.12,0.15,0.2),smoothstep(0.18,0.05,abs(f.y))*step(-1.0,f.x)*step(f.x,0.4));     // barbatana de cima
+					if(distance(f,vec2(2.5,0.5*sign(f.y)))<0.13)
+						cb=vec3(0.02);                                                                      // olhos
+					cb*=mix(1.0,0.6,smoothstep(0.82,1.0,corpoT));
+					}
+				else if(caudaT||peitoral)
+					cb=vec3(0.26,0.32,0.4);
+				else
+					desenhou=false;
+				}
+			else if(a.w<6.0)
+				{
+				/* tartaruga: casco com gomos, cabeça e quatro nadadeiras que remam */
+				float rema=0.35*sin(et*3.0+fase);
+				float casco=length(l/vec2(1.9,1.5));
+				float cabecaT=length((l-vec2(2.3,0.0))/vec2(0.62,0.5));
+				float nadF=length((vec2(l.x-1.2-rema*0.4,abs(l.y)-1.75))/vec2(0.85,0.42));
+				float nadT=length((vec2(l.x+1.4+rema*0.3,abs(l.y)-1.35))/vec2(0.6,0.35));
+				if(casco<1.0)
+					{
+					vec2 gomo=fract(l*0.95+vec2(0.5*step(0.5,fract(l.y*0.475)),0.0))-0.5;
+					cb=mix(vec3(0.2,0.42,0.2),vec3(0.5,0.42,0.18),fract(a.w)*0.8);
+					cb*=mix(0.6,1.0,smoothstep(0.0,0.12,0.5-max(abs(gomo.x),abs(gomo.y))));
+					cb*=mix(1.15,0.7,smoothstep(0.3,1.0,casco));
+					}
+				else if(cabecaT<1.0||nadF<1.0||nadT<1.0)
+					cb=distance(l,vec2(2.5,0.25*sign(l.y)))<0.1?vec3(0.02):vec3(0.45,0.6,0.32);
+				else
+					desenhou=false;
+				}
+			else if(a.w<7.0)
+				{
+				/* água-viva: sombrinha que pulsa, quase transparente, e fios compridos atrás */
+				float pulso=1.0+0.14*sin(et*2.6+fase);
+				float dAv=length(l/vec2(1.35*pulso,1.35/pulso));
+				vec3 corAv=mix(vec3(1.0,0.6,0.85),vec3(0.65,0.6,1.0),fract(a.w));
+				float fio=0.0;
+				for(int k=0;k<4;++k)
+					{
+					float yk=(float(k)-1.5)*0.55;
+					fio=max(fio,smoothstep(0.14,0.03,abs(l.y-yk-0.3*sin(l.x*1.6+et*2.5+float(k)+fase)))*step(l.x,-0.6)*smoothstep(-5.0,-1.0,l.x));
+					}
+				if(dAv<1.0)
+					cb=mix(cb,corAv+vec3(0.3)*smoothstep(1.0,0.2,dAv),0.55+0.3*smoothstep(0.75,1.0,dAv));
+				else if(fio>0.05)
+					cb=mix(cb,corAv,fio*0.7);
+				else
+					desenhou=false;
+				}
+			else if(a.w<8.0)
+				{
+				/* polvo: cabeça redonda com dois olhos e oito braços que ondulam */
+				float dP=length(l/vec2(1.25,1.05));
+				vec3 corP=mix(vec3(0.85,0.35,0.3),vec3(0.6,0.3,0.7),fract(a.w));
+				float braco=0.0;
+				float angP=atan(l.y,l.x);
+				float rP=length(l);
+				for(int k=0;k<8;++k)
+					{
+					float ak=float(k)*0.7854+0.39+0.25*sin(et*2.0+float(k)*1.3+fase);
+					float dAng=abs(mod(angP-ak+3.1416,6.2832)-3.1416);
+					braco=max(braco,smoothstep(0.22,0.05,dAng*rP+0.0*rP)*step(1.0,rP)*smoothstep(3.6,2.2,rP+0.3*sin(rP*3.0-et*3.0+float(k))));
+					}
+				if(dP<1.0)
+					{
+					cb=corP*mix(1.2,0.7,smoothstep(0.2,1.0,dP));
+					if(distance(l,vec2(0.55,0.42*sign(l.y)))<0.2)
+						cb=distance(l,vec2(0.62,0.42*sign(l.y)))<0.1?vec3(0.02):vec3(0.97);
+					}
+				else if(braco>0.3)
+					cb=corP*0.85;
+				else
+					desenhou=false;
+				}
+			else
+				{
+				/* arraia: corpo em losango com as asas batendo e um rabo fino */
+				float bate=0.25*sin(et*3.2+fase);
+				vec2 f=vec2(l.x,l.y*(1.0+bate*smoothstep(0.4,2.4,abs(l.y))));
+				float losango=abs(f.x)/2.0+abs(f.y)/2.5;
+				bool rabo=f.x<-1.6&&f.x>-5.0&&abs(f.y-0.25*sin(f.x*1.4+et*3.0+fase))<0.11;
+				if(losango<1.0)
+					{
+					cb=mix(vec3(0.45,0.42,0.36),vec3(0.26,0.3,0.4),fract(a.w));
+					cb*=mix(1.2,0.65,smoothstep(0.2,1.0,losango));
+					cb+=vec3(0.25)*exPontos(f*1.6,0.2,0.5)*0.4;                                              // pintas
+					if(distance(f,vec2(1.2,0.45*sign(f.y)))<0.12)
+						cb=vec3(0.02);
+					}
+				else if(rabo)
+					cb=vec3(0.24,0.26,0.32);
+				else
+					desenhou=false;
+				}
+			if(desenhou)
+				{
+				extrasMarca=1.0;
+				baseColor=vec4(cb,1.0);
+				}
+			}
 		else if(a.w>=3.0)
 			{
-			/* Pessoa vista de cima: sapatos que alternam, ombros com a camisa, braços balançando e cabeça */
-			vec2 pl=l/1.6;
-			vec2 pls=ls/1.6;
+			/* Pessoa vista de cima: sapatos que alternam, ombros com a camisa, braços balançando e cabeça.
+			   Cada uma sai diferente (pelo número e pela cor): criança ou adulto, cabelo curto ou comprido,
+			   boné ou chapéu, mochila, camisa lisa ou listrada. */
+			float jeito=exHash(vec2(float(i)*1.7,hue*31.0));
+			float porte=(jeito<0.2?1.25:(jeito>0.85?1.85:1.6));                 // criança, adulto alto ou médio
+			vec2 pl=l/porte;
+			vec2 pls=ls/porte;
 			float passo=sin(et*7.0+float(i)*1.3);
-			vec3 pele=mix(vec3(0.96,0.80,0.66),vec3(0.52,0.34,0.22),fract(hue*7.3));
-			vec3 cabelo=mix(vec3(0.1,0.07,0.05),vec3(0.55,0.38,0.18),fract(hue*3.7));
+			vec3 pele=mix(vec3(0.97,0.82,0.68),vec3(0.42,0.27,0.17),fract(hue*7.3));
+			float tomCabelo=fract(hue*3.7);
+			vec3 cabelo=tomCabelo<0.3?vec3(0.08,0.06,0.05):(tomCabelo<0.6?vec3(0.36,0.22,0.1):(tomCabelo<0.8?vec3(0.78,0.6,0.25):(tomCabelo<0.92?vec3(0.6,0.2,0.1):vec3(0.75))));
+			float enfeite=fract(jeito*7.0);                                     // <0.25 boné, <0.4 chapéu, resto sem nada
 			float peE=length((pl-vec2(0.55*passo,0.38))/vec2(0.5,0.24));
 			float peD=length((pl-vec2(-0.55*passo,-0.38))/vec2(0.5,0.24));
 			float ombros=length(pl/vec2(0.55,1.0));
@@ -1426,10 +1684,28 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			float bracoD=length(pl-vec2(0.45*passo,-0.98));
 			float cabeca=length(pl-vec2(0.08,0.0));
 			float sombra=length(pls/vec2(0.75,1.1));
-			if(cabeca<0.52)
+			bool mochila=fract(jeito*13.0)<0.3&&abs(pl.x+0.55)<0.28&&abs(pl.y)<0.55;
+			bool comprido=fract(jeito*17.0)<0.35&&length((pl-vec2(-0.35,0.0))/vec2(0.5,0.62))<1.0;
+			if(enfeite<0.4&&cabeca<(enfeite<0.25?0.56:0.86))
+				{
+				vec3 corChapeu=enfeite<0.25?vec3(0.55)+0.45*cos(6.2832*(vec3(jeito*5.0)+vec3(0.0,0.33,0.67))):vec3(0.86,0.76,0.5);
+				baseColor=vec4(corChapeu*(cabeca<0.4?1.0:0.82),1.0);          // boné (com aba) ou chapéu de palha
+				}
+			else if(enfeite<0.25&&abs(pl.y)<0.38&&pl.x>0.4&&pl.x<1.0)
+				baseColor=vec4((vec3(0.55)+0.45*cos(6.2832*(vec3(jeito*5.0)+vec3(0.0,0.33,0.67))))*0.8,1.0);  // aba do boné
+			else if(cabeca<0.52)
 				baseColor=vec4(pl.x>0.3?pele:cabelo*(0.85+0.3*smoothstep(0.5,0.0,cabeca)),1.0);
+			else if(comprido)
+				baseColor=vec4(cabelo*0.9,1.0);
+			else if(mochila)
+				baseColor=vec4(mix(vec3(0.2,0.25,0.45),vec3(0.7,0.2,0.2),step(0.5,fract(jeito*29.0))),1.0);
 			else if(ombros<1.0)
-				baseColor=vec4(cor*mix(1.15,0.7,smoothstep(0.3,1.0,ombros)),1.0);
+				{
+				vec3 camisa=cor*mix(1.15,0.7,smoothstep(0.3,1.0,ombros));
+				if(fract(jeito*11.0)<0.3)
+					camisa*=0.75+0.35*step(0.5,fract(pl.y*3.2));              // listrada
+				baseColor=vec4(camisa,1.0);
+				}
 			else if(bracoE<0.27||bracoD<0.27)
 				baseColor=vec4(pele*0.95,1.0);
 			else if(peE<1.0||peD<1.0)
@@ -1439,29 +1715,67 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			}
 		else
 			{
-			/* Carrinho: carroceria arredondada, cabine, vidros, rodas, faróis com facho e lanternas */
-			float carro=exCaixa(l,vec2(2.15,1.05),0.5);
-			float sombra=exCaixa(ls,vec2(2.15,1.05),0.5);
-			vec2 roda=vec2(abs(l.x)-1.3,abs(l.y)-1.05);
+			/* Carrinhos de quatro modelos (pelo número do carrinho): sedã, picape, van e esportivo;
+			   o sedã amarelado vira táxi. Carroceria arredondada, vidros, rodas, faróis e lanternas. */
+			float modelo=mod(float(i),4.0);
+			vec2 tam=modelo<0.5?vec2(2.15,1.05):(modelo<1.5?vec2(2.35,1.08):(modelo<2.5?vec2(2.65,1.15):vec2(2.25,0.98)));
+			float carro=exCaixa(l,tam,modelo>2.5?0.62:0.5);
+			float sombra=exCaixa(ls,tam,0.5);
+			vec2 roda=vec2(abs(l.x)-tam.x*0.62,abs(l.y)-tam.y);
 			bool rodas=abs(roda.x)<0.42&&abs(roda.y)<0.28;
-			float facho=l.x>2.0&&l.x<6.5?smoothstep(1.2+0.35*(l.x-2.0),0.0,abs(l.y))*smoothstep(6.5,2.0,l.x):0.0;
+			float facho=l.x>tam.x-0.15&&l.x<tam.x+4.3?smoothstep(1.2+0.35*(l.x-tam.x),0.0,abs(l.y))*smoothstep(tam.x+4.3,tam.x,l.x):0.0;
 			if(carro<0.0)
 				{
 				vec3 cc=mix(cor*1.15,cor*0.75,smoothstep(0.0,1.0,abs(l.y)));
-				float cabine=exCaixa(l-vec2(-0.25,0.0),vec2(0.95,0.78),0.35);
-				if(cabine<0.0)
+				if(modelo<0.5)
 					{
-					cc=cor*0.85;
-					if(l.x>0.3)
-						cc=mix(vec3(0.55,0.75,0.95),vec3(0.9,0.97,1.0),smoothstep(0.3,0.75,l.x));   // para-brisa
-					else if(l.x<-0.9)
-						cc=vec3(0.45,0.6,0.75);                                                    // vidro de trás
+					/* sedã */
+					if(exCaixa(l-vec2(-0.25,0.0),vec2(0.95,0.78),0.35)<0.0)
+						{
+						cc=cor*0.85;
+						if(l.x>0.3)
+							cc=mix(vec3(0.55,0.75,0.95),vec3(0.9,0.97,1.0),smoothstep(0.3,0.75,l.x));   // para-brisa
+						else if(l.x<-0.9)
+							cc=vec3(0.45,0.6,0.75);                                                    // vidro de trás
+						if(hue>0.1&&hue<0.2&&abs(l.x+0.25)<0.28&&abs(l.y)<0.4)
+							cc=vec3(0.98,0.98,0.9);                                                    // luminoso do táxi
+						}
 					}
-				if(l.x>1.75&&abs(l.y)>0.45&&abs(l.y)<0.95)
-					cc=vec3(1.0,0.98,0.75);                                                      // faróis
-				if(l.x<-1.85&&abs(l.y)>0.45&&abs(l.y)<0.95)
-					cc=vec3(0.95,0.1,0.1);                                                       // lanternas
-				cc*=mix(1.0,0.6,smoothstep(-0.12,0.0,carro));                                  // contorno
+				else if(modelo<1.5)
+					{
+					/* picape: cabine na frente e caçamba aberta atrás, com carga */
+					if(exCaixa(l-vec2(0.55,0.0),vec2(0.7,0.8),0.3)<0.0)
+						cc=l.x>0.75?mix(vec3(0.55,0.75,0.95),vec3(0.9,0.97,1.0),smoothstep(0.75,1.15,l.x)):cor*0.85;
+					else if(l.x<-0.3&&l.x>-tam.x+0.3&&abs(l.y)<tam.y-0.22)
+						cc=distance(l,vec2(-1.2,0.1))<0.45?vec3(0.6,0.42,0.2):cor*0.45;                // caçamba e uma caixa
+					}
+				else if(modelo<2.5)
+					{
+					/* van: teto comprido com as janelas dos lados */
+					if(exCaixa(l-vec2(-0.2,0.0),vec2(1.9,0.9),0.3)<0.0)
+						{
+						cc=mix(vec3(0.97),cor,0.25);
+						if(abs(l.y)>0.62&&fract(l.x*0.9+0.3)<0.7)
+							cc=vec3(0.45,0.62,0.8);                                                    // janelas
+						if(l.x>1.3)
+							cc=mix(vec3(0.55,0.75,0.95),vec3(0.9,0.97,1.0),smoothstep(1.3,1.7,l.x));   // para-brisa
+						}
+					}
+				else
+					{
+					/* esportivo: baixo, com faixa no meio e aerofólio */
+					if(abs(l.y)<0.16)
+						cc=vec3(0.97);
+					if(exCaixa(l-vec2(-0.35,0.0),vec2(0.7,0.66),0.3)<0.0)
+						cc=l.x>-0.05?vec3(0.7,0.86,0.98):vec3(0.12);
+					if(l.x<-tam.x+0.35)
+						cc=vec3(0.1);
+					}
+				if(l.x>tam.x-0.4&&abs(l.y)>tam.y*0.42&&abs(l.y)<tam.y*0.9)
+					cc=vec3(1.0,0.98,0.75);                                                          // faróis
+				if(l.x<-tam.x+0.3&&abs(l.y)>tam.y*0.42&&abs(l.y)<tam.y*0.9)
+					cc=vec3(0.95,0.1,0.1);                                                           // lanternas
+				cc*=mix(1.0,0.6,smoothstep(-0.12,0.0,carro));                                      // contorno
 				baseColor=vec4(cc,1.0);
 				}
 			else if(rodas)
@@ -1476,12 +1790,32 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				for(int k=0;k<3;++k)
 					{
 					float ph=fract(et*1.4+float(i)*0.37+float(k)/3.0);
-					vec2 pp=vec2(-2.7-ph*2.8,(float(k)-1.0)*0.45*(1.0+ph));
+					vec2 pp=vec2(-tam.x-0.5-ph*2.8,(float(k)-1.0)*0.45*(1.0+ph));
 					float rp=0.35+0.75*ph;
 					poeira=max(poeira,smoothstep(rp,rp*0.3,distance(l,pp))*(1.0-ph));
 					}
 				baseColor.rgb=mix(baseColor.rgb,vec3(0.9,0.85,0.74),poeira*0.5);
 				}
+			}
+		}
+	/* Chuva pelo painel: uma nuvem branca com gotas caindo em cada ponto de chuva */
+	for(int k=0;k<4;++k)
+		{
+		vec4 ch=extrasChuva[k];
+		if(ch.z<0.5)
+			continue;
+		vec2 qn=ep.xy-ch.xy;
+		if(dot(qn,qn)>36.0)
+			continue;
+		float gota=smoothstep(0.12,0.02,abs(fract(qn.x*0.9)-0.5))*step(0.55,fract(qn.y*0.45+et*2.2+floor(qn.x*0.9)*0.37))
+		           *smoothstep(3.6,2.0,length(qn));
+		baseColor.rgb=mix(baseColor.rgb,vec3(0.75,0.9,1.0),gota*0.8);
+		float nuvem=min(min(length((qn-vec2(-1.3,0.3))/vec2(1.5,1.1)),length((qn-vec2(1.2,0.2))/vec2(1.6,1.2))),
+		                length((qn-vec2(0.0,0.9))/vec2(1.7,1.3)));
+		if(nuvem<1.0)
+			{
+			baseColor.rgb=mix(baseColor.rgb,mix(vec3(1.0),vec3(0.78,0.82,0.9),smoothstep(0.3,1.0,nuvem)),0.9);
+			extrasMarca=1.0; // a água que cai não cobre a nuvem
 			}
 		}
 	/* Membros do laboratório: plaquinha pequena com o nome acima do boneco (ele fica à vista);
@@ -1628,6 +1962,12 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 	bool comNomes=modo==MEMBROS||modo==MUNDO;
 	glUniform4fARB(locations[10],comNomes?GLfloat(nNomes):0.0f,GLfloat(giroNomes),
 	               comNomes?GLfloat(nFotos):0.0f,0.0f);
+	GLfloat ch[MAX_CHUVAS*4];
+	for(int k=0;k<MAX_CHUVAS;++k)
+		{
+		ch[k*4]=chuvas[k].x; ch[k*4+1]=chuvas[k].y; ch[k*4+2]=chuvas[k].ate>tempo?1.0f:0.0f; ch[k*4+3]=0.0f;
+		}
+	glUniform4fvARB(locations[14],MAX_CHUVAS,ch);
 	bool cidade=modo==MUNDO&&nPecas>0;
 	glUniform4fARB(locations[12],camX,bmax[0]-bmin[0],bmax[1]-bmin[1],cidade?1.0f:0.0f);
 	glUniform4fARB(locations[13],bmin[0],bmin[1],0.0f,0.0f);

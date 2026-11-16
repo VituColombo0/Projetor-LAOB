@@ -73,6 +73,8 @@ def ver_estado():
     e["jogo"] = areia.jogo_situacao()
     e["animais"] = areia.animais_situacao()
     e["mundo"] = areia.mundo_situacao()
+    e["mar"] = areia.mar_escolhido()
+    e["especies"] = [[k, r, f] for k, (r, f) in areia.ESPECIES.items()]
     e["tema"] = areia.tema_atual()
     e["temas"] = [[t, areia.NOMES_TEMAS.get(t, t)] for t in areia.temas()]
     e["fotos_salvas"] = [os.path.basename(f) for f in areia.imagens()]
@@ -215,6 +217,26 @@ def willbert():
             raise areia.Erro(f"não consegui {acao} o Willbert: {(r.stdout + r.stderr).strip()[:200]}")
         _willbert_cache[0] = 0.0
         return "Willbert ligado (pronto em uns 30 s)" if acao == "ligar" else "Willbert desligado"
+    return resposta(faz)
+
+
+@app.post("/mar")
+def mar():
+    def faz():
+        sel = areia.mar(request.get_json(silent=True) or {})
+        return "No mar: " + ", ".join(f"{n} {areia.ESPECIES[k][0].lower()}" for k, n in sel.items() if n)
+    return resposta(faz)
+
+
+@app.post("/chuva")
+def chuva():
+    def faz():
+        d = request.get_json(silent=True) or {}
+        if d.get("secar"):
+            areia.secar()
+            return "Água seca"
+        areia.chuva(d.get("x"), d.get("y"), d.get("segundos") or 8)
+        return "Chovendo nesse ponto por uns segundos"
     return resposta(faz)
 
 
@@ -438,6 +460,30 @@ input[type=file] { display: none; }
 .barra .lbl { font-size: .82rem; color: var(--muted); }
 .barra .sp { flex: 1; }
 
+/* animais marinhos e chuva */
+.especies { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.especie {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 11px;
+  background: var(--surface2); border: 1px solid var(--border);
+}
+.especie .e { font-size: 1.3rem; }
+.especie .r { flex: 1; font-weight: 600; font-size: .9rem; }
+.especie button { min-height: 36px; width: 36px; padding: 0; font-size: 1.1rem; }
+.especie .n { width: 1.6em; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+.especie.zero .r, .especie.zero .e { opacity: .45; }
+.quadro-chuva {
+  aspect-ratio: 59 / 42; width: 100%; max-width: 420px; margin: 0 auto; border-radius: 12px; cursor: crosshair;
+  display: grid; place-items: center; color: var(--muted); font-size: .9rem; user-select: none; position: relative;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 22%, var(--surface2)), var(--surface2));
+  border: 1px dashed var(--border-strong); touch-action: manipulation;
+}
+.quadro-chuva .pingo {
+  position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%;
+  border: 2px solid var(--accent); animation: pingo 1.2s ease-out forwards; pointer-events: none;
+}
+@keyframes pingo { from { transform: scale(.3); opacity: 1; } to { transform: scale(2.2); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .quadro-chuva .pingo { animation-duration: .01s; } }
+
 /* mundo LAOB */
 .moradores { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
 .morador {
@@ -510,6 +556,26 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
     </div>
     <p class="hint">Passe o mouse ou toque num jogo para ver como se joga.</p>
     <div class="jogos" id="jogos"></div>
+  </section>
+
+  <section class="card">
+    <h2>Animais marinhos <span class="extra" id="mar-total"></span></h2>
+    <p class="hint">Escolha quantos de cada um. Eles nadam no lago (onde a areia é baixa) e também na água da chuva.</p>
+    <div class="especies" id="especies"></div>
+    <div class="grid" style="margin-top:12px">
+      <button class="primary" id="mar-soltar">🌊 Soltar no mar</button>
+      <button id="mar-tirar" data-b="parar">Tirar os animais</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Chuva</h2>
+    <p class="hint">Além de abrir a mão sobre a areia: toque no quadro, no ponto onde quer que chova. O quadro é a areia vista de cima, como o projetor a mostra.</p>
+    <div class="quadro-chuva" id="quadro-chuva" role="button" tabindex="0" aria-label="Tocar onde chover">☁️ toque onde chover</div>
+    <div class="grid" style="margin-top:12px">
+      <button id="chuva-geral">🌧️ Chover em tudo</button>
+      <button id="chuva-secar">☀️ Secar a água</button>
+    </div>
   </section>
 
   <section class="card">
@@ -665,6 +731,7 @@ function situacao(a) {
   if (a === 'tesouro') return E.tesouro === 'achado' ? 'Tesouro achado!' : 'Tesouro enterrado';
   if (a === 'trex') return E.fossil === 'achado' ? 'Fóssil escavado!' : 'Fóssil enterrado';
   if (a === 'mundo') return 'Mundo LAOB';
+  if (a === 'mar') return 'Animais marinhos';
   return 'Animação na areia';
 }
 
@@ -707,6 +774,7 @@ async function carrega() {
     }
     pl.style.display = txt ? 'block' : 'none';
 
+    montaMar();
     const M = $('#moradores');
     const mundo = E.mundo || [];
     const ligado = a === 'mundo';
@@ -744,8 +812,7 @@ async function carrega() {
         marte: 'linear-gradient(90deg,#3a160c,#8c3a1c,#c8673a,#e8b48a)',
         deserto: 'linear-gradient(90deg,#8a5a2b,#c9934d,#e9c98f,#f6e7c4)',
         oceano: 'linear-gradient(90deg,#04163a,#0a4f8a,#1ea0c8,#bfeaf3)',
-        'arco-iris': 'linear-gradient(90deg,#e33,#f93,#fd3,#3c6,#39f,#93f)',
-        mapa: 'linear-gradient(90deg,#9cc9e8,#cfe3c2,#e9dca8,#c9a77c)'};
+        'arco-iris': 'linear-gradient(90deg,#e33,#f93,#fd3,#3c6,#39f,#93f)'};
       for (const [t, n] of E.temas) {
         const b = document.createElement('button');
         const sw = document.createElement('span');
@@ -784,6 +851,51 @@ async function carrega() {
   } catch (e) {}
 }
 
+let MAR = null;
+function montaMar() {
+  const box = $('#especies');
+  if (!E.especies) return;
+  if (MAR === null) MAR = Object.assign({}, E.mar || {});
+  if (!box.children.length) {
+    for (const [k, rotulo, fig] of E.especies) {
+      const el = document.createElement('div');
+      el.className = 'especie';
+      el.dataset.k = k;
+      el.innerHTML = '<span class="e"></span><span class="r"></span><button aria-label="menos">−</button><span class="n"></span><button aria-label="mais">+</button>';
+      el.querySelector('.e').textContent = fig;
+      el.querySelector('.r').textContent = rotulo;
+      const [menos, mais] = el.querySelectorAll('button');
+      menos.onclick = () => { MAR[k] = Math.max(0, (MAR[k] || 0) - 1); pintaMar(); };
+      mais.onclick = () => { if (totalMar() < 24) MAR[k] = (MAR[k] || 0) + 1; pintaMar(); };
+      box.appendChild(el);
+    }
+    pintaMar();
+  }
+}
+function totalMar() { return Object.values(MAR || {}).reduce((a, b) => a + b, 0); }
+function pintaMar() {
+  $$('.especie').forEach(el => {
+    const n = MAR[el.dataset.k] || 0;
+    el.querySelector('.n').textContent = n;
+    el.classList.toggle('zero', n === 0);
+  });
+  $('#mar-total').textContent = totalMar() + ' de 24';
+}
+function chove(ev) {
+  const q = $('#quadro-chuva');
+  const r = q.getBoundingClientRect();
+  const p = ev.touches ? ev.touches[0] : ev;
+  const x = Math.min(1, Math.max(0, (p.clientX - r.left) / r.width));
+  const y = Math.min(1, Math.max(0, (p.clientY - r.top) / r.height));
+  const pingo = document.createElement('span');
+  pingo.className = 'pingo';
+  pingo.style.left = (x * 100) + '%';
+  pingo.style.top = (y * 100) + '%';
+  q.appendChild(pingo);
+  setTimeout(() => pingo.remove(), 1300);
+  post('/chuva', {x: x, y: 1 - y});
+}
+
 function envia(inp) {
   inp.onchange = () => {
     if (!inp.files[0]) return;
@@ -807,6 +919,12 @@ $$('[data-w]').forEach(b => b.onclick = () => post('/willbert', {acao: b.dataset
 $$('[data-m]').forEach(b => b.onclick = () => post('/modo', {modo: b.dataset.m}));
 $('#reabrir').onclick = () => post('/reabrir', {});
 $('#laob-ligar').onclick = () => post('/brincar', {acao: 'mundo'});
+$('#mar-soltar').onclick = () => post('/mar', MAR || {});
+$('#quadro-chuva').onclick = chove;
+$('#chuva-secar').onclick = () => post('/chuva', {secar: true});
+$('#chuva-geral').onclick = async () => {
+  for (const [x, y] of [[0.25, 0.3], [0.75, 0.3], [0.25, 0.7], [0.75, 0.7]]) await post('/chuva', {x: x, y: y, segundos: 10});
+};
 $('#espelhar').onclick = () => post('/ajuste', {espelho: !E.espelho});
 $('#girar').onclick = () => post('/ajuste', {giro: ((E.giro || 0) + 90) % 360});
 carrega();

@@ -148,6 +148,22 @@ class Painel(Ambiente):
         self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd mundo 0 0 - 8")
         self.assertEqual(self.get("/estado").get_json()["mundo"], [])    # sem fotos nem Willbert nos testes
 
+    def test_mar_e_chuva_pelo_painel(self):
+        e = self.get("/estado").get_json()
+        self.assertEqual(len(e["especies"]), 6)
+        self.assertEqual(e["mar"]["peixe"], 8)
+        r = self.post("/mar", json={"peixe": 3, "tartaruga": 1})
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertIn("3 peixes", r.get_json()["msg"])
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd mar peixe=3 tartaruga=1")
+        self.assertEqual(self.post("/mar", json={}).status_code, 400)
+        r = self.post("/chuva", json={"x": 0.4, "y": 0.6})
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd chuva 0.400 0.600 8")
+        self.assertEqual(self.post("/chuva", json={"x": 3, "y": 0.6}).status_code, 400)
+        self.assertEqual(self.post("/chuva", json={"secar": True}).status_code, 200)
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd secar")
+
     def test_fossil_pelo_painel(self):
         r = self.post("/brincar", json={"acao": "triceratops"})
         self.assertEqual(r.status_code, 200, r.get_json())

@@ -14,21 +14,42 @@ if "extrasEfeito" not in s:
 uniform vec4 extrasEfeito; // Projetor-LAOB: efeito do tema (0 = água normal)
 """)
     s = rep(s, "\t\tvec4 waterColor=vec4(colorW,colorW,1.0,1.0); // Water\n", """\t\tvec4 waterColor=vec4(colorW,colorW,1.0,1.0); // Water
+		/* Projetor-LAOB: a água da chuva tem o mesmo jeito do lago dos peixes (clara no raso, escura no
+		   fundo, ondinhas e brilho) e a cor combina com o tema: lava, água gelada, lama, oásis... */
 		float efA=extrasEfeito.x;
-		if(extrasEfeito.w>0.5)
-			waterColor=vec4(1.0,0.5+0.5*colorW,0.08+0.3*colorW,1.0); // jogo do vulcão: lava bem clara, em qualquer tema
-		else if(efA>0.5&&efA<1.5)
-			waterColor=vec4(1.0,0.3+0.55*colorW,0.0,1.0); // vulcão: lava
+		float fundoA=clamp(waterLevel/2.5,0.0,1.0);
+		float ondaA=0.5+0.5*sin(waterAnimationTime*2.0+fragCoord.x*0.045+fragCoord.y*0.03);
+		vec3 rasoA=vec3(0.30,0.72,0.90);
+		vec3 profA=vec3(0.03,0.20,0.50);
+		float brilhoA=0.55;
+		if(extrasEfeito.w>0.5||(efA>0.5&&efA<1.5))
+			{
+			rasoA=vec3(1.0,0.66,0.12); profA=vec3(0.78,0.13,0.0); brilhoA=0.9;       // vulcão: lava
+			if(extrasEfeito.w>0.5)
+				rasoA=vec3(1.0,0.8,0.3);                                             // jogo do vulcão: bem clara
+			}
 		else if(efA>1.5&&efA<2.5)
-			waterColor=vec4(0.92+0.08*colorW,0.95+0.05*colorW,1.0,1.0); // inverno: neve
+			{ rasoA=vec3(0.84,0.95,1.0); profA=vec3(0.42,0.68,0.9); brilhoA=0.8; }   // inverno: água gelada
 		else if(efA>2.5&&efA<3.5)
-			waterColor=vec4(0.7+0.2*colorW,0.3+0.2*colorW,0.18,1.0); // marte: lama vermelha
+			{ rasoA=vec3(0.80,0.48,0.30); profA=vec3(0.40,0.15,0.09); brilhoA=0.3; } // marte: lama vermelha
 		else if(efA>3.5&&efA<4.5)
-			waterColor=vec4(0.15+0.8*colorW,0.7+0.3*colorW,0.75,1.0); // deserto: oásis
+			{ rasoA=vec3(0.36,0.86,0.80); profA=vec3(0.04,0.46,0.50); }              // deserto: oásis
 		else if(efA>5.5&&efA<6.5)
-			waterColor=vec4(0.5+0.5*sin(waterAnimationTime*2.0+fragCoord.x*0.02),
-			                0.5+0.5*sin(waterAnimationTime*2.0+fragCoord.y*0.02+2.1),
-			                0.5+0.5*sin(waterAnimationTime*2.0+4.2),1.0)+vec4(colorW); // arco-íris
+			{
+			rasoA=vec3(0.6)+0.4*cos(6.2832*(vec3(fragCoord.x*0.004+waterAnimationTime*0.15)+vec3(0.0,0.33,0.67)));
+			profA=rasoA*0.55;                                                        // arco-íris
+			}
+		waterColor=vec4(mix(rasoA,profA,fundoA)+vec3(0.05*ondaA)+vec3(colorW*brilhoA),1.0);
+""")
+    # a lâmina fina já aparece, e os animais marinhos continuam à vista dentro da água
+    s = rep(s, "\t\tbaseColor=mix(baseColor,waterColor,min(waterLevel*waterOpacity,1.0));\n", """\t\tfloat cobreA=max(min(waterLevel*waterOpacity,1.0),smoothstep(0.0,0.08,waterLevel)*0.6);
+		if(extrasInfo.x>0.0&&extrasMarca>0.5)
+			cobreA*=0.25; // tem um animal marinho aqui (marcado pelo shader dos extras)
+		baseColor=mix(baseColor,waterColor,cobreA);
+""")
+    s = rep(s, "uniform vec4 extrasEfeito; // Projetor-LAOB: efeito do tema (0 = água normal)\n", """uniform vec4 extrasEfeito; // Projetor-LAOB: efeito do tema (0 = água normal)
+uniform vec4 extrasInfo;   // .x = tempo dos extras (0 = extras desligados)
+float extrasMarca;         // posta em 1 pelo shader dos extras onde há um animal marinho
 """)
     open(ARQ, "w").write(s)
 print("água ok")

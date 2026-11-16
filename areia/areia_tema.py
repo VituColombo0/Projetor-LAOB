@@ -2,7 +2,7 @@
 
   areia-tema            lista os temas (o atual marcado)
   areia-tema vulcao     troca na hora; fica escolhido para as próximas vezes
-Temas: clássico, vulcão, inverno, marte, deserto, oceano, arco-íris, mapa (de papel).
+Temas: clássico, vulcão, inverno, marte, deserto, oceano, arco-íris.
 """
 import sys
 
