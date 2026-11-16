@@ -150,8 +150,8 @@ class Painel(Ambiente):
 
     def test_mar_e_chuva_pelo_painel(self):
         e = self.get("/estado").get_json()
-        self.assertEqual(len(e["especies"]), 6)
-        self.assertEqual(e["mar"]["peixe"], 8)
+        self.assertEqual(len(e["especies"]), 8)                          # seis marinhos, carro e pessoa
+        self.assertEqual((e["mar"]["peixe"], e["mar"]["carro"]), (6, 4))
         r = self.post("/mar", json={"peixe": 3, "tartaruga": 1})
         self.assertEqual(r.status_code, 200, r.get_json())
         self.assertIn("3 peixes", r.get_json()["msg"])

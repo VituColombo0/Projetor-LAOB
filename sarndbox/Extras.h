@@ -135,9 +135,9 @@ class Extras
 	void jogoPasso(float dt);
 	/* Animais marinhos: espécie = parte inteira do tipo (1 peixe, 4 tubarão, 5 tartaruga, 6 água-viva,
 	   7 polvo, 8 arraia). Nadam no lago (areia baixa) e na água da chuva (aguaSim, medida pelo Sandbox). */
-	enum {NUM_ESPECIES=6};
-	static const char* nomeEspecie(int k);    // "peixe", "tubarao", ...
-	static int codigoEspecie(int k);          // 1, 4, 5, 6, 7, 8
+	enum {NUM_ESPECIES=8}; // seis marinhos + carro + pessoa
+	static const char* nomeEspecie(int k);    // "peixe", "tubarao", ..., "carro", "pessoa"
+	static int codigoEspecie(int k);          // 1, 4, 5, 6, 7, 8, 2 (carro), 3 (pessoa)
 	void mar(const int quantidades[NUM_ESPECIES]);
 	std::vector<float> aguaSim;               // profundidade da água da chuva por célula do mapa (cm)
 	bool querAguaSim(void) const {return modo==PEIXES||modo==TODOS;}

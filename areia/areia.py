@@ -569,6 +569,10 @@ def animais(tipo, quantidade=None):
          "pessoa": "pessoas", "gente": "pessoas", "pessoinhas": "pessoas", "bonecos": "pessoas"}.get(t, t)
     if t not in ANIMAIS:
         raise Erro("escolha: peixes, carros, pessoas ou todos")
+    if not quantidade and t in ("peixes", "todos"):
+        # sem quantidade: a variedade toda (antes "peixes" e "todos" só soltavam peixe comum)
+        sel = mar({k: (n if t == "todos" or k in MARINHOS else 0) for k, n in MAR_PADRAO.items()})
+        return t, sum(sel.values())
     n = int(quantidade) if quantidade else (15 if t == "todos" else 10)
     if not 1 <= n <= 24:
         raise Erro("quantidade: de 1 a 24")
@@ -593,8 +597,10 @@ def animais_situacao():
 
 # nome do comando: (rótulo, figurinha)
 ESPECIES = {"peixe": ("Peixes", "🐟"), "tubarao": ("Tubarões", "🦈"), "tartaruga": ("Tartarugas", "🐢"),
-            "aguaviva": ("Águas-vivas", "🪼"), "polvo": ("Polvos", "🐙"), "arraia": ("Arraias", "🐠")}
-MAR_PADRAO = {"peixe": 8, "tubarao": 1, "tartaruga": 2, "aguaviva": 2, "polvo": 1, "arraia": 1}
+            "aguaviva": ("Águas-vivas", "🪼"), "polvo": ("Polvos", "🐙"), "arraia": ("Arraias", "🐠"),
+            "carro": ("Carrinhos", "🚗"), "pessoa": ("Pessoas", "🚶")}
+MARINHOS = ("peixe", "tubarao", "tartaruga", "aguaviva", "polvo", "arraia")
+MAR_PADRAO = {"peixe": 6, "tubarao": 1, "tartaruga": 2, "aguaviva": 2, "polvo": 1, "arraia": 1, "carro": 4, "pessoa": 4}
 MAX_BICHOS = 24
 
 
@@ -608,8 +614,9 @@ def mar_escolhido():
 
 
 def mar(selecao=None):
-    """Solta os animais marinhos escolhidos: {"peixe": 8, "tubarao": 1, ...}. Sem escolha, a última.
-    Devolve a escolha usada (o total é limitado a 24)."""
+    """Solta na areia o que foi escolhido: {"peixe": 8, "tubarao": 1, "carro": 3, "pessoa": 5, ...}
+    (animais marinhos, carrinhos e pessoas). Sem escolha, a última. Devolve a escolha usada (o total
+    é limitado a 24)."""
     sel = mar_escolhido() if selecao is None else {}
     if selecao is not None:
         for k in ESPECIES:

@@ -224,7 +224,7 @@ def willbert():
 def mar():
     def faz():
         sel = areia.mar(request.get_json(silent=True) or {})
-        return "No mar: " + ", ".join(f"{n} {areia.ESPECIES[k][0].lower()}" for k, n in sel.items() if n)
+        return "Na areia: " + ", ".join(f"{n} {areia.ESPECIES[k][0].lower()}" for k, n in sel.items() if n)
     return resposta(faz)
 
 
@@ -559,12 +559,12 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
   </section>
 
   <section class="card">
-    <h2>Animais marinhos <span class="extra" id="mar-total"></span></h2>
-    <p class="hint">Escolha quantos de cada um. Eles nadam no lago (onde a areia é baixa) e também na água da chuva.</p>
+    <h2>Bichos, carros e pessoas <span class="extra" id="mar-total"></span></h2>
+    <p class="hint">Escolha quantos de cada um aparecem na areia. Os animais marinhos nadam no lago (onde a areia é baixa) e na água da chuva; carrinhos e pessoas andam em chão firme.</p>
     <div class="especies" id="especies"></div>
     <div class="grid" style="margin-top:12px">
-      <button class="primary" id="mar-soltar">🌊 Soltar no mar</button>
-      <button id="mar-tirar" data-b="parar">Tirar os animais</button>
+      <button class="primary" id="mar-soltar">▶ Soltar na areia</button>
+      <button id="mar-tirar" data-b="parar">Tirar todos</button>
     </div>
   </section>
 
@@ -637,16 +637,8 @@ const OUTROS = [
    d: 'O baú fica enterrado num lugar sorteado. Cavem procurando: quanto mais perto, mais o sinal brilha. Achou? Ele reaparece em outro lugar depois de 20 s. O nível muda a profundidade.'},
   {id: 'trex', ic: '🦖', t: 'Fóssil de dinossauro', c: 'Escavação de um esqueleto de T-Rex.', tag: 'Escavar',
    d: 'Aparece a quadrícula de escavação. Cavando até a profundidade certa, o esqueleto surge na rocha. O nível muda a profundidade.'},
-  {id: 'peixes', ic: '🐟', t: 'Peixes no lago', c: 'Um cardume nada nas partes baixas.', tag: 'Animação',
-   d: 'Os peixes nadam onde a areia está mais funda (o lago). Cavem um lago novo ou abram um canal e eles vão atrás.'},
-  {id: 'carros', ic: '🚗', t: 'Carrinhos', c: 'Carrinhos andam pelos vales.', tag: 'Animação',
-   d: 'Os carrinhos andam pelos lugares planos e desviam de montanhas. Façam estradas na areia para eles passarem.'},
-  {id: 'pessoas', ic: '🚶', t: 'Pessoas andando', c: 'Pessoinhas passeando pela areia.', tag: 'Animação',
-   d: 'Pessoas vistas de cima caminham pela areia, desviam umas das outras, dos morros íngremes e dos lagos. Mudem o relevo e elas escolhem outro caminho.'},
   {id: 'mundo', ic: '🏙️', t: 'LAOB', c: 'Os membros vivendo numa cidadezinha.', tag: 'Mundo',
    d: 'Uma cidade com três bairros: o das casas, o centro (laboratório, café, mercado e praça) e o de lazer (parque, campinho e lago de pesca). Cada membro tem casa e rotina, anda pelas calçadas e vai de carro pela avenida quando é longe. A imagem desliza para o bairro onde eles estão. O rosto aparece num balão quando o membro chega a um lugar, ou quando você toca no nome dele na seção LAOB.'},
-  {id: 'todos', ic: '🐠', t: 'Tudo junto', c: 'Peixes, carrinhos e pessoas.', tag: 'Animação',
-   d: 'Peixes no lago, carrinhos nos vales e pessoas passeando, tudo ao mesmo tempo.'},
 ];
 const ICONES = {corrida: '🏁', vila: '🏘️', rota: '🚩', vulcao: '🌋'};
 const TODOS = [...AGUA.map(j => ({id: j[0], ic: ICONES[j[0]] || '💧', t: j[1], c: j[2], d: j[3], tag: 'Jogo de água'})), ...OUTROS];
@@ -731,7 +723,7 @@ function situacao(a) {
   if (a === 'tesouro') return E.tesouro === 'achado' ? 'Tesouro achado!' : 'Tesouro enterrado';
   if (a === 'trex') return E.fossil === 'achado' ? 'Fóssil escavado!' : 'Fóssil enterrado';
   if (a === 'mundo') return 'Mundo LAOB';
-  if (a === 'mar') return 'Animais marinhos';
+  if (a === 'mar' || a === 'peixes' || a === 'carros' || a === 'pessoas' || a === 'todos') return 'Bichos, carros e pessoas';
   return 'Animação na areia';
 }
 

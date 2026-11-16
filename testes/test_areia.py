@@ -58,7 +58,7 @@ class UmaBrincadeiraPorVez(Ambiente):
         self.areia.fossil("pegada")
         self.assertEqual(self.cmds()[-3:], ["cmd jogoFim", "cmd animais nada", "cmd fossil 5 5.5"])
         self.areia.animais("peixes")
-        self.assertEqual(self.cmds()[-3:], ["cmd labirintoFim", "cmd jogoFim", "cmd animais peixes 10"])
+        self.assertEqual(self.cmds()[-3:], ["cmd labirintoFim", "cmd jogoFim", "cmd mar peixe=6 tubarao=1 tartaruga=2 aguaviva=2 polvo=1 arraia=1"])
 
     def test_foto_encerra_as_brincadeiras(self):
         self.areia.animais("todos")
@@ -69,7 +69,7 @@ class UmaBrincadeiraPorVez(Ambiente):
         e["modo"] = "rosto"
         self.areia.aplica(e)
         c = self.cmds()
-        self.assertIn("cmd animais nada", c[c.index("cmd animais todos 15"):])
+        self.assertIn("cmd animais nada", c[c.index("cmd mar peixe=6 tubarao=1 tartaruga=2 aguaviva=2 polvo=1 arraia=1 carro=4 pessoa=4"):])
         self.assertTrue(c[-2].startswith("cmd rosto "))
 
 
@@ -263,10 +263,13 @@ class Brincadeiras(Ambiente):
         self.assertEqual(self.areia.tesouro_achados(), 1)
 
     def test_animais(self):
-        self.assertEqual(self.areia.animais("Peixes"), ("peixes", 10))
-        self.assertEqual(self.comandos()[-1], "cmd animais peixes 10")
+        self.assertEqual(self.areia.animais("Peixes"), ("peixes", 13))      # a variedade toda de marinhos
+        self.assertEqual(self.comandos()[-1], "cmd mar peixe=6 tubarao=1 tartaruga=2 aguaviva=2 polvo=1 arraia=1")
+        self.assertEqual(self.areia.animais("peixes", 7), ("peixes", 7))    # com quantidade: só peixes
+        self.assertEqual(self.comandos()[-1], "cmd animais peixes 7")
         self.assertEqual(self.areia.animais("carrinhos", "5"), ("carros", 5))
-        self.assertEqual(self.areia.animais("todos"), ("todos", 15))
+        self.assertEqual(self.areia.animais("todos"), ("todos", 21))         # marinhos, carros e pessoas
+        self.assertEqual(self.comandos()[-1], "cmd mar peixe=6 tubarao=1 tartaruga=2 aguaviva=2 polvo=1 arraia=1 carro=4 pessoa=4")
         self.assertEqual(self.areia.animais("gente", 6), ("pessoas", 6))
         self.assertEqual(self.comandos()[-1], "cmd animais pessoas 6")
         for t, n in (("gatos", None), ("peixes", "99")):
@@ -567,15 +570,17 @@ class MarEChuva(Ambiente):
         return [c for c in self.comandos() if c.startswith("cmd")]
 
     def test_animais_marinhos_a_escolha(self):
-        self.assertEqual(sorted(self.areia.ESPECIES), ["aguaviva", "arraia", "peixe", "polvo", "tartaruga", "tubarao"])
+        self.assertEqual(sorted(self.areia.ESPECIES), ["aguaviva", "arraia", "carro", "peixe", "pessoa", "polvo", "tartaruga", "tubarao"])
         self.assertEqual(self.areia.mar_escolhido(), self.areia.MAR_PADRAO)
         sel = self.areia.mar({"peixe": 5, "tubarao": 2, "polvo": 0})
-        self.assertEqual(sel, {"peixe": 5, "tubarao": 2, "tartaruga": 0, "aguaviva": 0, "polvo": 0, "arraia": 0})
+        self.assertEqual(sel, {"peixe": 5, "tubarao": 2, "tartaruga": 0, "aguaviva": 0, "polvo": 0, "arraia": 0, "carro": 0, "pessoa": 0})
         self.assertEqual(self.cmds()[-1], "cmd mar peixe=5 tubarao=2")
         self.assertIn("cmd jogoFim", self.cmds()[-5:])                       # uma brincadeira por vez
         self.assertEqual(self.areia.mar_escolhido()["tubarao"], 2)          # a escolha fica guardada
         self.areia.mar()                                                     # sem escolha: repete a última
         self.assertEqual(self.cmds()[-1], "cmd mar peixe=5 tubarao=2")
+        sel = self.areia.mar({"polvo": 1, "carro": 3, "pessoa": 5})          # carros e pessoas entram na mesma escolha
+        self.assertEqual(self.cmds()[-1], "cmd mar polvo=1 carro=3 pessoa=5")
         sel = self.areia.mar({"peixe": 20, "arraia": 9})                     # no máximo 24 no total
         self.assertEqual((sel["peixe"], sel["arraia"]), (20, 4))
         with self.assertRaisesRegex(self.areia.Erro, "pelo menos um"):

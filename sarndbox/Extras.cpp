@@ -153,20 +153,24 @@ inline bool ehPessoa(float t) {return t>=3.0f&&t<4.0f;}
 
 const char* Extras::nomeEspecie(int k)
 	{
-	static const char* nomes[NUM_ESPECIES]={"peixe","tubarao","tartaruga","aguaviva","polvo","arraia"};
+	static const char* nomes[NUM_ESPECIES]={"peixe","tubarao","tartaruga","aguaviva","polvo","arraia","carro","pessoa"};
 	return k>=0&&k<NUM_ESPECIES?nomes[k]:"";
 	}
 
 int Extras::codigoEspecie(int k)
 	{
-	static const int codigos[NUM_ESPECIES]={1,4,5,6,7,8};
+	static const int codigos[NUM_ESPECIES]={1,4,5,6,7,8,2,3};
 	return k>=0&&k<NUM_ESPECIES?codigos[k]:1;
 	}
 
 void Extras::mar(const int quantidades[NUM_ESPECIES])
 	{
-	/* O mar escolhido no painel: tantos de cada espécie (até MAX_AGENTES no total) */
-	povoa(PEIXES,0);
+	/* A escolha do painel: tantos de cada (animais marinhos, carrinhos e pessoas; até MAX_AGENTES no
+	   total). Havendo algum marinho, existe o lago; só carros e pessoas, não. */
+	int marinhos=0,deTerra=0;
+	for(int k=0;k<NUM_ESPECIES;++k)
+		(aquatico(float(codigoEspecie(k)))?marinhos:deTerra)+=quantidades[k];
+	povoa(marinhos>0?(deTerra>0?TODOS:PEIXES):CARROS,0);
 	int n=0;
 	for(int k=0;k<NUM_ESPECIES;++k)
 		for(int c=0;c<quantidades[k]&&n<MAX_AGENTES;++c,++n)
@@ -914,18 +918,63 @@ const char* Extras::glslFragmentMain=R"GLSL(
 		float r=length(q);
 		float falta=ep.z-extrasTesouro.w;
 		bool achou=extrasInfo.y>0.5;
+		float ta=extrasInfo.y-1.0;          // segundos desde que foi achado
 		bool visto=falta<=0.0||achou;
-		if(max(abs(q.x),abs(q.y))<1.3)
+		if(max(abs(q.x),abs(q.y))<1.6)
 			{
 			if(extrasInfo.z<1.5)
 				{
-				/* Baú de madeira visto de cima: tábuas, cintas de ferro com rebites, cantoneiras e fechadura;
-				   achado, a tampa abre e aparecem as moedas */
-				vec2 p=q*1.25;
+				/* Baú de madeira visto de cima: tábuas, cintas de ferro com rebites, cantoneiras e fechadura.
+				   Achado, a tampa se abre devagar, o ouro e as joias aparecem brilhando e moedas saltam para fora. */
+				vec2 p=q*1.0;                                                   // baú de uns 8 x 5 cm
 				float corpo=exCaixa(p,vec2(0.8,0.52),0.07);
+				float ab=achou?clamp(ta/1.4,0.0,1.0):0.0;
+				ab=ab*ab*(3.0-2.0*ab);                                          // tampa: 0 fechada .. 1 aberta
 				if(visto)
 					{
-					if(corpo<0.0)
+					/* luz dourada saindo do baú aberto */
+					if(ab>0.0)
+						{
+						float raios=pow(max(0.0,sin(atan(p.y-0.3,p.x)*9.0+et*1.3)),5.0)*smoothstep(1.9,0.4,length(p-vec2(0.0,0.3)));
+						baseColor.rgb+=vec3(1.0,0.82,0.35)*(raios*0.35+0.25*smoothstep(1.6,0.2,length(p-vec2(0.0,0.3))))*ab;
+						}
+					/* a tampa aberta fica em pé atrás do baú (vê-se o lado de dentro) */
+					bool tampaEmPe=ab>0.02&&abs(p.x)<0.8&&p.y>0.5&&p.y<0.5+0.46*ab;
+					bool dentro=corpo<0.0&&p.y>0.04&&p.y<0.04+0.5*ab;         // o que a tampa já descobriu
+					if(tampaEmPe)
+						{
+						vec3 cor=mix(vec3(0.24,0.13,0.05),vec3(0.42,0.25,0.1),exRuido(vec2(p.x*4.0,p.y*40.0)));
+						if(abs(abs(p.x)-0.5)<0.075)
+							cor=vec3(0.3,0.3,0.28);
+						cor*=0.75+0.25*smoothstep(0.5,0.5+0.46*ab,p.y);
+						baseColor=vec4(cor,1.0);
+						}
+					else if(dentro)
+						{
+						/* ouro: duas camadas de moedas, e por cima as joias */
+						float m1=exPontos(p*11.0,0.44,0.95);
+						float m2=exPontos(p*17.0+vec2(3.3,1.7),0.4,0.8);
+						vec3 cor=mix(vec3(0.5,0.31,0.05),vec3(0.93,0.7,0.16),m1);
+						cor=mix(cor,vec3(1.0,0.9,0.42),m2*0.9);
+						cor*=0.82+0.18*sin(et*6.0+p.x*31.0+p.y*23.0);
+						for(int k=0;k<6;++k)
+							{
+							float fk=float(k);
+							vec2 pj=vec2(-0.6+0.24*fk,0.17+0.2*exHash(vec2(fk,2.0)));
+							float dj=abs(p.x-pj.x)+abs(p.y-pj.y);                     // losango lapidado
+							if(dj<0.075)
+								{
+								vec3 gema=k==0||k==3?vec3(0.9,0.08,0.15):(k==1||k==4?vec3(0.1,0.75,0.35):(k==2?vec3(0.15,0.4,0.95):vec3(0.7,0.3,0.9)));
+								cor=gema*(0.75+0.5*step(p.x+p.y,pj.x+pj.y))+vec3(1.0)*pow(0.5+0.5*sin(et*5.0+fk*2.1),8.0)*smoothstep(0.075,0.0,dj);
+								}
+							}
+						float colar=abs(length(p-vec2(0.3,0.42))-0.2);              // colar de pérolas
+						if(colar<0.03&&p.y<0.42&&fract(atan(p.y-0.42,p.x-0.3)*4.5)<0.6)
+							cor=vec3(0.97,0.95,0.9);
+						cor*=mix(0.45,1.0,smoothstep(0.04,0.1,p.y))*mix(0.55,1.0,smoothstep(0.0,-0.06,corpo));   // sombra das paredes
+						baseColor=vec4(cor,1.0);
+						}
+					else if(corpo<0.0)
 						{
 						float veio=exRuido(vec2(p.x*4.0,p.y*46.0))*0.6+exRuido(p*90.0)*0.4;
 						vec3 cor=mix(vec3(0.33,0.18,0.07),vec3(0.56,0.34,0.15),veio);
@@ -939,27 +988,31 @@ const char* Extras::glslFragmentMain=R"GLSL(
 							}
 						if(abs(p.x)>0.66&&abs(p.y)>0.38)
 							cor=mix(vec3(0.5,0.38,0.12),vec3(0.82,0.66,0.26),exRuido(p*40.0));             // cantoneiras de latão
-						if(achou&&p.y>0.04)
-							{
-							/* tampa aberta: moedas de ouro que cintilam */
-							float moeda=exPontos(p*11.0,0.42,0.92);
-							cor=mix(vec3(0.42,0.26,0.06),vec3(1.0,0.84,0.3),moeda)*(0.85+0.15*sin(et*7.0+p.x*23.0+p.y*17.0));
-							}
-						else
-							{
-							if(abs(p.y-0.04)<0.018)
-								cor*=0.4;                                                                  // linha da tampa
-							if(abs(p.x)<0.1&&abs(p.y+0.03)<0.13)
-								cor=length(p-vec2(0.0,-0.05))<0.036?vec3(0.08):mix(vec3(0.6,0.46,0.14),vec3(0.9,0.74,0.3),exRuido(p*50.0)); // fechadura
-							}
+						if(abs(p.y-0.04)<0.018)
+							cor*=0.4;                                                                      // linha da tampa
+						if(abs(p.x)<0.1&&abs(p.y+0.03)<0.13)
+							cor=length(p-vec2(0.0,-0.05))<0.036?vec3(0.08):mix(vec3(0.6,0.46,0.14),vec3(0.9,0.74,0.3),exRuido(p*50.0)); // fechadura
 						cor*=mix(1.0,0.55,smoothstep(-0.06,0.0,corpo));                                    // contorno
 						cor*=0.82+0.3*smoothstep(-0.6,0.5,p.y-p.x*0.3);                                    // luz de um lado
 						baseColor=vec4(cor,1.0);
 						}
 					else if(exCaixa(p-vec2(0.08,-0.08),vec2(0.8,0.52),0.07)<0.0)
 						baseColor.rgb*=0.55;                                                               // sombra na areia
+					/* moedas que saltam do baú e ficam espalhadas em volta */
+					if(achou&&ta>1.0)
+						for(int k=0;k<9;++k)
+							{
+							float fk=float(k);
+							float vai=min((ta-1.0)*(1.4+0.5*exHash(vec2(fk,5.0))),0.95+0.45*exHash(vec2(fk,7.0)));
+							float ak=fk*0.698+0.4;
+							vec2 pm=vec2(0.0,0.25)+vec2(cos(ak),sin(ak)*0.8)*vai;
+							float dm=distance(p,pm);
+							if(dm<0.07)
+								baseColor=vec4(mix(vec3(1.0,0.86,0.3),vec3(0.7,0.48,0.08),smoothstep(0.03,0.07,dm))
+								               +vec3(0.5)*pow(0.5+0.5*sin(et*6.0+fk*1.7),10.0),1.0);
+							}
 					if(achou)
-						baseColor.rgb+=vec3(1.0,0.9,0.5)*pow(max(0.0,sin(atan(q.y,q.x)*7.0+et*2.0)),40.0)*smoothstep(1.25,0.3,r);
+						baseColor.rgb+=vec3(1.0,0.9,0.5)*pow(max(0.0,sin(atan(q.y,q.x)*7.0+et*2.0)),40.0)*smoothstep(1.25,0.3,r)*ab;
 					}
 				else if(falta<2.5&&corpo<0.25)
 					{
@@ -974,72 +1027,121 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				if(visto)
 					{
 					float osso=0.0;
+					float furo=0.0;                                              // buracos do crânio (órbita, narina)
 					int tf=int(extrasInfo.z+0.5);
 					if(tf<=2)
 						{
-						/* Tiranossauro inteiro, de lado: crânio, pescoço, espinha até a cauda, costelas, bacia, perna e bracinho */
-						vec2 qc=(q-vec2(0.56,0.24))*2.1;
-						float cabeca=smoothstep(0.40,0.32,length(qc*vec2(1.2,1.7)));
-						float orbita=smoothstep(0.06,0.09,length((qc-vec2(0.06,0.12))*vec2(1.3,1.0)));
-						float narina=smoothstep(0.04,0.07,length((qc-vec2(0.25,0.06))*vec2(1.2,1.0)));
-						float boca=step(qc.y,-0.02)*step(-0.18,qc.y)*step(-0.25,qc.x)*step(qc.x,0.32);
-						float dentes=abs(sin(qc.x*45.0))*boca;
-						float cranio=max(0.0,cabeca*orbita*narina-boca*0.8)+dentes*0.9;
-						float mand=smoothstep(0.06,0.02,abs(qc.y+0.16+qc.x*0.12))*step(-0.25,qc.x)*step(qc.x,0.30);
-						osso=max(cranio,mand);
-						osso=max(osso,exOsso(q,vec2(0.3,0.1),vec2(0.44,0.2),0.04));                        // pescoço
-						for(int k=0;k<12;++k)
+						/* Tiranossauro de lado: crânio com janelas e dentes, pescoço, espinha com espinhos, cauda fina,
+						   costelas curvas, bacia, as duas pernas com garras e os bracinhos */
+						vec2 qc=(q-vec2(0.6,0.27))*2.3;
+						float cabeca=smoothstep(0.42,0.34,length(qc*vec2(1.15,1.7)));
+						float focinho=smoothstep(0.2,0.14,abs(qc.y-0.03))*step(0.1,qc.x)*step(qc.x,0.5);
+						float boca=step(qc.y,-0.03)*step(-0.17,qc.y)*step(-0.2,qc.x)*step(qc.x,0.5);
+						float dentes=step(0.35,abs(sin(qc.x*42.0)))*step(-0.17,qc.y)*step(qc.y,-0.05)*step(-0.15,qc.x)*step(qc.x,0.48);
+						float mand=exOsso(qc,vec2(-0.26,-0.14),vec2(0.46,-0.25),0.045);
+						osso=max(max(cabeca,focinho)*(1.0-boca),max(dentes*0.9,mand));
+						furo=max(smoothstep(0.1,0.07,length((qc-vec2(0.0,0.12))*vec2(1.0,1.2))),smoothstep(0.05,0.03,length(qc-vec2(0.36,0.08))));
+						furo=max(furo,smoothstep(0.08,0.05,length((qc-vec2(-0.2,0.05))*vec2(1.3,1.0))));
+						osso=max(osso,exOsso(q,vec2(0.3,0.1),vec2(0.46,0.22),0.042));                      // pescoço
+						for(int k=0;k<16;++k)
 							{
 							float fk=float(k);
-							vec2 v=vec2(0.3-0.105*fk,0.1-0.004*fk*fk);                                     // espinha e cauda caindo
-							osso=max(osso,smoothstep(0.055-0.002*fk,0.02,distance(q,v)));
+							vec2 v=vec2(0.3-0.085*fk,0.1+0.02*sin(fk*0.5)-0.0028*fk*fk);                   // vértebras até a ponta da cauda
+							float tamV=0.05-0.0022*fk;
+							osso=max(osso,smoothstep(tamV,tamV*0.45,distance(q,v)));
+							if(k<10)
+								osso=max(osso,exOsso(q,v,v+vec2(-0.02,0.075-0.004*fk),0.011));            // espinhos de cima
 							}
-						for(int k=0;k<5;++k)
+						for(int k=0;k<7;++k)
 							{
 							float fk=float(k);
-							float x0=0.24-0.095*fk;
-							osso=max(osso,exOsso(q,vec2(x0,0.07-0.004*fk),vec2(x0-0.07,-0.2+0.035*abs(fk-1.5)),0.02)); // costelas
+							float x0=0.27-0.075*fk;
+							vec2 topo=vec2(x0,0.08-0.003*fk);
+							vec2 meio=vec2(x0-0.05,-0.08);
+							vec2 ponta=vec2(x0-0.01,-0.22+0.03*abs(fk-2.5));
+							osso=max(osso,max(exOsso(q,topo,meio,0.016),exOsso(q,meio,ponta,0.013)));      // costelas curvas
 							}
-						osso=max(osso,smoothstep(0.14,0.08,length((q-vec2(-0.28,0.0))*vec2(1.0,1.5))));     // bacia
-						osso=max(osso,exOsso(q,vec2(-0.28,-0.02),vec2(-0.17,-0.38),0.042));                // fêmur
-						osso=max(osso,exOsso(q,vec2(-0.17,-0.38),vec2(-0.31,-0.7),0.03));                  // tíbia
-						osso=max(osso,exOsso(q,vec2(-0.31,-0.7),vec2(-0.1,-0.77),0.024));                  // pé
-						osso=max(osso,exOsso(q,vec2(0.2,-0.04),vec2(0.31,-0.2),0.016));                    // bracinho
+						osso=max(osso,smoothstep(0.15,0.09,length((q-vec2(-0.26,0.0))*vec2(1.0,1.5))));     // bacia
+						furo=max(furo,smoothstep(0.045,0.025,length(q-vec2(-0.27,0.0))));
+						for(int k=0;k<2;++k)
+							{
+							float dx=float(k)*0.13;                                                        // perna de trás e a da frente
+							osso=max(osso,exOsso(q,vec2(-0.27,-0.03),vec2(-0.15+dx,-0.36),0.042-0.008*float(k)));
+							osso=max(osso,exOsso(q,vec2(-0.15+dx,-0.36),vec2(-0.3+dx,-0.66),0.03));
+							osso=max(osso,exOsso(q,vec2(-0.3+dx,-0.66),vec2(-0.21+dx,-0.76),0.022));
+							for(int d=0;d<3;++d)
+								osso=max(osso,exOsso(q,vec2(-0.21+dx,-0.76),vec2(-0.1+dx+0.03*float(d),-0.8+0.035*float(d)),0.012));  // dedos com garra
+							}
+						osso=max(osso,max(exOsso(q,vec2(0.2,-0.04),vec2(0.29,-0.17),0.016),exOsso(q,vec2(0.29,-0.17),vec2(0.36,-0.13),0.012)));  // bracinho
 						}
 					else if(tf==3)
 						{
-						vec2 qc=q;
-						float escudo=smoothstep(0.48,0.40,length((qc+vec2(0.22,0.0))*vec2(1.5,1.0)))*step(qc.x,-0.05);
-						float cabeca=smoothstep(0.35,0.28,length(qc*vec2(1.3,1.5)));
-						float chifre1=smoothstep(0.06,0.01,abs(qc.y-qc.x*0.7-0.18))*step(0.0,qc.x)*step(qc.x,0.45);
-						float chifre2=smoothstep(0.06,0.01,abs(qc.y+qc.x*0.7+0.18))*step(0.0,qc.x)*step(qc.x,0.45);
-						float chifrenas=smoothstep(0.05,0.01,abs(qc.y))*step(0.22,qc.x)*step(qc.x,0.48);
-						osso=max(max(escudo,cabeca),max(max(chifre1,chifre2),chifrenas));
+						/* Triceratops de cima: escudo com borda em babados e duas janelas, três chifres, bico, e um pedaço do pescoço e das costelas */
+						float aE=atan(q.y,q.x+0.2);
+						float escudo=smoothstep(0.02,-0.02,length((q+vec2(0.2,0.0))*vec2(1.25,1.0))-0.52-0.03*cos(aE*11.0))*step(q.x,0.05);
+						furo=max(smoothstep(0.11,0.08,length((q-vec2(-0.38,0.2))*vec2(1.0,0.8))),smoothstep(0.11,0.08,length((q-vec2(-0.38,-0.2))*vec2(1.0,0.8))));
+						float cranio=smoothstep(0.3,0.24,length((q-vec2(0.15,0.0))*vec2(0.8,1.25)));
+						float bico=smoothstep(0.02,-0.01,abs(q.y)-(0.62-q.x)*0.45)*step(0.3,q.x)*step(q.x,0.62);
+						osso=max(max(escudo,cranio),bico);
+						osso=max(osso,exOsso(q,vec2(0.12,0.16),vec2(0.6,0.42),0.035)*smoothstep(0.75,0.3,q.x));   // chifres compridos
+						osso=max(osso,exOsso(q,vec2(0.12,-0.16),vec2(0.6,-0.42),0.035)*smoothstep(0.75,0.3,q.x));
+						osso=max(osso,smoothstep(0.06,0.03,length((q-vec2(0.42,0.0))*vec2(0.6,1.0))));             // chifre do nariz
+						furo=max(furo,max(smoothstep(0.05,0.03,distance(q,vec2(0.2,0.13))),smoothstep(0.05,0.03,distance(q,vec2(0.2,-0.13)))));
+						for(int k=0;k<5;++k)
+							{
+							float fk=float(k);
+							osso=max(osso,smoothstep(0.045,0.02,distance(q,vec2(-0.75-0.045*fk,0.0))));              // pescoço saindo de baixo do escudo
+							}
 						}
 					else if(tf==4)
 						{
-						vec2 qc=q;
-						float crista=smoothstep(0.07,0.02,abs(qc.y-qc.x*0.5+0.15))*step(-0.5,qc.x)*step(qc.x,0.0);
-						float bico=smoothstep(0.06,0.02,abs(qc.y+qc.x*0.15))*step(0.0,qc.x)*step(qc.x,0.65)*(1.0-qc.x*1.1);
-						float asa1=smoothstep(0.06,0.02,abs(qc.y-qc.x*0.8-0.2))*step(-0.6,qc.x)*step(qc.x,0.3);
-						float asa2=smoothstep(0.06,0.02,abs(qc.y+qc.x*0.8+0.2))*step(-0.6,qc.x)*step(qc.x,0.3);
-						osso=max(max(crista,bico),max(asa1,asa2));
+						/* Pterodáctilo de asas abertas: crânio com bico comprido e crista, corpo pequeno com costelas,
+						   braços longos em "M" com o dedo da asa, perninhas e rabo curto */
+						osso=max(exOsso(q,vec2(0.12,0.0),vec2(0.72,0.03),0.022),smoothstep(0.11,0.07,length((q-vec2(0.16,0.0))*vec2(1.0,1.5))));  // bico e cabeça
+						osso=max(osso,exOsso(q,vec2(0.12,0.03),vec2(-0.08,0.2),0.02));                             // crista
+						furo=smoothstep(0.035,0.02,distance(q,vec2(0.2,0.0)));
+						osso=max(osso,smoothstep(0.13,0.08,length((q-vec2(-0.12,0.0))*vec2(0.75,1.3))));            // tronco
+						for(int k=0;k<4;++k)
+							osso=max(osso,exOsso(q,vec2(-0.02-0.06*float(k),0.0),vec2(-0.05-0.06*float(k),0.11),0.01)
+							               +exOsso(q,vec2(-0.02-0.06*float(k),0.0),vec2(-0.05-0.06*float(k),-0.11),0.01));
+						for(int lado=0;lado<2;++lado)
+							{
+							float sy=lado==0?1.0:-1.0;
+							osso=max(osso,exOsso(q,vec2(-0.03,0.08*sy),vec2(0.06,0.4*sy),0.024));                   // úmero
+							osso=max(osso,exOsso(q,vec2(0.06,0.4*sy),vec2(-0.12,0.72*sy),0.02));                    // antebraço
+							osso=max(osso,exOsso(q,vec2(-0.12,0.72*sy),vec2(-0.55,1.05*sy),0.014));                 // dedo da asa
+							osso=max(osso,exOsso(q,vec2(-0.12,0.72*sy),vec2(-0.03,0.8*sy),0.01));                   // dedinhos
+							osso=max(osso,exOsso(q,vec2(-0.26,0.05*sy),vec2(-0.5,0.16*sy),0.016));                  // perna
+							osso=max(osso,exOsso(q,vec2(-0.5,0.16*sy),vec2(-0.72,0.12*sy),0.012));
+							}
+						osso=max(osso,exOsso(q,vec2(-0.28,0.0),vec2(-0.48,0.0),0.012));                            // rabo
 						}
 					else
 						{
-						vec2 qc=q*1.2;
-						float d1=smoothstep(0.12,0.04,length((qc-vec2(0.0,0.35))*vec2(1.8,0.9)-vec2(0.0,qc.y*0.3)));
-						float d2=smoothstep(0.12,0.04,length((qc-vec2(0.28,-0.15))*vec2(1.2,1.4)));
-						float d3=smoothstep(0.12,0.04,length((qc-vec2(-0.28,-0.15))*vec2(1.2,1.4)));
-						float calcanhar=smoothstep(0.22,0.08,length((qc+vec2(0.0,0.25))*vec2(1.3,1.1)));
-						osso=max(max(d1,d2),max(d3,calcanhar));
+						/* Pegada de três dedos calcada na lama endurecida: o fundo é mais escuro e a borda tem luz */
+						float marca=smoothstep(0.26,0.2,length((q+vec2(0.0,0.3))*vec2(1.0,0.85)));                 // calcanhar
+						marca=max(marca,exOsso(q,vec2(0.0,-0.15),vec2(0.0,0.62),0.1));                             // dedo do meio
+						marca=max(marca,exOsso(q,vec2(-0.06,-0.15),vec2(-0.42,0.42),0.085));
+						marca=max(marca,exOsso(q,vec2(0.06,-0.15),vec2(0.42,0.42),0.085));
+						float garras=max(smoothstep(0.05,0.02,distance(q,vec2(0.0,0.76))),max(smoothstep(0.05,0.02,distance(q,vec2(-0.5,0.53))),smoothstep(0.05,0.02,distance(q,vec2(0.5,0.53)))));
+						marca=clamp(max(marca,garras),0.0,1.0);
+						vec3 lama=mix(vec3(0.33,0.25,0.17),vec3(0.2,0.15,0.1),exRuido(q*13.0));
+						baseColor.rgb=mix(baseColor.rgb,lama,smoothstep(0.35,0.7,marca)*0.9);
+						baseColor.rgb+=vec3(0.22,0.18,0.12)*smoothstep(0.1,0.35,marca)*(1.0-smoothstep(0.35,0.6,marca))*step(0.0,q.x+q.y);  // borda iluminada
+						baseColor.rgb*=1.0-0.35*smoothstep(0.1,0.35,marca)*(1.0-smoothstep(0.35,0.6,marca))*step(q.x+q.y,0.0);            // borda em sombra
+						if(achou)
+							baseColor.rgb+=vec3(0.25,0.2,0.08)*(0.5+0.5*sin(et*5.0))*smoothstep(0.35,0.7,marca);
 						}
-
-					osso=clamp(osso,0.0,1.0);
+					osso=clamp(osso,0.0,1.0)*(1.0-0.9*clamp(furo,0.0,1.0));
 					float miolo=smoothstep(0.35,0.62,osso);
-					vec3 marfim=mix(vec3(0.94,0.9,0.78),vec3(0.66,0.57,0.43),exRuido(q*22.0)*0.55+exRuido(q*75.0)*0.45);
-					marfim*=0.72+0.28*osso;                                                                // bordas mais escuras: volume
-					baseColor.rgb*=1.0-0.4*smoothstep(0.02,0.3,osso)*(1.0-miolo);                          // sombra em volta de cada osso
+					/* marfim com manchas, poros e rachaduras finas; mais claro no meio de cada osso (volume) */
+					float mancha=exRuido(q*20.0)*0.5+exRuido(q*70.0)*0.5;
+					vec3 marfim=mix(vec3(0.92,0.87,0.72),vec3(0.62,0.52,0.38),mancha*0.75);
+					marfim*=mix(0.6,1.08,smoothstep(0.4,0.95,osso));
+					marfim*=1.0-0.35*smoothstep(0.86,0.93,exRuido(q*46.0+vec2(1.7,9.2)));                      // poros
+					marfim*=1.0-0.4*smoothstep(0.03,0.0,abs(exRuido(q*9.0)-0.5))*step(0.5,exRuido(q*3.0));     // rachaduras
+					marfim+=vec3(0.12)*smoothstep(0.8,1.0,osso)*smoothstep(0.3,0.7,exRuido(q*30.0+vec2(4.0)));  // brilho do polimento
+					baseColor.rgb*=1.0-0.45*smoothstep(0.02,0.3,osso)*(1.0-miolo);                          // sombra em volta de cada osso
 					baseColor.rgb=mix(baseColor.rgb,marfim,miolo);
 					if(achou)
 						baseColor.rgb+=vec3(0.3,0.24,0.1)*(0.6+0.4*sin(et*5.0))*miolo;
@@ -1518,6 +1620,8 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					if(hue>0.5)
 						pc*=0.85+0.15*step(0.0,sin(f.x*4.5));                    // listras em metade dos peixes
 					pc+=vec3(0.35)*smoothstep(0.35,0.0,distance(f,vec2(0.9,0.25))); // brilho
+					pc*=0.9+0.16*smoothstep(0.25,0.5,abs(fract(f.x*2.6+0.5*step(0.5,fract(f.y*2.2)))-0.5))*step(f.x,0.9); // escamas
+					pc=mix(pc,vec3(1.0),0.25*smoothstep(0.55,0.95,abs(f.y))*step(-1.2,f.x));                          // barriga clara
 					pc*=mix(1.0,0.55,smoothstep(0.8,1.0,corpo));               // contorno
 					vec2 olho=vec2(1.45,0.42*sign(f.y));
 					float dOlho=distance(f,olho);
@@ -1564,6 +1668,10 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					{
 					cb=mix(vec3(0.42,0.5,0.58),vec3(0.2,0.26,0.33),smoothstep(0.0,0.9,abs(f.y)));
 					cb=mix(cb,vec3(0.12,0.15,0.2),smoothstep(0.18,0.05,abs(f.y))*step(-1.0,f.x)*step(f.x,0.4));     // barbatana de cima
+					cb=mix(cb,vec3(0.86,0.9,0.93),smoothstep(0.62,0.95,abs(f.y)/(1.05*(1.0-0.55*clamp(-f.x/3.4,0.0,1.0)))));   // barriga branca aparecendo dos lados
+					if(f.x>1.2&&f.x<2.0&&abs(f.y)>0.35&&fract(f.x*3.6)<0.3)
+						cb*=0.6;                                                                            // guelras
+					cb+=vec3(0.22)*smoothstep(0.5,0.0,distance(f,vec2(1.0,0.2)));                           // brilho molhado
 					if(distance(f,vec2(2.5,0.5*sign(f.y)))<0.13)
 						cb=vec3(0.02);                                                                      // olhos
 					cb*=mix(1.0,0.6,smoothstep(0.82,1.0,corpoT));
@@ -1606,7 +1714,15 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					fio=max(fio,smoothstep(0.14,0.03,abs(l.y-yk-0.3*sin(l.x*1.6+et*2.5+float(k)+fase)))*step(l.x,-0.6)*smoothstep(-5.0,-1.0,l.x));
 					}
 				if(dAv<1.0)
+					{
 					cb=mix(cb,corAv+vec3(0.3)*smoothstep(1.0,0.2,dAv),0.55+0.3*smoothstep(0.75,1.0,dAv));
+					cb+=vec3(0.35)*smoothstep(0.22,0.0,abs(dAv-0.55))*(0.5+0.5*sin(atan(l.y,l.x)*8.0));     // desenho em trevo dentro da sombrinha
+					}
+				else if(dAv<1.5)
+					{
+					cb=mix(cb,corAv,0.25*smoothstep(1.5,1.0,dAv)*(0.6+0.4*sin(et*2.6+fase)));               // brilho em volta
+					desenhou=fio>0.05||dAv<1.5;
+					}
 				else if(fio>0.05)
 					cb=mix(cb,corAv,fio*0.7);
 				else
@@ -1633,7 +1749,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 						cb=distance(l,vec2(0.62,0.42*sign(l.y)))<0.1?vec3(0.02):vec3(0.97);
 					}
 				else if(braco>0.3)
-					cb=corP*0.85;
+					cb=corP*(0.7+0.3*braco)+vec3(0.35,0.3,0.3)*step(0.75,fract(rP*2.6))*step(0.7,braco);    // braços com ventosas
 				else
 					desenhou=false;
 				}
@@ -1775,11 +1891,14 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					cc=vec3(1.0,0.98,0.75);                                                          // faróis
 				if(l.x<-tam.x+0.3&&abs(l.y)>tam.y*0.42&&abs(l.y)<tam.y*0.9)
 					cc=vec3(0.95,0.1,0.1);                                                           // lanternas
+				if(abs(l.x-0.05)<0.03&&abs(l.y)>tam.y*0.55)
+					cc*=0.65;                                                                    // vão das portas
+				cc+=vec3(0.3)*smoothstep(0.22,0.0,abs(l.y-0.35-l.x*0.12))*smoothstep(tam.x,0.0,abs(l.x))*0.6;   // reflexo da lataria
 				cc*=mix(1.0,0.6,smoothstep(-0.12,0.0,carro));                                      // contorno
 				baseColor=vec4(cc,1.0);
 				}
 			else if(rodas)
-				baseColor=vec4(0.08,0.08,0.08,1.0);
+				baseColor=vec4(length(roda)<0.14?vec3(0.6):vec3(0.08),1.0);                         // pneu com calota
 			else
 				{
 				if(sombra<0.0)
@@ -1930,7 +2049,9 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 		}
 	glUniform4fvARB(locations[1],MAX_AGENTES,ag);
 	glUniform4fARB(locations[2],tx,ty,traio,tz);
-	glUniform4fARB(locations[3],GLfloat(tempo),achado?1.0f:0.0f,tesouro?GLfloat(tipoTesouro):0.0f,nivelAgua);
+	/* .y: 0 = não achado; achado = 1 + segundos desde então (a animação do baú abrindo usa o tempo) */
+	glUniform4fARB(locations[3],GLfloat(tempo),achado?1.0f+GLfloat(std::min(600.0,tempo-quandoAchou)):0.0f,
+	               tesouro?GLfloat(tipoTesouro):0.0f,nivelAgua);
 	glUniform4fARB(locations[4],GLfloat(efeito),referencia,GLfloat(tipoTesouro),
 	               jogo==VULCAO&&jogoFase>0?1.0f:0.0f); // .w: jogo do vulcão (a água é lava; sem lava de enfeite)
 	glUniform4fARB(locations[5],lsx,lsy,ltx,lty);
