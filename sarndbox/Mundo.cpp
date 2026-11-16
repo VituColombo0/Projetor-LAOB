@@ -1,22 +1,21 @@
 /***********************************************************************
-Mundo LAOB (Projetor-LAOB): os membros do laboratório vivendo numa cidade
-desenhada sobre a areia.
+Mundo LAOB (Projetor-LAOB): o laboratório por dentro, desenhado sobre a
+areia, com os membros lá.
 
-A cidade tem TRÊS TELAS de largura (a caixa mostra uma por vez) e um traçado
-fixo: uma avenida no meio, ruas transversais e quarteirões dos dois lados.
-  bairro 0 (residencial)  as casas dos membros
-  bairro 1 (centro)       laboratório, café, mercado e a praça
-  bairro 2 (lazer)        parque, campinho e o lago de pesca
-A imagem desliza para o bairro onde os membros estão (camX) e visita, de
-tempos em tempos, os outros bairros que têm gente.
+A sala é a planta do laboratório de verdade (tirada de um vídeo): janelas
+numa parede, porta azul e quadro na outra, bancada de parede com
+computadores, bancada comprida no meio, mesas perto das janelas, arco
+branco, manequim e a caixa de areia.
 
-Cada boneco decide aonde ir, sai pela calçada, atravessa a avenida e entra no
-lugar; se é longe, vai de carro pela avenida. Em casa, no laboratório, no café
-e no mercado ele entra (some; as janelas acendem); na praça, no parque, no
-campinho e no lago fica à vista. Quem o Willbert está vendo no laboratório de
-verdade prefere o laboratório da cidade. Moradores sem nome completam a cidade.
-O chão (grama, ruas, calçadas) e os lugares são desenhados no shader (Extras.cpp)
-com as MESMAS medidas daqui: se mudar uma, mude a outra.
+Quem o Willbert está vendo no laboratório de verdade fica dentro da sala o
+tempo todo: quase sempre na própria bancada e, de vez em quando, na caixa de
+areia, no quadro, na bancada do meio ou perto do manequim. Quem não está
+presente entra pela porta de tempos em tempos, fica um pouco e vai embora
+(a sala não fica vazia quando o Willbert está desligado).
+
+As posições (frações da área iluminada: 0..1 em x e em y) são as MESMAS do
+desenho no shader (Extras.cpp): se mudar uma, mude a outra.
+(Até 16/11/2026 havia uma cidade inteira em volta; o Victor pediu só o laboratório.)
 ***********************************************************************/
 
 #include "Extras.h"
@@ -26,49 +25,17 @@ com as MESMAS medidas daqui: se mudar uma, mude a outra.
 
 namespace {
 const float PI=3.14159265f;
-/* medidas do traçado, em cm (iguais às do shader) */
-const float RA=2.4f;  // meia largura da avenida
-const float CAL=1.1f; // largura da calçada
-bool aberto(int tipo) // lugar onde o boneco fica à vista
-	{
-	return tipo==Extras::P_PRACA||tipo==Extras::P_PARQUE||tipo==Extras::P_CAMPO||tipo==Extras::P_PESCA;
-	}
-const char* ondeEsta(int tipo)
-	{
-	switch(tipo)
-		{
-		case Extras::P_CASA: return "em casa";
-		case Extras::P_LAB: return "no laboratório";
-		case Extras::P_PRACA: return "na praça";
-		case Extras::P_CAFE: return "no café";
-		case Extras::P_MERCADO: return "no mercado";
-		case Extras::P_PARQUE: return "no parque";
-		case Extras::P_CAMPO: return "jogando bola no campinho";
-		case Extras::P_PESCA: return "pescando no lago";
-		}
-	return "passeando";
-	}
-const char* paraOnde(int tipo)
-	{
-	switch(tipo)
-		{
-		case Extras::P_CASA: return "para casa";
-		case Extras::P_LAB: return "para o laboratório";
-		case Extras::P_PRACA: return "para a praça";
-		case Extras::P_CAFE: return "para o café";
-		case Extras::P_MERCADO: return "para o mercado";
-		case Extras::P_PARQUE: return "para o parque";
-		case Extras::P_CAMPO: return "para o campinho";
-		case Extras::P_PESCA: return "para o lago, pescar";
-		}
-	return "passear";
-	}
+const float PORTA[2]={0.435f,0.12f};
+const float ASSENTOS[8][2]={{0.56f,0.215f},{0.66f,0.215f},{0.76f,0.215f},{0.86f,0.215f},
+                            {0.14f,0.65f},{0.20f,0.65f},{0.26f,0.65f},{0.17f,0.42f}};
+const float PONTOS[4][2]={{0.64f,0.63f},{0.25f,0.17f},{0.60f,0.40f},{0.84f,0.62f}};
+const char* NOME_PONTO[4]={"foi até a caixa de areia","foi até o quadro","foi até a bancada do meio","foi ver o manequim"};
 }
 
-void Extras::mundo(const std::vector<std::string>& lista,int giro,int fotos,int moradores)
+void Extras::mundo(const std::vector<std::string>& lista,int giro,int fotos,int)
 	{
-	/* Mesmos nomes de antes e a cidade já montada: só atualiza quem está presente (a rotina de
-	   cada um continua de onde estava). */
+	/* Mesmos nomes de antes e a sala já montada: só atualiza quem está presente (cada um continua
+	   de onde estava). */
 	if(modo==MUNDO&&int(lista.size())==nNomes)
 		{
 		bool iguais=true;
@@ -95,32 +62,28 @@ void Extras::mundo(const std::vector<std::string>& lista,int giro,int fotos,int 
 			return;
 			}
 		}
-	jogo=SEM_JOGO; // a cidade usa as peças dos jogos: um de cada vez
+	jogo=SEM_JOGO; // um de cada vez
 	jogoFase=0;
 	labirinto=false;
 	labEstado=0;
 	nPecas=nFontes=0;
 	membros(lista,giro,fotos); // nomes, cores e rostos
 	modo=MUNDO;
-	int n=nNomes;
-	quantos=std::min(int(MAX_AGENTES),n+std::max(0,moradores));
+	quantos=nNomes;
 	for(int i=0;i<MAX_AGENTES;++i)
 		{
-		if(i>=n)
-			tipo[i]=i<quantos?3.05f+0.9f*aleatorio():0.0f;
+		if(i>=quantos)
+			tipo[i]=0.0f;
 		vel[i]=0.0f;
-		mEstado[i]=0;
-		mLugar[i]=mCasa[i]=-1;
+		mEstado[i]=1;
 		mAte[i]=mTroca[i]=0.0f;
-		wpN[i]=wpI[i]=wpCarro[i]=0;
 		escondido[i]=true;
 		noLab[i]=false;
-		mDest[i]=-1;
 		}
 	for(int i=0;i<MAX_NOMES;++i)
 		rostoAte[i]=0.0;
 	camX=camAlvo=0.0f;
-	camTroca=0.0;
+	mundoPronto=false;
 	mundoPedido=true;
 	if(mapaOk)
 		mundoMonta();
@@ -129,106 +92,48 @@ void Extras::mundo(const std::vector<std::string>& lista,int giro,int fotos,int 
 void Extras::mundoMonta(void)
 	{
 	mundoPedido=false;
-	nPecas=0;
-	const float w=bmax[0]-bmin[0],h=bmax[1]-bmin[1],cw=w/3.0f,meio=bmin[1]+h*0.5f;
-	const float alt=h*0.5f-(RA+CAL)-0.8f; // altura de um quarteirão
-	/* centro do quarteirão da coluna k (0..8), de cima (1) ou de baixo (0) */
-	auto lote=[&](int k,int cima,float& x,float& y)
-		{
-		x=bmin[0]+(float(k)+0.5f)*cw;
-		y=meio+(cima?1.0f:-1.0f)*(RA+CAL+alt*0.5f);
-		};
-	float x,y;
-	/* bairro residencial: uma casa por membro (até seis), telhado da cor do dono */
-	for(int i=0;i<nNomes&&i<6;++i)
-		{
-		lote(i/2,1-(i&1),x,y);
-		addPeca(P_CASA,x,y,4.4f,1+int(std::fmod(tipo[i],1.0f)*99.0f),0);
-		mCasa[i]=nPecas-1;
-		}
-	/* os lotes residenciais que sobram ganham casas dos moradores sem nome */
-	for(int i=std::min(nNomes,6);i<6;++i)
-		{
-		lote(i/2,1-(i&1),x,y);
-		addPeca(P_CASA,x,y,4.4f,1+int(aleatorio()*99.0f),0);
-		int dono=nNomes+(i-std::min(nNomes,6));
-		if(dono<quantos)
-			mCasa[dono]=nPecas-1;
-		}
-	/* centro */
-	lote(3,1,x,y); addPeca(P_CAFE,x,y,4.8f);
-	lote(4,1,x,y); addPeca(P_LAB,x,y,6.6f);
-	lote(5,1,x,y); addPeca(P_MERCADO,x,y,5.0f);
-	lote(4,0,x,y); addPeca(P_PRACA,x,y,6.4f);
-	/* lazer */
-	lote(6,1,x,y); addPeca(P_PARQUE,x,y,7.0f);
-	lote(8,1,x,y); addPeca(P_CAMPO,x,y,7.0f);
-	lote(7,0,x,y); addPeca(P_PESCA,x,y,6.6f);
-	for(int p=0;p<nPecas;++p)
-		{
-		pecas[p].estado=0;
-		pecas[p].nivel=0.0f;
-		}
-	/* cada um começa em casa (ou num lugar sorteado), saindo aos poucos */
+	const float w=bmax[0]-bmin[0],h=bmax[1]-bmin[1];
 	for(int i=0;i<quantos;++i)
 		{
 		if(tipo[i]<0.5f)
 			continue;
-		int l=mCasa[i];
-		while(l<0||(pecas[l].tipo==P_CASA&&mCasa[i]!=l))
-			l=int(aleatorio()*float(nPecas))%nPecas;
-		mLugar[i]=l;
-		mEstado[i]=0;
-		mAte[i]=float(tempo)+1.0f+12.0f*aleatorio();
-		mTroca[i]=0.0f;
-		ax[i]=pecas[l].x;
-		ay[i]=pecas[l].y;
-		ang[i]=aleatorio()*2.0f*PI;
 		tipo[i]=3.0f+std::fmod(tipo[i],1.0f);
 		vb[i]=3.0f+aleatorio()*1.0f;
 		vel[i]=vb[i];
-		wpN[i]=wpI[i]=wpCarro[i]=0;
-		escondido[i]=!aberto(pecas[l].tipo);
-		noLab[i]=false;
-		mDest[i]=-1;
+		parado[i]=0.0f;
+		if(presente[i])
+			{
+			/* quem está no laboratório de verdade já começa na própria bancada */
+			mEstado[i]=0;
+			escondido[i]=false;
+			ax[i]=bmin[0]+ASSENTOS[i%8][0]*w;
+			ay[i]=bmin[1]+ASSENTOS[i%8][1]*h;
+			ang[i]=-PI*0.5f;
+			wpX[i][0]=ax[i];
+			wpY[i][0]=ay[i];
+			mTroca[i]=float(tempo)+6.0f+10.0f*aleatorio();
+			mAte[i]=0.0f;
+			}
+		else
+			{
+			/* os outros chegam aos poucos */
+			mEstado[i]=1;
+			escondido[i]=true;
+			mAte[i]=float(tempo)+3.0f+8.0f*float(i)+6.0f*aleatorio();
+			}
 		}
-	camX=camAlvo=0.0f;
-	camTroca=tempo+6.0;
-	anuncia("Mundo: cidade montada");
+	mundoPronto=true;
+	anuncia("Mundo: laboratório montado");
+	for(int i=0;i<nNomes;++i)
+		if(presente[i])
+			anuncia(std::string("Mundo: ")+nomes[i]+" está na bancada");
+		else
+			anuncia(std::string("Mundo: ")+nomes[i]+" saiu do laboratório");
 	}
 
-int Extras::mundoEscolhe(int i)
+int Extras::mundoEscolhe(int)
 	{
-	/* Próximo lugar do boneco i, por sorteio com pesos: a própria casa, o laboratório (bem mais
-	   para quem está no laboratório de verdade) e os outros lugares. Nunca a casa dos outros. */
-	float pesos[MAX_PECAS],soma=0.0f;
-	bool membro=i<nNomes;
-	for(int p=0;p<nPecas;++p)
-		{
-		float w=0.0f;
-		switch(pecas[p].tipo)
-			{
-			case P_CASA: w=mCasa[i]==p?2.4f:0.0f; break;
-			case P_LAB: w=membro?(presente[i]?9.0f:1.6f):0.8f; break;
-			case P_PRACA: w=2.0f; break;
-			case P_CAFE: w=1.5f; break;
-			case P_MERCADO: w=1.3f; break;
-			case P_PARQUE: w=1.6f; break;
-			case P_CAMPO: w=1.8f; break;
-			case P_PESCA: w=1.5f; break;
-			}
-		if(p==mLugar[i])
-			w*=membro&&presente[i]&&pecas[p].tipo==P_LAB?0.6f:0.0f; // quem está no lab de verdade pode ficar
-		pesos[p]=w;
-		soma+=w;
-		}
-	if(soma<=0.0f)
-		return mLugar[i];
-	float r=aleatorio()*soma;
-	for(int p=0;p<nPecas;++p)
-		if((r-=pesos[p])<=0.0f)
-			return p;
-	return mLugar[i];
+	return 0; // (era o sorteio de lugares da cidade; a sala só tem os pontos fixos)
 	}
 
 void Extras::mundoPasso(float dt)
@@ -237,297 +142,123 @@ void Extras::mundoPasso(float dt)
 		return;
 	if(mundoPedido)
 		mundoMonta();
-	if(nPecas==0)
+	if(!mundoPronto)
 		return;
-	const float w=bmax[0]-bmin[0],h=bmax[1]-bmin[1],meio=bmin[1]+h*0.5f;
-	/* a porta de um lugar: o ponto da calçada em frente a ele */
-	auto porta=[&](const Peca& L,float desvio,float& x,float& y)
-		{
-		x=L.x+desvio;
-		y=meio+(L.y>meio?1.0f:-1.0f)*(RA+CAL*0.55f);
-		};
-	/* quanta gente há em cada lugar (acende as janelas, solta a bola no campinho) */
-	int gente[MAX_PECAS];
-	for(int p=0;p<MAX_PECAS;++p)
-		gente[p]=0;
-	for(int i=0;i<quantos;++i)
-		if(tipo[i]>0.5f&&mEstado[i]==0&&mLugar[i]>=0&&mLugar[i]<nPecas)
-			++gente[mLugar[i]];
-	for(int p=0;p<nPecas;++p)
-		{
-		pecas[p].estado=gente[p];
-		pecas[p].nivel+=((gente[p]>0?1.0f:0.0f)-pecas[p].nivel)*std::min(1.0f,2.0f*dt); // luz que acende devagar
-		}
+	const float w=bmax[0]-bmin[0],h=bmax[1]-bmin[1];
+	const float px=bmin[0]+PORTA[0]*w,py=bmin[1]+PORTA[1]*h;
 	for(int i=0;i<quantos;++i)
 		{
-		if(tipo[i]<0.5f||mLugar[i]<0||mLugar[i]>=nPecas)
+		if(tipo[i]<0.5f)
 			continue;
-		Peca& L=pecas[mLugar[i]];
-		float cor=std::fmod(tipo[i],1.0f);
-		float desvio=(std::fmod(cor*37.0f,1.0f)-0.5f)*1.2f; // cada um anda num fio da calçada
 		float tx=ax[i],ty=ay[i];
 		bool anda=false;
+		if(mEstado[i]==1)
+			{
+			/* fora da sala: quem está presente de verdade entra logo; os outros, quando der a hora */
+			escondido[i]=true;
+			if(presente[i]&&mAte[i]>float(tempo)+4.0f)
+				mAte[i]=float(tempo)+1.0f+3.0f*aleatorio();
+			if(float(tempo)<mAte[i])
+				continue;
+			mEstado[i]=0;
+			escondido[i]=false;
+			ax[i]=px;
+			ay[i]=py-1.5f;
+			ang[i]=PI*0.5f;
+			vel[i]=vb[i];
+			wpX[i][0]=bmin[0]+ASSENTOS[i%8][0]*w;
+			wpY[i][0]=bmin[1]+ASSENTOS[i%8][1]*h;
+			mTroca[i]=float(tempo)+8.0f+8.0f*aleatorio();
+			mAte[i]=float(tempo)+25.0f+30.0f*aleatorio(); // a visita de quem não está presente dura isso
+			if(i<nNomes)
+				{
+				rostoAte[i]=tempo+4.0; // o rosto aparece um instante: dá para ver quem entrou
+				anuncia(std::string("Mundo: ")+nomes[i]+" entrou no laboratório");
+				}
+			continue;
+			}
 		if(mEstado[i]==0)
 			{
-			/* está no lugar */
-			bool laDentro=L.tipo==P_LAB&&noLab[i]; // na quarta tela: o interior do laboratório
-			if(laDentro)
+			/* dentro: quase sempre na própria bancada; de vez em quando num dos pontos da sala */
+			if(float(tempo)>=mTroca[i])
 				{
-				/* Dentro do laboratório: quase sempre na própria bancada; de vez em quando vai à caixa de
-				   areia, ao quadro, à bancada do meio ou ao manequim (posições iguais às do desenho) */
-				escondido[i]=false;
-				if(float(tempo)>=mTroca[i])
+				float fx,fy;
+				if(aleatorio()<0.6f)
 					{
-					static const float assentos[8][2]={{0.56f,0.215f},{0.66f,0.215f},{0.76f,0.215f},{0.86f,0.215f},
-					                                   {0.14f,0.65f},{0.20f,0.65f},{0.26f,0.65f},{0.17f,0.42f}};
-					static const float pontos[4][2]={{0.64f,0.63f},{0.25f,0.17f},{0.60f,0.40f},{0.84f,0.62f}};
-					float fx,fy;
-					if(aleatorio()<0.6f)
-						{
-						fx=assentos[i%8][0];
-						fy=assentos[i%8][1];
-						mTroca[i]=float(tempo)+9.0f+10.0f*aleatorio();
-						}
-					else
-						{
-						int k=int(aleatorio()*4.0f)%4;
-						fx=pontos[k][0]+0.03f*(aleatorio()-0.5f);
-						fy=pontos[k][1]+0.03f*(aleatorio()-0.5f);
-						mTroca[i]=float(tempo)+5.0f+5.0f*aleatorio();
-						}
-					wpX[i][0]=bmin[0]+(3.0f+fx)*w;
-					wpY[i][0]=bmin[1]+fy*h;
+					fx=ASSENTOS[i%8][0];
+					fy=ASSENTOS[i%8][1];
+					mTroca[i]=float(tempo)+9.0f+10.0f*aleatorio();
+					if(i<nNomes)
+						anuncia(std::string("Mundo: ")+nomes[i]+" está na bancada");
 					}
-				tx=wpX[i][0];
-				ty=wpY[i][0];
-				anda=true;
-				}
-			else if(L.tipo==P_LAB&&i<nNomes&&mDest[i]<0)
-				{
-				/* membro na porta do laboratório: o rosto aparece um instante e ele entra (vai para a 4ª tela) */
-				escondido[i]=false;
-				if(float(tempo)>=mTroca[i])
-					{
-					noLab[i]=true;
-					ax[i]=bmin[0]+(3.0f+0.435f)*w;
-					ay[i]=bmin[1]+0.13f*h;
-					ang[i]=PI*0.5f;
-					mTroca[i]=0.0f;
-					}
-				}
-			else if(aberto(L.tipo))
-				{
-				escondido[i]=false;
-				if(float(tempo)>=mTroca[i])
-					{
-					/* de vez em quando escolhe outro canto do lugar */
-					mTroca[i]=float(tempo)+(L.tipo==P_PESCA?9.0f:2.0f)+3.0f*aleatorio();
-					float a=aleatorio()*2.0f*PI;
-					if(L.tipo==P_CAMPO)
-						{
-						wpX[i][0]=L.x+(aleatorio()*2.0f-1.0f)*L.raio*0.85f;
-						wpY[i][0]=L.y+(aleatorio()*2.0f-1.0f)*L.raio*0.5f;
-						}
-					else
-						{
-						float rr=L.tipo==P_PESCA?L.raio*0.98f:L.raio*(0.45f+0.4f*aleatorio()); // pesca: na margem
-						wpX[i][0]=L.x+std::cos(a)*rr;
-						wpY[i][0]=L.y+std::sin(a)*rr;
-						}
-					}
-				tx=wpX[i][0];
-				ty=wpY[i][0];
-				anda=true;
-				}
-			else
-				escondido[i]=float(tempo)>=mTroca[i]; // para um instante na porta (o rosto aparece) e entra
-			if(float(tempo)>=mAte[i]&&laDentro)
-				{
-				/* hora de sair: primeiro anda até a porta, do lado de dentro */
-				mEstado[i]=2;
-				continue;
-				}
-			if(float(tempo)>=mAte[i])
-				{
-				int d=mDest[i]>=0?mDest[i]:mundoEscolhe(i);
-				mDest[i]=-1;
-				if(d==mLugar[i])
-					mAte[i]=float(tempo)+6.0f+10.0f*aleatorio(); // fica mais um pouco
 				else
 					{
-					/* sai: pela calçada, atravessando a avenida se precisar; de carro se for longe */
-					const Peca& D=pecas[d];
-					float px,py,qx,qy;
-					porta(L,desvio,px,py);
-					porta(D,desvio,qx,qy);
-					bool carro=std::abs(D.x-L.x)>w*0.6f;
-					int n=0;
-					/* primeiro até a calçada em frente (quem estava lá dentro sai pela porta) */
-					wpX[i][n]=px; wpY[i][n]=py; ++n;
-					if(escondido[i])
-						{
-						ax[i]=px;
-						ay[i]=py+(L.y>meio?1.0f:-1.0f)*1.6f;
-						}
-					if(carro)
-						{
-						/* entra no carro ali e segue pela faixa da direita até a frente do destino */
-						float faixa=meio+(D.x>L.x?-1.0f:1.0f)*RA*0.5f;
-						wpX[i][n]=px+(D.x>L.x?1.5f:-1.5f); wpY[i][n]=faixa; ++n;
-						wpX[i][n]=qx; wpY[i][n]=faixa; ++n;
-						wpCarro[i]=1; // de carro nos trechos 1 e 2
-						}
-					else
-						{
-						wpX[i][n]=qx; wpY[i][n]=py; ++n; // pela calçada do seu lado até a frente do destino
-						wpCarro[i]=0;
-						}
-					wpX[i][n]=qx; wpY[i][n]=qy; ++n;   // a porta do destino (atravessa a avenida, se for do outro lado)
-					wpX[i][n]=D.x+desvio; wpY[i][n]=D.y+(D.y>meio?-1.0f:1.0f)*D.raio*(aberto(D.tipo)?0.4f:0.75f); ++n;
-					wpN[i]=n;
-					wpI[i]=0;
-					tipo[i]=3.0f+cor; // a pé até a calçada
-					vb[i]=3.0f+1.0f*aleatorio();
-					vel[i]=vb[i];
-					ang[i]=std::atan2(wpY[i][0]-ay[i],wpX[i][0]-ax[i]);
-					escondido[i]=false;
-					mLugar[i]=d;
-					mEstado[i]=1;
+					int k=int(aleatorio()*4.0f)%4;
+					fx=PONTOS[k][0]+0.03f*(aleatorio()-0.5f);
+					fy=PONTOS[k][1]+0.03f*(aleatorio()-0.5f);
+					mTroca[i]=float(tempo)+6.0f+6.0f*aleatorio();
 					if(i<nNomes)
-						anuncia(std::string("Mundo: ")+nomes[i]+(carro?" foi de carro ":" foi a pé ")+paraOnde(D.tipo));
-					continue;
+						anuncia(std::string("Mundo: ")+nomes[i]+" "+NOME_PONTO[k]);
 					}
+				wpX[i][0]=bmin[0]+fx*w;
+				wpY[i][0]=bmin[1]+fy*h;
 				}
-			}
-		else if(mEstado[i]==2)
-			{
-			/* saindo do laboratório: até a porta de dentro; ali ele passa para a rua, na porta do prédio */
-			escondido[i]=false;
-			tx=bmin[0]+(3.0f+0.435f)*w;
-			ty=bmin[1]+0.12f*h;
+			tx=wpX[i][0];
+			ty=wpY[i][0];
 			anda=true;
-			float dx=tx-ax[i],dy=ty-ay[i];
-			if(dx*dx+dy*dy<1.2f*1.2f)
-				{
-				noLab[i]=false;
-				porta(L,desvio,ax[i],ay[i]);
-				ay[i]+=1.6f; // o prédio do laboratório fica na parte de cima da avenida
-				int d=mLugar[i];
-				for(int t=0;t<12&&d==mLugar[i];++t)
-					d=mundoEscolhe(i);
-				mDest[i]=d;
-				mEstado[i]=0;
-				mAte[i]=float(tempo);
-				continue;
-				}
+			if(!presente[i]&&float(tempo)>=mAte[i])
+				mEstado[i]=2; // acabou a visita: vai embora
 			}
 		else
 			{
-			/* a caminho: segue os pontos de passagem */
-			escondido[i]=false;
-			tx=wpX[i][wpI[i]];
-			ty=wpY[i][wpI[i]];
+			/* saindo: até a porta */
+			tx=px;
+			ty=py;
 			anda=true;
 			float dx=tx-ax[i],dy=ty-ay[i];
-			if(dx*dx+dy*dy<0.8f*0.8f)
+			if(presente[i])
 				{
-				++wpI[i];
-				if(wpCarro[i]>0)
-					{
-					bool noCarro=wpI[i]==1||wpI[i]==2; // trechos pela avenida
-					tipo[i]=(noCarro?2.0f:3.0f)+cor;   // entra no carro na calçada; estaciona e desce na frente do destino
-					vb[i]=noCarro?(10.0f+3.0f*aleatorio()):(3.0f+1.0f*aleatorio());
-					vel[i]=vb[i];
-					}
-				if(wpI[i]>=wpN[i])
-					{
-					/* chegou */
-					mEstado[i]=0;
-					mTroca[i]=aberto(L.tipo)?0.0f:float(tempo)+3.5f; // lugar fechado: 3,5 s na porta antes de entrar
-					float fica=L.tipo==P_CASA?(7.0f+9.0f*aleatorio()):
-					           L.tipo==P_LAB?((i<nNomes&&presente[i])?(20.0f+22.0f*aleatorio()):(8.0f+8.0f*aleatorio())):
-					           (L.tipo==P_CAFE||L.tipo==P_MERCADO)?(6.0f+6.0f*aleatorio()):(14.0f+16.0f*aleatorio());
-					mAte[i]=float(tempo)+fica;
-					escondido[i]=false;
-					wpX[i][0]=ax[i];
-					wpY[i][0]=ay[i];
-					if(i<nNomes)
-						{
-						rostoAte[i]=tempo+(aberto(L.tipo)?5.0:3.5); // o rosto aparece um instante: dá para ver quem chegou
-						anuncia(std::string("Mundo: ")+nomes[i]+" está "+ondeEsta(L.tipo));
-						}
-					continue;
-					}
-				tx=wpX[i][wpI[i]];
-				ty=wpY[i][wpI[i]];
+				mEstado[i]=0; // o Willbert viu a pessoa de novo: ela fica
+				mTroca[i]=0.0f;
+				}
+			else if(dx*dx+dy*dy<1.2f*1.2f)
+				{
+				mEstado[i]=1;
+				escondido[i]=true;
+				mAte[i]=float(tempo)+35.0f+70.0f*aleatorio();
+				if(i<nNomes)
+					anuncia(std::string("Mundo: ")+nomes[i]+" saiu do laboratório");
+				continue;
 				}
 			}
-		if(!anda||escondido[i])
+		if(!anda)
 			continue;
-		/* anda até o ponto (vira aos poucos; parado, olha para o meio do lugar) */
+		/* anda até o ponto, virando aos poucos; sentado, fica de frente para a bancada */
 		float dx=tx-ax[i],dy=ty-ay[i],dl=std::sqrt(dx*dx+dy*dy);
 		if(dl>0.25f)
 			{
-			float alvoA=std::atan2(dy,dx),da=alvoA-ang[i];
+			float da=std::atan2(dy,dx)-ang[i];
 			while(da>PI) da-=2.0f*PI;
 			while(da<-PI) da+=2.0f*PI;
-			float giro=(tipo[i]<3.0f?5.0f:7.0f)*dt;
-			ang[i]+=std::max(-giro,std::min(giro,da));
+			ang[i]+=std::max(-7.0f*dt,std::min(7.0f*dt,da));
 			float passo=std::min(dl,vb[i]*dt*(std::abs(da)>1.2f?0.35f:1.0f));
 			ax[i]+=std::cos(ang[i])*passo;
 			ay[i]+=std::sin(ang[i])*passo;
 			vel[i]=vb[i];
 			}
-		else if(mEstado[i]==0&&!noLab[i])
-			{
-			float da=std::atan2(L.y-ay[i],L.x-ax[i])-ang[i];
-			while(da>PI) da-=2.0f*PI;
-			while(da<-PI) da+=2.0f*PI;
-			ang[i]+=std::max(-3.0f*dt,std::min(3.0f*dt,da));
-			}
 		}
-	/* Câmera: a cidade tem três telas; a imagem vai para o bairro com mais membros e, a cada 18 s,
-	   visita o próximo bairro que tenha algum membro (sem membros com nome, passeia pelos três). */
-	if(tempo>=camTroca)
-		{
-		camTroca=tempo+18.0;
-		int conta[4]={0,0,0,0}; // três bairros e o interior do laboratório
-		for(int i=0;i<quantos;++i)
-			if(tipo[i]>0.5f&&(nNomes==0||i<nNomes))
-				++conta[std::max(0,std::min(3,int((ax[i]-bmin[0])/w)))];
-		int atual=std::max(0,std::min(3,int(camAlvo/w+0.5f)));
-		int melhor=atual;
-		for(int k=1;k<=4;++k)
-			{
-			int b=(atual+k)%4;
-			if(conta[b]>0&&(b!=atual||conta[atual]>0))
-				{
-				melhor=b;
-				break;
-				}
-			}
-		camAlvo=float(melhor)*w;
-		}
-	float falta=camAlvo-camX;
-	if(std::abs(falta)>1.5f*w||camAlvo>2.5f*w||camX>2.5f*w)
-		camX=camAlvo; // entrar e sair do laboratório é um corte (ele não fica "ao lado" do bairro de lazer)
-	else
-		camX+=std::max(-14.0f*dt,std::min(14.0f*dt,falta)); // desliza (uma tela em ~4 s)
 	}
 
 bool Extras::mundoRosto(const char* nome,float segundos)
 	{
-	/* mostra o rosto do membro num balão acima do boneco e leva a imagem até o bairro onde ele está */
+	/* mostra o rosto do membro num balão acima do boneco por alguns segundos (toque no painel);
+	   se ele está fora, entra para aparecer */
 	for(int i=0;i<nNomes;++i)
 		if(std::string(nomes[i])==nome)
 			{
 			rostoAte[i]=tempo+segundos;
-			if(modo==MUNDO&&mapaOk)
-				{
-				float w=bmax[0]-bmin[0];
-				camAlvo=float(std::max(0,std::min(3,int((ax[i]-bmin[0])/w))))*w;
-				camTroca=tempo+segundos+4.0;
-				}
+			if(modo==MUNDO&&mEstado[i]==1)
+				mAte[i]=float(tempo);
 			return true;
 			}
 	return false;

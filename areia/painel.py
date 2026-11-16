@@ -173,8 +173,8 @@ def brincar():
             return "Nova rodada iniciada"
         if acao in ("mundo", "membros", "laob"):
             nomes, presentes = areia.mundo()
-            return "Mundo LAOB na areia" + (": " + ", ".join(n.capitalize() for n in nomes) if nomes else
-                                            " (sem fotos de membros: só moradores sem nome)")
+            return "Laboratório na areia" + (": " + ", ".join(n.capitalize() for n in nomes) if nomes else
+                                             " (sem fotos de membros: a sala fica vazia)")
         if acao in areia.ANIMAIS:
             t, n = areia.animais(acao)
             return f"{n} {t} na areia"
@@ -533,11 +533,11 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
 
   <section class="card" id="sec-laob">
     <h2>LAOB <span class="extra" id="laob-estado"></span></h2>
-    <p class="hint" id="laob-dica">Os membros do laboratório vivendo numa cidade de três bairros: casas, centro e lazer.</p>
+    <p class="hint" id="laob-dica">O laboratório por dentro, desenhado na areia, com os membros lá.</p>
     <div class="moradores" id="moradores"></div>
     <div class="grid" style="margin-top:12px">
-      <button class="primary" id="laob-ligar">🏙️ Abrir o mundo LAOB</button>
-      <button class="danger" data-b="parar" id="laob-fechar" hidden>Fechar o mundo</button>
+      <button class="primary" id="laob-ligar">🔬 Abrir o laboratório</button>
+      <button class="danger" data-b="parar" id="laob-fechar" hidden>Fechar o laboratório</button>
     </div>
   </section>
 
@@ -637,8 +637,8 @@ const OUTROS = [
    d: 'O baú fica enterrado num lugar sorteado. Cavem procurando: quanto mais perto, mais o sinal brilha. Achou? Ele reaparece em outro lugar depois de 20 s. O nível muda a profundidade.'},
   {id: 'trex', ic: '🦖', t: 'Fóssil de dinossauro', c: 'Escavação de um esqueleto de T-Rex.', tag: 'Escavar',
    d: 'Aparece a quadrícula de escavação. Cavando até a profundidade certa, o esqueleto surge na rocha. O nível muda a profundidade.'},
-  {id: 'mundo', ic: '🏙️', t: 'LAOB', c: 'Os membros vivendo numa cidadezinha.', tag: 'Mundo',
-   d: 'Uma cidade com três bairros: o das casas, o centro (laboratório, café, mercado e praça) e o de lazer (parque, campinho e lago de pesca). Cada membro tem casa e rotina, anda pelas calçadas e vai de carro pela avenida quando é longe. Quem entra no laboratório aparece lá dentro, na planta da sala de verdade: bancadas, quadro, caixa de areia. A imagem vai para onde eles estão e a cidade escurece à noite, com janelas e postes acesos. O rosto aparece num balão quando o membro chega a um lugar, ou quando você toca no nome dele na seção LAOB.'},
+  {id: 'mundo', ic: '🔬', t: 'LAOB', c: 'O laboratório por dentro, com os membros.', tag: 'Mundo',
+   d: 'A planta do laboratório desenhada na areia: bancadas, quadro, porta azul, caixa de areia. Quem o Willbert está vendo fica lá dentro, na própria bancada ou andando pela sala; os outros entram pela porta de vez em quando. O rosto aparece num balão quando alguém entra, ou quando você toca no nome dele na seção LAOB.'},
 ];
 const ICONES = {corrida: '🏁', vila: '🏘️', rota: '🚩', vulcao: '🌋'};
 const TODOS = [...AGUA.map(j => ({id: j[0], ic: ICONES[j[0]] || '💧', t: j[1], c: j[2], d: j[3], tag: 'Jogo de água'})), ...OUTROS];
@@ -722,7 +722,7 @@ function situacao(a) {
   if (a === 'labirinto') return E.labirinto === 'chegou' ? 'A água chegou!' : 'Labirinto · água correndo';
   if (a === 'tesouro') return E.tesouro === 'achado' ? 'Tesouro achado!' : 'Tesouro enterrado';
   if (a === 'trex') return E.fossil === 'achado' ? 'Fóssil escavado!' : 'Fóssil enterrado';
-  if (a === 'mundo') return 'Mundo LAOB';
+  if (a === 'mundo') return 'Laboratório LAOB';
   if (a === 'mar' || a === 'peixes' || a === 'carros' || a === 'pessoas' || a === 'todos') return 'Bichos, carros e pessoas';
   return 'Animação na areia';
 }
@@ -774,9 +774,9 @@ async function carrega() {
     $('#laob-ligar').hidden = ligado;
     $('#laob-fechar').hidden = !ligado;
     $('#laob-dica').textContent = ligado
-      ? (mundo.length ? 'Toque num nome: a imagem vai até o bairro onde ele está e o rosto aparece num balão. Bolinha verde: está no laboratório de verdade agora.'
-                      : 'Mundo aberto só com moradores sem nome: não há fotos de membros na pasta do projetor.')
-      : 'Os membros do laboratório vivendo numa cidade de três bairros: casas, centro e lazer.';
+      ? (mundo.length ? 'Toque num nome para ver o rosto num balão (quem está fora entra para aparecer). Bolinha verde: está no laboratório de verdade agora.'
+                      : 'A sala está vazia: não há fotos de membros na pasta do projetor.')
+      : 'O laboratório por dentro, desenhado na areia, com os membros lá.';
     const chaveM = JSON.stringify(mundo);
     if (M.dataset.chave !== chaveM) {
       M.dataset.chave = chaveM;

@@ -765,9 +765,9 @@ def membros_atualiza():
     return True
 
 
-# ---------- mundo LAOB: os membros vivendo numa cidadezinha na areia (Mundo.cpp) ----------
+# ---------- mundo LAOB: o laboratório por dentro, com os membros (Mundo.cpp) ----------
 
-MORADORES_DO_MUNDO = 8   # bonecos sem nome, para a cidade ter movimento
+MORADORES_DO_MUNDO = 0   # (a cidade com moradores sem nome saiu em 16/11/2026: ficou só o laboratório)
 
 
 def _comando_mundo(nomes, n_fotos, presentes, com_painel):
@@ -776,9 +776,8 @@ def _comando_mundo(nomes, n_fotos, presentes, com_painel):
 
 
 def mundo():
-    """Liga o mundo LAOB: uma cidade de três telas (bairro das casas, centro com laboratório, café,
-    mercado e praça, e lazer com parque, campinho e lago), com os membros e alguns moradores sem
-    nome indo de um lugar para o outro. Devolve (nomes, presentes)."""
+    """Liga o mundo LAOB: a planta do laboratório, com os membros lá dentro. Quem o Willbert está
+    vendo fica na sala; os outros entram pela porta de tempos em tempos. Devolve (nomes, presentes)."""
     membros_com_foto()   # refaz o painel de rostos se a pasta mudou
     nomes, n_fotos, presentes = membros_lista()
     _brincadeira(_comando_mundo(nomes, n_fotos, presentes, True))
@@ -795,11 +794,11 @@ def mundo_situacao():
     inicio = max((i for i, l in enumerate(linhas) if l.startswith("Animais: mundo")), default=0)
     fazendo = {}
     for l in linhas[inicio:]:
-        m = re.match(r"Mundo: ([A-Z]+) (foi .+|está .+)$", l.strip())
+        m = re.match(r"Mundo: ([A-Z]+) (foi .+|está .+|entrou .+|saiu .+)$", l.strip())
         if m:
             fazendo[m.group(1)] = m.group(2)
     nomes, _, presentes = membros_lista()
-    return [{"nome": n.capitalize(), "fazendo": fazendo.get(n, "saindo de casa"), "presente": n in presentes}
+    return [{"nome": n.capitalize(), "fazendo": fazendo.get(n, "chegando"), "presente": n in presentes}
             for n in nomes]
 
 

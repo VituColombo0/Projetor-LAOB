@@ -10,7 +10,7 @@
   areia-animais carros       carrinhos andando pelos vales
   areia-animais mar [peixe=6 tubarao=1 tartaruga=2 aguaviva=2 polvo=1 arraia=1 carro=4 pessoa=4]   quantos de cada
   areia-animais pessoas      pessoinhas passeando pela areia
-  areia-animais mundo        o mundo LAOB: os membros vivendo numa cidadezinha (fotos em membros/)
+  areia-animais mundo        o mundo LAOB: o laboratório por dentro, com os membros (fotos em membros/)
   areia-animais todos        tudo junto (pode pôr a quantidade: areia-animais peixes 15)
   areia-animais parar        tira os animais
 
@@ -64,11 +64,11 @@ def animais(args):
         print("Animais removidos.")
     elif pedido in ("mundo", "laob", "membros", "membro", "laboratorio", "lab", "cidade"):
         nomes, presentes = areia.mundo()
-        print("Mundo LAOB na areia: casas, laboratório, café, praça, parque e campinho.")
+        print("Mundo LAOB na areia: o laboratório por dentro.")
         if nomes:
-            print("Moram lá: " + ", ".join(n.capitalize() + (" (no laboratório agora)" if n in presentes else "") for n in nomes) + ".")
+            print("Membros: " + ", ".join(n.capitalize() + (" (no laboratório agora)" if n in presentes else "") for n in nomes) + ".")
         else:
-            print(f"Sem fotos de membros: só moradores sem nome. Fotos em {areia.PASTA_MEMBROS} (Nome.jpg).")
+            print(f"Sem fotos de membros: a sala fica vazia. Fotos em {areia.PASTA_MEMBROS} (Nome.jpg).")
     elif pedido == "mar":
         sel = None
         if len(args) > 1:

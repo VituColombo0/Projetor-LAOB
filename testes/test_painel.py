@@ -140,12 +140,12 @@ class Painel(Ambiente):
     def test_mundo_laob_pelo_painel(self):
         pagina = self.get("/").get_data(as_text=True)
         self.assertIn('id="sec-laob"', pagina)
-        self.assertIn("Abrir o mundo LAOB", pagina)
+        self.assertIn("Abrir o laboratório", pagina)
         self.assertEqual(self.post("/mundo/rosto", json={"nome": "Victor"}).status_code, 400)   # mundo fechado
         r = self.post("/brincar", json={"acao": "mundo"})
         self.assertEqual(r.status_code, 200, r.get_json())
-        self.assertIn("Mundo LAOB", r.get_json()["msg"])
-        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd mundo 0 0 - 8")
+        self.assertIn("Laboratório na areia", r.get_json()["msg"])
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd mundo 0 0 - 0")
         self.assertEqual(self.get("/estado").get_json()["mundo"], [])    # sem fotos nem Willbert nos testes
 
     def test_mar_e_chuva_pelo_painel(self):

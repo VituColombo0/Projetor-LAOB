@@ -55,6 +55,7 @@ void Extras::pedeJogo(int qual,int nivel)
 	{
 	labirinto=false; // um jogo por vez (o labirinto é o "jogo" mais antigo)
 	labEstado=0;
+	labVazao=1.0f; // a vazão do labirinto difícil (0,6) não vale para os jogos (antes ficava valendo)
 	jogo=qual;
 	jogoNivel=std::max(1,std::min(3,nivel));
 	jogoRodadas=0;

@@ -163,8 +163,9 @@ class Extras
 	float wpX[MAX_AGENTES][5],wpY[MAX_AGENTES][5]; int wpN[MAX_AGENTES],wpI[MAX_AGENTES],wpCarro[MAX_AGENTES]; // pontos de passagem
 	bool noLab[MAX_AGENTES]; int mDest[MAX_AGENTES]; // dentro do laboratório (4ª tela); destino já escolhido ao sair
 	float horaFixa; // hora da cidade para testes (0-24); <0 = a hora de verdade
+	float fatorVazao; // multiplica a água de todas as nascentes dos jogos e do labirinto (calibração)
 	float camX,camAlvo; double camTroca; // a cidade tem 3 telas de largura: deslocamento da imagem (cm)
-	bool mundoPedido;
+	bool mundoPedido,mundoPronto; // pedido antes de haver mapa; sala montada
 	void mundo(const std::vector<std::string>& lista,int giro,int fotos,int moradores);
 	void mundoMonta(void);
 	int mundoEscolhe(int i);

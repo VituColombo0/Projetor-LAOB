@@ -601,6 +601,12 @@ void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
 						std::cout<<"Jogo: teste, peças na nascente"<<std::endl;
 						}
 					}
+				else if(isToken(tokens[0],"jogoVazao")&&tokens.size()>=2)
+					{
+					/* calibração: multiplica a água de todas as nascentes dos jogos e do labirinto */
+					extras.fatorVazao=float(std::max(0.05,std::min(3.0,atof(tokens[1].c_str()))));
+					std::cout<<"Jogo: vazão x"<<extras.fatorVazao<<std::endl;
+					}
 				else if(isToken(tokens[0],"jogoInfo"))
 					{
 					/* Diagnóstico: cada peça (tipo, posição, estado, nível) e a correnteza do barco */
@@ -648,7 +654,7 @@ void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
 		x.normalize();
 		y.normalize();
 		Point centro=boxTransform.inverseTransform(Point(extras.lsx,extras.lsy,extras.referencia));
-		glVertexAttrib1fARB(1,GLfloat(extras.labVazao/waterSpeed));
+		glVertexAttrib1fARB(1,GLfloat(extras.labVazao*extras.fatorVazao/waterSpeed));
 		glBegin(GL_POLYGON);
 		for(int i=0;i<24;++i)
 			{
@@ -702,7 +708,7 @@ void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
 			if(!f.ativa)
 				continue;
 			Point centro=boxTransform.inverseTransform(Point(f.x,f.y,extras.referencia));
-			glVertexAttrib1fARB(1,GLfloat(extras.labVazao*f.vazao/waterSpeed));
+			glVertexAttrib1fARB(1,GLfloat(extras.labVazao*f.vazao*extras.fatorVazao/waterSpeed));
 			glBegin(GL_POLYGON);
 			for(int i=0;i<24;++i)
 				{

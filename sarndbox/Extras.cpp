@@ -42,10 +42,11 @@ Extras::Extras(void)
 		chuvas[k].x=chuvas[k].y=0.0f;
 		chuvas[k].ate=-1.0;
 		}
-	mundoPedido=false;
+	mundoPedido=mundoPronto=false;
 	camX=camAlvo=0.0f;
 	camTroca=0.0;
 	horaFixa=-1.0f;
+	fatorVazao=0.66f; // calibrado em 16/11/2026: com a água a 100% do tempo real, 0,66 devolve o ritmo dos jogos de quando ela andava a 66%
 	for(int i=0;i<MAX_AGENTES;++i)
 		{
 		noLab[i]=false;
@@ -427,7 +428,7 @@ void Extras::povoa(int novoModo,int quantidade)
 	{
 	if(modo==MUNDO)
 		nPecas=0; // os lugares da cidade somem com ela
-	mundoPedido=false;
+	mundoPedido=mundoPronto=false;
 	for(int i=0;i<MAX_AGENTES;++i)
 		temAlvo[i]=escondido[i]=false;
 	modo=novoModo;
@@ -560,7 +561,7 @@ void Extras::passo(float dt)
 		{
 		if(tipo[i]<0.5f)
 			continue;
-		if(modo==MUNDO&&(escondido[i]||nPecas==0))
+		if(modo==MUNDO&&(escondido[i]||!mundoPronto))
 			continue; // dentro de uma construção (ou a cidade ainda não foi montada)
 		bool peixe=aquatico(tipo[i]);
 		if(vel[i]==0.0f)
@@ -1165,20 +1166,22 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				}
 			}
 		}
-	/* Cidade LAOB: o chão deixa de ser o relevo colorido e vira cidade (medidas iguais às do Mundo.cpp):
-	   avenida no meio, ruas transversais a cada terço de tela, calçadas, quarteirões gramados (os do
-	   centro calçados), árvores nos cantos e o caminho da porta até a calçada. */
+	/* Mundo LAOB: o chão deixa de ser o relevo colorido e vira o laboratório por dentro, visto de cima
+	   (planta aproximada, tirada do vídeo da sala; as posições são as mesmas do Mundo.cpp): janelas em
+	   cima, porta azul e quadro verde embaixo, bancada de parede com computadores, bancada comprida no
+	   meio, mesas perto das janelas, arco branco, manequim e a caixa de areia. À noite (hora de
+	   verdade) as janelas escurecem. */
 	if(extrasMundo.w>0.5)
 		{
-		vec2 u=vec2(ep.x-extrasMundo2.x+extrasMundo.x,ep.y-extrasMundo2.y);
+		vec2 u=vec2(ep.x-extrasMundo2.x,ep.y-extrasMundo2.y);
 		float mw=extrasMundo.y;
 		float mh=extrasMundo.z;
-		if(u.x>=3.0*mw)
 			{
+
 			/* Quarta tela: o laboratório por dentro, visto de cima (planta aproximada, tirada do vídeo da sala):
 			   janelas em cima, porta azul e quadro verde embaixo, bancada de parede com computadores, bancada
 			   comprida no meio, mesas perto das janelas, arco branco, manequim e a caixa de areia. */
-			vec2 f=vec2((u.x-3.0*mw)/mw,u.y/mh);                       // 0..1 dentro da sala
+			vec2 f=vec2(u.x/mw,u.y/mh);                                  // 0..1 dentro da sala
 			vec2 cm=vec2(f.x*mw,f.y*mh);                                 // em cm, para as texturas
 			vec3 g=mix(vec3(0.60,0.61,0.60),vec3(0.66,0.67,0.66),step(0.5,fract(cm.x/4.0))*step(0.5,fract(cm.y/4.0))
 			           +(1.0-step(0.5,fract(cm.x/4.0)))*(1.0-step(0.5,fract(cm.y/4.0))));     // piso
@@ -1269,105 +1272,8 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				else if(cw2.y<0.0&&cw2.y>-9.0&&abs(cw2.x)<-cw2.y*0.45)
 					g+=vec3(0.06,0.08,0.1)*(0.6+0.4*sin(et*2.0));
 				}
+			g*=mix(0.86,1.0,dia);                                        // à noite, só a luz de dentro
 			baseColor=vec4(g,1.0);
-			}
-		else
-			{
-		float cw=mw/3.0;
-		float RA=2.4;
-		float RV=1.6;
-		float CAL=1.1;
-		float da=abs(u.y-mh*0.5);
-		float dv=abs(u.x-floor(u.x/cw+0.5)*cw);
-		float n=exRuido(u*0.8)*0.6+exRuido(u*2.9)*0.4;
-		float bairro=floor(u.x/mw);
-		vec3 g=mix(vec3(0.27,0.58,0.25),vec3(0.36,0.7,0.3),n);            // grama
-		if(bairro>0.5&&bairro<1.5)
-			g=mix(vec3(0.8,0.78,0.72),vec3(0.73,0.71,0.65),step(0.5,fract(u.x/1.6))*step(0.5,fract(u.y/1.6))
-			      +(1.0-step(0.5,fract(u.x/1.6)))*(1.0-step(0.5,fract(u.y/1.6))));  // centro: piso
-		bool rua=da<RA||dv<RV;
-		if(rua)
-			{
-			g=vec3(0.25,0.26,0.29)*(0.9+0.12*n);
-			if(da<RA&&dv>RV+2.4&&da<0.13&&fract(u.x/2.6)<0.55)
-				g=vec3(0.95,0.82,0.25);                                     // faixa amarela da avenida
-			if(da<RA&&dv>RV+0.5&&dv<RV+2.2&&fract(u.y/0.8)<0.5)
-				g=vec3(0.93);                                               // faixa de pedestres
-			if(dv<RV&&da>RA+0.6&&dv<0.09&&fract(u.y/2.2)<0.5)
-				g=vec3(0.85);                                               // tracejado das ruas
-			}
-		else if(da<RA+CAL||dv<RV+CAL*0.8)
-			g=mix(vec3(0.76,0.75,0.72),vec3(0.68,0.67,0.64),step(0.5,fract((u.x+u.y)/1.3)));  // calçada
-		else
-			{
-			/* dentro do quarteirão */
-			float alt=mh*0.5-(RA+CAL)-0.8;
-			vec2 q=vec2(u.x-(floor(u.x/cw)+0.5)*cw,da-(RA+CAL+alt*0.5));
-			float col=floor(u.x/cw);
-			bool cimaL=u.y>mh*0.5;
-			/* quarteirões sem construção (traçado fixo): estacionamento, jardins, bosque e horta */
-			float enfeite=(col>2.5&&col<3.5&&!cimaL)?1.0:((col>4.5&&col<5.5&&!cimaL)||(col>5.5&&col<6.5&&!cimaL))?2.0:
-			              (col>6.5&&col<7.5&&cimaL)?3.0:(col>7.5&&!cimaL)?4.0:0.0;
-			if(enfeite<0.5)
-				{
-				if(abs(q.x)<0.8&&q.y<0.0)
-					g=vec3(0.84,0.76,0.58);                                 // caminho da porta até a calçada
-				}
-			else if(enfeite<1.5)
-				{
-				/* estacionamento: asfalto, vagas pintadas e alguns carros parados */
-				if(abs(q.x)<cw*0.5-RV-CAL-2.6&&abs(q.y)<alt*0.5-2.8)
-					{
-					g=vec3(0.3,0.31,0.34);
-					float vaga=fract(q.x/2.6);
-					if(vaga<0.06&&abs(abs(q.y)-2.6)<2.0)
-						g=vec3(0.9);
-					float idx=floor(q.x/2.6)+(q.y>0.0?7.0:0.0);
-					if(exHash(vec2(idx,3.0))>0.45&&vaga>0.2&&vaga<0.85&&abs(abs(q.y)-2.7)<1.5)
-						g=(vec3(0.55)+0.45*cos(6.2832*(vec3(fract(idx*0.381+0.13))+vec3(0.0,0.33,0.67))))
-						  *(abs(abs(q.y)-2.7)<0.6?0.75:1.0);
-					}
-				}
-			else if(enfeite<2.5)
-				{
-				/* jardim: canteiros de flores e um caminho em cruz */
-				if(abs(q.x)<0.6||abs(q.y)<0.6)
-					g=vec3(0.84,0.76,0.58);
-				else
-					{
-					vec2 cel=floor(u/1.1);
-					float hf=exHash(cel);
-					if(hf>0.55&&distance(fract(u/1.1),vec2(0.5))<0.3)
-						g=vec3(0.55)+0.45*cos(6.2832*(vec3(hf*7.0)+vec3(0.0,0.33,0.67)));
-					}
-				}
-			else if(enfeite<3.5)
-				{
-				/* bosque: muitas árvores */
-				vec2 cel=floor(u/3.0);
-				vec2 pa=(cel+vec2(0.3)+0.4*vec2(exHash(cel),exHash(cel+vec2(5.0,1.0))))*3.0+vec2(0.1*sin(et*1.3+cel.x),0.0);
-				float dB=distance(u,pa);
-				if(dB<1.35)
-					g=mix(vec3(0.06,0.32,0.1),vec3(0.26,0.64,0.22),smoothstep(1.35,0.2,distance(u,pa+vec2(0.3))));
-				}
-			else
-				{
-				/* horta: canteiros em fileiras */
-				if(abs(q.x)<cw*0.5-RV-CAL-2.8&&abs(q.y)<alt*0.5-2.8)
-					g=fract(q.y/1.3)<0.55?mix(vec3(0.42,0.28,0.16),vec3(0.2,0.6,0.2),step(0.5,fract(q.x/0.8+floor(q.y/1.3)*0.37))):vec3(0.5,0.36,0.22);
-				}
-			vec2 canto=vec2(cw*0.5-RV-CAL-1.7,alt*0.5-1.6);
-			vec2 arv=vec2(abs(q.x),abs(q.y))-canto+vec2(0.12*sin(et*1.4+u.x),0.0);
-			float dA=length(arv);
-			if(dA<1.9)
-				g=mix(g,vec3(0.0),0.25*smoothstep(1.9,1.2,dA));              // sombra da árvore
-			if(dA<1.45)
-				g=mix(vec3(0.08,0.36,0.12),vec3(0.3,0.7,0.24),smoothstep(1.45,0.2,length(arv-vec2(0.3,0.3))));
-			if(bairro<0.5&&abs(abs(q.x)-(cw*0.5-RV-CAL-0.25))<0.12&&fract(u.y/0.7)<0.6)
-				g=vec3(0.93,0.9,0.82);                                      // cerquinha das casas
-			}
-		exNoite=1.0-smoothstep(5.3,6.8,extrasMundo2.z)*(1.0-smoothstep(17.5,19.2,extrasMundo2.z));
-		baseColor=vec4(g,1.0);
 			}
 		}
 	/* (as peças vêm antes dos bonecos: no mundo LAOB eles andam por cima da praça e do campinho) */
@@ -1510,130 +1416,6 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					c=mix(vec3(0.62,0.42,0.22),vec3(0.35,0.22,0.1),linhas);
 				c=mix(c,est>0.5?vec3(1.0,0.82,0.2):vec3(0.85,0.65,0.4),anel);
 				}
-			else if(tipo>18.5)
-				{
-				/* lago de pesca: água com ondinhas, margem de areia, um píer e peixinhos passando */
-				if(d<r*1.12)
-					c=mix(c,vec3(0.86,0.8,0.6),smoothstep(r*1.12,r*1.02,d));
-				if(d<r)
-					{
-					float onda=0.5+0.5*sin(d*4.0-et*2.0+sin(ang*3.0)*1.5);
-					c=mix(vec3(0.1,0.42,0.78),vec3(0.3,0.66,0.95),onda*0.6+0.2*smoothstep(r,0.0,d));
-					for(int k=0;k<3;++k)
-						{
-						float fk=float(k);
-						vec2 pf=vec2(cos(et*0.5+fk*2.1),sin(et*0.7+fk*1.3))*r*(0.3+0.15*fk);
-						if(distance(q,pf)<0.3)
-							c=vec3(1.0,0.6,0.2);
-						}
-					}
-				if(abs(q.x)<0.75&&q.y>r*0.25&&q.y<r*1.12)
-					c=mix(vec3(0.6,0.42,0.22),vec3(0.42,0.28,0.14),step(0.75,fract(q.y*1.4)));
-				}
-			else if(tipo>17.5)
-				{
-				/* mercado: prédio com toldo verde, vitrine e caixas de frutas na frente */
-				bool corpoM=abs(q.x)<r*0.9&&q.y>-r*0.55&&q.y<r*0.6;
-				if(corpoM)
-					{
-					c=vec3(0.95,0.93,0.86);
-					if(q.y<-r*0.12)
-						c=mix(vec3(0.15,0.6,0.3),vec3(0.98),step(0.0,sin(q.x*4.0)));
-					else if(abs(q.x)<r*0.6&&abs(q.y-r*0.2)<r*0.18)
-						c=mix(vec3(0.3,0.38,0.48),vec3(1.0,0.9,0.5),max(b.y,exNoite));
-					if(q.y>r*0.47)
-						c=vec3(0.8,0.3,0.2);
-					c*=mix(1.0,0.75,smoothstep(r*0.8,r*0.9,abs(q.x)));
-					}
-				for(int k=0;k<3;++k)
-					{
-					vec2 cx2=vec2((float(k)-1.0)*r*0.5,-r*0.78);
-					if(abs(q.x-cx2.x)<0.7&&abs(q.y-cx2.y)<0.5)
-						c=k==0?vec3(0.9,0.2,0.15):(k==1?vec3(0.95,0.75,0.1):vec3(0.3,0.7,0.2));
-					}
-				}
-			else if(tipo>16.5)
-				{
-				/* campinho: gramado com linhas, traves e a bola correndo quando tem gente */
-				if(abs(q.x)<r&&abs(q.y)<r*0.62)
-					{
-					c=mix(vec3(0.2,0.62,0.25),vec3(0.26,0.7,0.3),step(0.0,sin(q.x*2.4)));
-					float linhas=max(smoothstep(0.14,0.04,abs(abs(q.x)-r*0.94)),smoothstep(0.14,0.04,abs(abs(q.y)-r*0.56)));
-					linhas=max(linhas,max(smoothstep(0.14,0.04,abs(q.x)),smoothstep(0.14,0.04,abs(d-r*0.24))));
-					c=mix(c,vec3(0.97),linhas);
-					if(abs(q.x)>r*0.88&&abs(q.y)<r*0.2)
-						c=vec3(0.95,0.95,0.9);
-					if(est>0.5&&distance(q,vec2(r*0.7*sin(et*1.3),r*0.4*sin(et*2.1+1.0)))<0.42)
-						c=vec3(1.0);
-					}
-				}
-			else if(tipo>15.5)
-				{
-				/* parque: gramado redondo, três árvores que balançam e um caminho */
-				c=mix(c,vec3(0.36,0.68,0.3),smoothstep(r,r*0.8,d)*0.85);
-				if(abs(q.y+q.x*0.3)<0.4&&d<r*0.9)
-					c=vec3(0.82,0.72,0.52);
-				for(int k=0;k<3;++k)
-					{
-					float fk=float(k);
-					vec2 pa=vec2(cos(fk*2.1+0.5),sin(fk*2.1+0.5))*r*0.55+vec2(0.12*sin(et*1.5+fk),0.0);
-					float da=distance(q,pa);
-					if(da<1.25)
-						c=mix(vec3(0.1,0.42,0.14),vec3(0.3,0.72,0.25),smoothstep(1.25,0.2,da));
-					}
-				}
-			else if(tipo>14.5)
-				{
-				/* café: casinha com toldo listrado e fumacinha quando tem alguém lá dentro */
-				bool corpoC=abs(q.x)<r*0.85&&q.y>-r*0.6&&q.y<r*0.55;
-				if(corpoC)
-					{
-					c=vec3(0.93,0.84,0.7);
-					if(q.y<-r*0.15)
-						c=mix(vec3(0.85,0.2,0.2),vec3(0.98),step(0.0,sin(q.x*5.0)));
-					else if(abs(abs(q.x)-r*0.4)<r*0.18&&abs(q.y-r*0.2)<r*0.16)
-						c=mix(vec3(0.3,0.35,0.45),vec3(1.0,0.88,0.45),max(b.y,exNoite));
-					c*=mix(1.0,0.75,smoothstep(r*0.75,r*0.85,abs(q.x)));
-					}
-				for(int k=0;k<3;++k)
-					{
-					float ph=fract(et*0.35+float(k)/3.0);
-					vec2 pf=vec2(r*0.45+0.3*sin(ph*6.0+float(k)),r*0.6+ph*2.6);
-					c=mix(c,vec3(0.97),smoothstep(0.3+0.5*ph,0.1,distance(q,pf))*(1.0-ph)*0.7*b.y);
-					}
-				}
-			else if(tipo>13.5)
-				{
-				/* praça: calçada redonda, bancos e a fonte no meio */
-				if(d<r)
-					{
-					c=mix(vec3(0.78,0.74,0.66),vec3(0.7,0.66,0.58),step(0.0,sin(q.x*3.0)*sin(q.y*3.0)));
-					c*=mix(1.0,0.8,smoothstep(r*0.9,r,d));
-					if(abs(abs(q.x)-r*0.62)<0.55&&abs(q.y)<0.22||abs(abs(q.y)-r*0.62)<0.22&&abs(q.x)<0.55)
-						c=vec3(0.5,0.32,0.16);
-					if(d<r*0.36)
-						c=mix(vec3(0.6,0.62,0.66),mix(vec3(0.2,0.55,0.95),vec3(0.8,0.95,1.0),0.5+0.5*sin(d*9.0-et*5.0)),step(d,r*0.3));
-					}
-				}
-			else if(tipo>12.5)
-				{
-				/* laboratório: prédio com faixa azul e janelas que acendem conforme a gente lá dentro */
-				if(abs(q.x)<r*0.95&&abs(q.y)<r*0.62)
-					{
-					c=vec3(0.86,0.9,0.95);
-					if(q.y>r*0.42)
-						c=vec3(0.12,0.4,0.8);
-					for(int k=0;k<4;++k)
-						{
-						float wx=(float(k)-1.5)*r*0.42;
-						if(abs(q.x-wx)<r*0.13&&abs(q.y-r*0.08)<r*0.16)
-							c=(float(k)<est-0.5||(exNoite>0.5&&k!=2))?mix(vec3(1.0,0.85,0.3),vec3(1.0,0.97,0.7),0.5+0.5*sin(et*3.0+float(k))):vec3(0.2,0.27,0.4);
-						}
-					if(abs(q.x)<r*0.12&&q.y<-r*0.3)
-						c=vec3(0.35,0.25,0.18);
-					c*=mix(1.0,0.72,max(smoothstep(r*0.86,r*0.95,abs(q.x)),smoothstep(r*0.54,r*0.62,abs(q.y))));
-					}
-				}
 			else if(tipo>11.5)
 				{
 				/* armadilha do labirinto: disco vermelho com espinhos girando; ao ser tocada, pisca */
@@ -1688,22 +1470,6 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				}
 			baseColor.rgb=c;
 			}
-		}
-	/* Cidade LAOB à noite (hora de verdade): tudo escurece e fica azulado; o que é luz (janelas acesas,
-	   faixas refletivas) continua claro, e os postes das esquinas fazem poças de luz quente */
-	if(extrasMundo.w>0.5&&exNoite>0.01)
-		{
-		vec2 un=vec2(ep.x-extrasMundo2.x+extrasMundo.x,ep.y-extrasMundo2.y);
-		float cwn=extrasMundo.y/3.0;
-		vec2 poste=vec2(abs(abs(un.x-floor(un.x/cwn+0.5)*cwn)-2.3),abs(abs(un.y-extrasMundo.z*0.5)-3.1));
-		float luzP=smoothstep(5.0,0.0,length(poste));
-		vec3 antes=baseColor.rgb;
-		float acesa=step(0.85,antes.r)*step(0.72,antes.g)*step(antes.b,0.62);
-		vec3 escuro=antes*vec3(0.3,0.36,0.56);
-		vec3 noiteCor=mix(escuro,antes,max(acesa,luzP*0.75))+vec3(1.0,0.8,0.45)*luzP*luzP*0.3;
-		if(length(poste)<0.35)
-			noiteCor=vec3(1.0,0.95,0.75);
-		baseColor.rgb=mix(antes,noiteCor,exNoite);
 		}
 	/* Peixes e carrinhos (vistos de cima, com sombra): */
 	for(int i=0;i<24;++i)
@@ -2182,7 +1948,7 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 	GLfloat ag[MAX_AGENTES*4];
 	for(int i=0;i<MAX_AGENTES;++i)
 		{
-		bool visivel=i<quantos&&tipo[i]>0.5f&&vel[i]!=0.0f&&!(modo==MUNDO&&(escondido[i]||nPecas==0));
+		bool visivel=i<quantos&&tipo[i]>0.5f&&vel[i]!=0.0f&&!(modo==MUNDO&&(escondido[i]||!mundoPronto));
 		ag[i*4+0]=ax[i]-(modo==MUNDO?camX:0.0f); // na cidade, a imagem desliza
 		ag[i*4+1]=ay[i];
 		ag[i*4+2]=ang[i];
@@ -2230,7 +1996,7 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 		ch[k*4]=chuvas[k].x; ch[k*4+1]=chuvas[k].y; ch[k*4+2]=chuvas[k].ate>tempo?1.0f:0.0f; ch[k*4+3]=0.0f;
 		}
 	glUniform4fvARB(locations[14],MAX_CHUVAS,ch);
-	bool cidade=modo==MUNDO&&nPecas>0;
+	bool cidade=modo==MUNDO&&mundoPronto; // (o nome ficou da cidade antiga: hoje é a sala do laboratório)
 	glUniform4fARB(locations[12],camX,bmax[0]-bmin[0],bmax[1]-bmin[1],cidade?1.0f:0.0f);
 	/* hora local (0-24): a cidade escurece à noite e as janelas e os postes acendem */
 	float hora=horaFixa;
