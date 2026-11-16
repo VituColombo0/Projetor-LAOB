@@ -25,7 +25,7 @@ abre a **topografia** de sempre; por comando, atalho, painel do celular ou pelo
 - **Foto:** a imagem é projetada sobre a areia, amplia onde está alta (efeito lente) e ganha a sombra do relevo; rosto sai recortado, sem fundo.
 - **Esculpir:** o rosto vira relevo-alvo; o projetor pinta onde falta areia (vermelho) e onde sobra (azul).
 - **Caça ao tesouro** e **fósseis de dinossauro** (T-Rex, Triceratops, Pterodáctilo, pegada): cave para achar.
-- **Animais marinhos à escolha:** peixes, tubarões, tartarugas, águas-vivas, polvos e arraias, na quantidade escolhida no painel; nadam nos lagos (areia baixa) e na água da chuva.
+- **Bichos, carros e pessoas à escolha:** no painel escolhe-se quantos de cada aparecem (peixes, tubarões, tartarugas, águas-vivas, polvos, arraias, carrinhos e pessoas; até 24). Os marinhos nadam nos lagos (areia baixa) e na água da chuva.
 - **Carrinhos e pessoas:** quatro modelos de carro (sedã, picape, van, esportivo, e táxi) seguindo os vales; pessoas de vários jeitos (criança ou adulto, chapéu, boné, mochila, cabelo) passeando pela areia.
 - **Chuva:** pela mão aberta sobre a areia ou pelo painel (toque no ponto onde chover, chover em tudo, secar). A água tem o visual do lago e a cor do tema: lava no vulcão, água gelada no inverno, lama em marte, oásis no deserto.
 - **Mundo LAOB:** os membros do laboratório vivem numa cidade desenhada sobre a areia, com três bairros lado a lado (casas; centro com laboratório, café, mercado e praça; lazer com parque, campinho e lago de pesca), avenida, ruas e calçadas. A cidade tem três telas de largura e a imagem desliza para o bairro onde os membros estão. Cada boneco tem casa e rotina, anda pelas calçadas e vai de carro quando é longe; quem o Willbert está vendo no laboratório de verdade fica mais no laboratório da cidade. O rosto aparece num balão quando o membro chega a um lugar ou quando se toca no nome dele no painel.
@@ -112,7 +112,7 @@ O jeito normal é o painel (`http://localhost:8090`, atalho na Área de Trabalho
 | `areia-tesouro [facil\|normal\|dificil\|achou\|parar]` | Caça ao tesouro |
 | `areia-fossil trex [facil\|dificil]` | Fóssil: `trex`, `triceratops`, `pterodactilo`, `pegada` (também `achou`, `parar`) |
 | `areia-animais todos [n]` | `peixes`, `carros`, `pessoas` ou `todos` (também `parar`) |
-| `areia-animais mar peixe=8 tubarao=1` | Animais marinhos à escolha: `peixe`, `tubarao`, `tartaruga`, `aguaviva`, `polvo`, `arraia` |
+| `areia-animais mar peixe=8 tubarao=1 carro=3` | Quantos de cada: `peixe`, `tubarao`, `tartaruga`, `aguaviva`, `polvo`, `arraia`, `carro`, `pessoa` |
 | `areia-animais mundo` | Mundo LAOB: os membros numa cidadezinha (fotos `Nome.jpg` em `~/SARndbox-rosto/membros/`) |
 | `areia-labirinto [facil\|normal\|dificil\|nova\|placar\|parar]` | Labirinto de água |
 | `areia-jogo <jogo> [facil\|normal\|dificil]` | Jogo de água: `corrida`, `vila`, `rota`, `vulcao` (também `placar`, `nova`, `parar`, `ajuda`) |
@@ -168,8 +168,8 @@ na CPU e desenho no shader. Comandos: `tesouro [cm]`, `tesouroFim`, `animais pei
 `labirinto [nível]`, `labirintoNovo`, `labirintoFim`, `labirintoTeste`,
 `jogo <nome> [1-3]`, `jogoNovo`, `jogoFim`, `jogoTeste`, `jogoInfo`.
 
-- **Tesouro:** sorteado onde há areia acima da média; ao cavar aparece só o baú (madeira, cintas de ferro, fechadura), sem disco em volta; grãozinhos dourados piscam a menos de 2,5 cm; "Tesouro encontrado!" vai para o `sandbox.log`. Achado, reaparece em outro lugar após 20 s.
-- **Fósseis:** mesmo mecanismo (`tipoTesouro` 2–5), raio maior; aparecem só os ossos em marfim (o Tiranossauro é o esqueleto inteiro) e, perto, o quadro de escavação com estacas e barbante; `tesouroTeste` mostra o desenho sem cavar; outro aparece em 30 s.
+- **Tesouro:** sorteado onde há areia acima da média; ao cavar aparece só o baú (madeira, cintas de ferro, fechadura), sem disco em volta; achado, a tampa abre em 1,4 s, aparecem ouro e joias e moedas saltam para fora; grãozinhos dourados piscam a menos de 2,5 cm; "Tesouro encontrado!" vai para o `sandbox.log`. Achado, reaparece em outro lugar após 20 s.
+- **Fósseis:** mesmo mecanismo (`tipoTesouro` 2–5), raio maior; aparecem só os ossos em marfim com manchas, poros e rachaduras (Tiranossauro de corpo inteiro, crânio de Triceratops com escudo, Pterodáctilo de asas abertas, pegada calcada na lama) e, perto, o quadro de escavação com estacas e barbante; `tesouroTeste` mostra o desenho sem cavar; outro aparece em 30 s.
 - **Água da chuva para os animais:** 2× por segundo o Sandbox lê a água simulada e preenche `aguaSim` (profundidade por célula do mapa); `agua()` vale para o lago e para células com 0,45 cm ou mais. O shader dos extras marca os pixels dos animais (`extrasMarca`) e o da água os deixa à vista. `chuva x y s` cria uma nuvem que joga água por alguns segundos; `secar` tira tudo.
 - **Peixes:** água = 1,5 cm abaixo da mediana; só nadam onde o corpo inteiro cabe na água (1,8 cm de folga da margem), com rastro e bolhas; cardume com separação de ~5,5 cm, curvas suaves (até 2,8 rad/s); preso numa poça por 4 s, reaparece num lago de verdade.
 - **Carrinhos:** só andam onde cabem inteiros em chão firme (2,2 cm de folga do lago e da borda), levantam poeira; seguem a curva de nível dos vales, evitam rampas e lagos, freiam só para o de número menor; travado 3 s, dá meia-volta.
