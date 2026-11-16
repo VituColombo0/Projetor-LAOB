@@ -65,6 +65,7 @@ confere "escavação de fóssil" "areia-fossil triceratops facil >/dev/null && s
 confere "peixes e carrinhos" "areia-animais todos 12 >/dev/null && grep -q 'Animais: todos (12)' '$D/sandbox.log'"
 confere "baú: animação de achado (tesouroTeste)" "areia-tesouro facil >/dev/null && sleep 2 && '$D/sandbox.sh' cmd tesouroTeste >/dev/null && sleep 1 && grep -q '^Tesouro: teste, mostrando' '$D/sandbox.log' && areia-tesouro parar >/dev/null"
 confere "mundo LAOB: cidade montada e bonecos com rotina" "areia-animais mundo >/dev/null && for _ in \$(seq 1 30); do grep -q '^Mundo: cidade montada' '$D/sandbox.log' && break; sleep 0.5; done; grep -q '^Animais: mundo' '$D/sandbox.log' && grep -q '^Mundo: cidade montada' '$D/sandbox.log' && curl -s -m 5 localhost:8090/estado | grep -q '\"animais\":\"mundo\"'"
+confere "mundo LAOB: noite e dia pela hora (mundoHora)" "'$D/sandbox.sh' cmd 'mundoHora 22' >/dev/null && sleep 1 && grep -q '^Mundo: hora 22' '$D/sandbox.log' && '$D/sandbox.sh' cmd 'mundoHora auto' >/dev/null"
 confere "animais marinhos à escolha" "areia-animais mar peixe=6 tubarao=1 tartaruga=1 aguaviva=1 polvo=1 arraia=1 carro=2 pessoa=3 >/dev/null && grep -q 'Animais: mar (16)' '$D/sandbox.log'"
 confere "chuva pelo painel e secar" "curl -s -m 5 -X POST -H 'Content-Type: application/json' -d '{\"x\":0.5,\"y\":0.5}' localhost:8090/chuva | grep -q '\"ok\":true' && sleep 1 && grep -q '^Chuva: nuvem' '$D/sandbox.log' && curl -s -m 5 -X POST -H 'Content-Type: application/json' -d '{\"secar\":true}' localhost:8090/chuva | grep -q '\"ok\":true' && sleep 1 && grep -q '^Chuva: a água foi seca' '$D/sandbox.log'"
 confere "pessoas andando" "areia-animais pessoas 8 >/dev/null && grep -q 'Animais: pessoas (8)' '$D/sandbox.log'"
@@ -84,6 +85,7 @@ confere "corrida: a água chega à bandeira e há vencedor" "areia-jogo corrida 
 confere "jogos retirados não ligam" "! areia-jogo barco >/dev/null 2>&1 && ! areia-jogo fazenda >/dev/null 2>&1"
 confere "jogo: parar" "areia-jogo parar >/dev/null && areia-jogo placar | grep -q 'Nenhum jogo'"
 confere "parar brincadeiras" "areia-animais parar >/dev/null && areia-tesouro parar >/dev/null && areia-labirinto parar >/dev/null && areia-labirinto placar | grep -q 'não está ligado'"
+confere "desempenho: mede quanto a água acompanha o tempo real" "grep -q 'a água andou [0-9]*% do tempo real' '$D/sandbox.log'"
 confere "desempenho medido no log" "grep -q '^Desempenho: ' '$D/sandbox.log' || { sleep 31; grep -q '^Desempenho: ' '$D/sandbox.log'; }"
 confere "log sem a enxurrada de 'Ran out of time'" "! grep -q 'Ran out of time' '$D/sandbox.log'"
 for t in vulcao inverno marte deserto oceano arco-iris classico; do

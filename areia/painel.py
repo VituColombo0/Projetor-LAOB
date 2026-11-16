@@ -638,7 +638,7 @@ const OUTROS = [
   {id: 'trex', ic: '🦖', t: 'Fóssil de dinossauro', c: 'Escavação de um esqueleto de T-Rex.', tag: 'Escavar',
    d: 'Aparece a quadrícula de escavação. Cavando até a profundidade certa, o esqueleto surge na rocha. O nível muda a profundidade.'},
   {id: 'mundo', ic: '🏙️', t: 'LAOB', c: 'Os membros vivendo numa cidadezinha.', tag: 'Mundo',
-   d: 'Uma cidade com três bairros: o das casas, o centro (laboratório, café, mercado e praça) e o de lazer (parque, campinho e lago de pesca). Cada membro tem casa e rotina, anda pelas calçadas e vai de carro pela avenida quando é longe. A imagem desliza para o bairro onde eles estão. O rosto aparece num balão quando o membro chega a um lugar, ou quando você toca no nome dele na seção LAOB.'},
+   d: 'Uma cidade com três bairros: o das casas, o centro (laboratório, café, mercado e praça) e o de lazer (parque, campinho e lago de pesca). Cada membro tem casa e rotina, anda pelas calçadas e vai de carro pela avenida quando é longe. Quem entra no laboratório aparece lá dentro, na planta da sala de verdade: bancadas, quadro, caixa de areia. A imagem vai para onde eles estão e a cidade escurece à noite, com janelas e postes acesos. O rosto aparece num balão quando o membro chega a um lugar, ou quando você toca no nome dele na seção LAOB.'},
 ];
 const ICONES = {corrida: '🏁', vila: '🏘️', rota: '🚩', vulcao: '🌋'};
 const TODOS = [...AGUA.map(j => ({id: j[0], ic: ICONES[j[0]] || '💧', t: j[1], c: j[2], d: j[3], tag: 'Jogo de água'})), ...OUTROS];

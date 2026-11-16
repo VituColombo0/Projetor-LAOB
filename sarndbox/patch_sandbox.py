@@ -49,6 +49,7 @@ if "FaceImage" not in h:
 	mutable double labLeitura; // Labirinto: última medição da água no alvo
 	mutable std::vector<GLfloat> labQuantidade,labFundo; // Labirinto: leitura da água e do fundo
 	mutable unsigned int quadrosAgua,atrasosAgua; // Desempenho: passos de água e quantos atrasaram
+	mutable double aguaPedida,aguaFaltou; // Desempenho: tempo de água que devia ser simulado e o que ficou para trás
 	double desempenhoTempo; unsigned int quadros; // Desempenho: quadros desde a última linha no log
 	double extrasMapaTempo,extrasUltimoPasso; // Última atualização do mapa e do movimento
 	float tesouroPedido; // Profundidade do tesouro pedido antes de haver mapa (<0 = nenhum)
@@ -266,7 +267,7 @@ void Sandbox::toggleDEM(DEM* dem)
     # --- Extras (Projetor-LAOB)
     c = rep(c, "\t faceImage(0),faceDem(0),faceRefTime(0.0)",
             "\t faceImage(0),faceDem(0),faceRefTime(0.0),\n\t extrasMapaTempo(0.0),extrasUltimoPasso(0.0),tesouroPedido(-1.0f),\n"
-            "\t labLeitura(0.0),quadrosAgua(0),atrasosAgua(0),desempenhoTempo(0.0),quadros(0)")
+            "\t labLeitura(0.0),quadrosAgua(0),atrasosAgua(0),aguaPedida(0.0),aguaFaltou(0.0),desempenhoTempo(0.0),quadros(0)")
     c = rep(c, """<<" cm"<<std::endl;
 			break;
 			}
@@ -382,6 +383,12 @@ void Sandbox::toggleDEM(DEM* dem)
 					extras.mundo(lista,atoi(tokens[1].c_str()),atoi(tokens[2].c_str()),atoi(tokens[4].c_str()));
 					if(!ja)
 						std::cout<<"Animais: mundo ("<<lista.size()<<")"<<std::endl;
+					}
+				else if(isToken(tokens[0],"mundoHora")&&tokens.size()>=2)
+					{
+					/* para ver a cidade de dia ou de noite sem esperar: mundoHora 21 / mundoHora auto */
+					extras.horaFixa=isToken(tokens[1],"auto")?-1.0f:float(atof(tokens[1].c_str()));
+					std::cout<<"Mundo: hora "<<tokens[1]<<std::endl;
 					}
 				else if(isToken(tokens[0],"mundoRosto")&&tokens.size()>=2)
 					{
@@ -902,8 +909,12 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
     c = rep(c, """		if(totalTimeStep>1.0e-8f)
 			std::cout<<"Ran out of time by "<<totalTimeStep<<std::endl;
 """, """		++quadrosAgua;
+		aguaPedida+=Vrui::getFrameTime()*waterSpeed;
 		if(totalTimeStep>1.0e-8f)
+			{
 			++atrasosAgua;
+			aguaFaltou+=totalTimeStep;
+			}
 """)
     c = rep(c, """	/* Tesouro, lago, peixes e carrinhos: */
 	atualizaExtras();
@@ -917,10 +928,12 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
 	else if(Vrui::getApplicationTime()-desempenhoTempo>=30.0)
 		{
 		double dt=Vrui::getApplicationTime()-desempenhoTempo;
-		std::cout<<"Desempenho: "<<int(quadros/dt+0.5)<<" quadros/s; água atrasada em "<<atrasosAgua<<" de "<<quadrosAgua<<" passos"<<std::endl;
+		std::cout<<"Desempenho: "<<int(quadros/dt+0.5)<<" quadros/s; água atrasada em "<<atrasosAgua<<" de "<<quadrosAgua<<" passos"
+		         <<"; a água andou "<<(aguaPedida>0.0?int(100.0*(1.0-aguaFaltou/aguaPedida)+0.5):100)<<"% do tempo real"<<std::endl;
 		quadros=0;
 		quadrosAgua=0;
 		atrasosAgua=0;
+		aguaPedida=aguaFaltou=0.0;
 		desempenhoTempo=Vrui::getApplicationTime();
 		}
 """)
@@ -940,6 +953,22 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
 
 	/* Movimento dos peixes e carrinhos: */
 	extras.passo(dt);""")
+    # Chuva pela mão: uma "mão" na beirada da área iluminada (ou fora dela) não chove. Em 16/11/2026 o
+    # sensor via a borda da caixa como mão aberta e chovia sem parar num canto; a água acumulada ali,
+    # funda, deixava a simulação inteira em câmera lenta (66% do tempo real) e os jogos de água lentos.
+    c = rep(c, """			/* Render a rain disk approximating the hand: */
+			glBegin(GL_POLYGON);
+""", """			/* Projetor-LAOB: só chove com a mão sobre a areia (a mais de 4 cm da beirada iluminada) */
+			if(faceBoxMin[0]<faceBoxMax[0])
+				{
+				Point pm=boxTransform.transform(hIt->center);
+				if(pm[0]<faceBoxMin[0]+4.0||pm[0]>faceBoxMax[0]-4.0||pm[1]<faceBoxMin[1]+4.0||pm[1]>faceBoxMax[1]-4.0)
+					continue;
+				}
+			
+			/* Render a rain disk approximating the hand: */
+			glBegin(GL_POLYGON);
+""")
     open("Sandbox.cpp", "w").write(c)
 
 m = open("makefile").read()

@@ -114,6 +114,8 @@ void Extras::mundo(const std::vector<std::string>& lista,int giro,int fotos,int 
 		mAte[i]=mTroca[i]=0.0f;
 		wpN[i]=wpI[i]=wpCarro[i]=0;
 		escondido[i]=true;
+		noLab[i]=false;
+		mDest[i]=-1;
 		}
 	for(int i=0;i<MAX_NOMES;++i)
 		rostoAte[i]=0.0;
@@ -187,6 +189,8 @@ void Extras::mundoMonta(void)
 		vel[i]=vb[i];
 		wpN[i]=wpI[i]=wpCarro[i]=0;
 		escondido[i]=!aberto(pecas[l].tipo);
+		noLab[i]=false;
+		mDest[i]=-1;
 		}
 	camX=camAlvo=0.0f;
 	camTroca=tempo+6.0;
@@ -266,7 +270,52 @@ void Extras::mundoPasso(float dt)
 		if(mEstado[i]==0)
 			{
 			/* está no lugar */
-			if(aberto(L.tipo))
+			bool laDentro=L.tipo==P_LAB&&noLab[i]; // na quarta tela: o interior do laboratório
+			if(laDentro)
+				{
+				/* Dentro do laboratório: quase sempre na própria bancada; de vez em quando vai à caixa de
+				   areia, ao quadro, à bancada do meio ou ao manequim (posições iguais às do desenho) */
+				escondido[i]=false;
+				if(float(tempo)>=mTroca[i])
+					{
+					static const float assentos[8][2]={{0.56f,0.215f},{0.66f,0.215f},{0.76f,0.215f},{0.86f,0.215f},
+					                                   {0.14f,0.65f},{0.20f,0.65f},{0.26f,0.65f},{0.17f,0.42f}};
+					static const float pontos[4][2]={{0.64f,0.63f},{0.25f,0.17f},{0.60f,0.40f},{0.84f,0.62f}};
+					float fx,fy;
+					if(aleatorio()<0.6f)
+						{
+						fx=assentos[i%8][0];
+						fy=assentos[i%8][1];
+						mTroca[i]=float(tempo)+9.0f+10.0f*aleatorio();
+						}
+					else
+						{
+						int k=int(aleatorio()*4.0f)%4;
+						fx=pontos[k][0]+0.03f*(aleatorio()-0.5f);
+						fy=pontos[k][1]+0.03f*(aleatorio()-0.5f);
+						mTroca[i]=float(tempo)+5.0f+5.0f*aleatorio();
+						}
+					wpX[i][0]=bmin[0]+(3.0f+fx)*w;
+					wpY[i][0]=bmin[1]+fy*h;
+					}
+				tx=wpX[i][0];
+				ty=wpY[i][0];
+				anda=true;
+				}
+			else if(L.tipo==P_LAB&&i<nNomes&&mDest[i]<0)
+				{
+				/* membro na porta do laboratório: o rosto aparece um instante e ele entra (vai para a 4ª tela) */
+				escondido[i]=false;
+				if(float(tempo)>=mTroca[i])
+					{
+					noLab[i]=true;
+					ax[i]=bmin[0]+(3.0f+0.435f)*w;
+					ay[i]=bmin[1]+0.13f*h;
+					ang[i]=PI*0.5f;
+					mTroca[i]=0.0f;
+					}
+				}
+			else if(aberto(L.tipo))
 				{
 				escondido[i]=false;
 				if(float(tempo)>=mTroca[i])
@@ -292,9 +341,16 @@ void Extras::mundoPasso(float dt)
 				}
 			else
 				escondido[i]=float(tempo)>=mTroca[i]; // para um instante na porta (o rosto aparece) e entra
+			if(float(tempo)>=mAte[i]&&laDentro)
+				{
+				/* hora de sair: primeiro anda até a porta, do lado de dentro */
+				mEstado[i]=2;
+				continue;
+				}
 			if(float(tempo)>=mAte[i])
 				{
-				int d=mundoEscolhe(i);
+				int d=mDest[i]>=0?mDest[i]:mundoEscolhe(i);
+				mDest[i]=-1;
 				if(d==mLugar[i])
 					mAte[i]=float(tempo)+6.0f+10.0f*aleatorio(); // fica mais um pouco
 				else
@@ -341,6 +397,28 @@ void Extras::mundoPasso(float dt)
 						anuncia(std::string("Mundo: ")+nomes[i]+(carro?" foi de carro ":" foi a pé ")+paraOnde(D.tipo));
 					continue;
 					}
+				}
+			}
+		else if(mEstado[i]==2)
+			{
+			/* saindo do laboratório: até a porta de dentro; ali ele passa para a rua, na porta do prédio */
+			escondido[i]=false;
+			tx=bmin[0]+(3.0f+0.435f)*w;
+			ty=bmin[1]+0.12f*h;
+			anda=true;
+			float dx=tx-ax[i],dy=ty-ay[i];
+			if(dx*dx+dy*dy<1.2f*1.2f)
+				{
+				noLab[i]=false;
+				porta(L,desvio,ax[i],ay[i]);
+				ay[i]+=1.6f; // o prédio do laboratório fica na parte de cima da avenida
+				int d=mLugar[i];
+				for(int t=0;t<12&&d==mLugar[i];++t)
+					d=mundoEscolhe(i);
+				mDest[i]=d;
+				mEstado[i]=0;
+				mAte[i]=float(tempo);
+				continue;
 				}
 			}
 		else
@@ -400,7 +478,7 @@ void Extras::mundoPasso(float dt)
 			ay[i]+=std::sin(ang[i])*passo;
 			vel[i]=vb[i];
 			}
-		else if(mEstado[i]==0)
+		else if(mEstado[i]==0&&!noLab[i])
 			{
 			float da=std::atan2(L.y-ay[i],L.x-ax[i])-ang[i];
 			while(da>PI) da-=2.0f*PI;
@@ -413,15 +491,15 @@ void Extras::mundoPasso(float dt)
 	if(tempo>=camTroca)
 		{
 		camTroca=tempo+18.0;
-		int conta[3]={0,0,0};
+		int conta[4]={0,0,0,0}; // três bairros e o interior do laboratório
 		for(int i=0;i<quantos;++i)
 			if(tipo[i]>0.5f&&(nNomes==0||i<nNomes))
-				++conta[std::max(0,std::min(2,int((ax[i]-bmin[0])/w)))];
-		int atual=std::max(0,std::min(2,int(camAlvo/w+0.5f)));
+				++conta[std::max(0,std::min(3,int((ax[i]-bmin[0])/w)))];
+		int atual=std::max(0,std::min(3,int(camAlvo/w+0.5f)));
 		int melhor=atual;
-		for(int k=1;k<=3;++k)
+		for(int k=1;k<=4;++k)
 			{
-			int b=(atual+k)%3;
+			int b=(atual+k)%4;
 			if(conta[b]>0&&(b!=atual||conta[atual]>0))
 				{
 				melhor=b;
@@ -431,7 +509,10 @@ void Extras::mundoPasso(float dt)
 		camAlvo=float(melhor)*w;
 		}
 	float falta=camAlvo-camX;
-	camX+=std::max(-14.0f*dt,std::min(14.0f*dt,falta)); // desliza (uma tela em ~4 s)
+	if(std::abs(falta)>1.5f*w||camAlvo>2.5f*w||camX>2.5f*w)
+		camX=camAlvo; // entrar e sair do laboratório é um corte (ele não fica "ao lado" do bairro de lazer)
+	else
+		camX+=std::max(-14.0f*dt,std::min(14.0f*dt,falta)); // desliza (uma tela em ~4 s)
 	}
 
 bool Extras::mundoRosto(const char* nome,float segundos)
@@ -444,7 +525,7 @@ bool Extras::mundoRosto(const char* nome,float segundos)
 			if(modo==MUNDO&&mapaOk)
 				{
 				float w=bmax[0]-bmin[0];
-				camAlvo=float(std::max(0,std::min(2,int((ax[i]-bmin[0])/w))))*w;
+				camAlvo=float(std::max(0,std::min(3,int((ax[i]-bmin[0])/w))))*w;
 				camTroca=tempo+segundos+4.0;
 				}
 			return true;

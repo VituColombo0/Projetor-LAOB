@@ -10,6 +10,7 @@ Extras - caça ao tesouro, peixes e carrinhos sobre o relevo (Projetor-LAOB).
 #include <GL/Extensions/GLARBShaderObjects.h>
 #include <GL/Extensions/GLARBMultitexture.h>
 #include <cstdio>
+#include <ctime>
 #include <Geometry/ProjectiveTransformation.h>
 
 namespace {
@@ -44,8 +45,11 @@ Extras::Extras(void)
 	mundoPedido=false;
 	camX=camAlvo=0.0f;
 	camTroca=0.0;
+	horaFixa=-1.0f;
 	for(int i=0;i<MAX_AGENTES;++i)
 		{
+		noLab[i]=false;
+		mDest[i]=-1;
 		wpN[i]=wpI[i]=wpCarro[i]=0;
 		for(int k=0;k<5;++k)
 			wpX[i][k]=wpY[i][k]=0.0f;
@@ -790,7 +794,7 @@ uniform vec4 extrasNomesCfg;  // quantos nomes, giro do texto (quartos de volta)
 uniform vec4 extrasChuva[4]; // nuvens de chuva do painel: x, y (cm), ligada (1)
 float extrasMarca;          // 1 onde há um animal marinho (o shader da água o deixa à vista)
 uniform vec4 extrasMundo;   // cidade LAOB: deslocamento da imagem (cm), largura e altura da caixa, ligada (1)
-uniform vec4 extrasMundo2;  // canto da caixa (x, y)
+uniform vec4 extrasMundo2;  // canto da caixa (x, y) e a hora local (0-24)
 uniform sampler2D extrasRostos; // painel de rostos dos membros (8 quadros lado a lado, com transparência)
 float exCaixa(vec2 p,vec2 metade,float raio)
 	{
@@ -835,6 +839,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 	vec3 ep=extrasPos;
 	float et=extrasInfo.x;
 	extrasMarca=0.0;
+	float exNoite=0.0;          // 0 de dia .. 1 de noite (só na cidade LAOB)
 	float ef=extrasEfeito.x;
 	float ref=extrasEfeito.y;
 	if(extrasEfeito.w>0.5)
@@ -1168,6 +1173,106 @@ const char* Extras::glslFragmentMain=R"GLSL(
 		vec2 u=vec2(ep.x-extrasMundo2.x+extrasMundo.x,ep.y-extrasMundo2.y);
 		float mw=extrasMundo.y;
 		float mh=extrasMundo.z;
+		if(u.x>=3.0*mw)
+			{
+			/* Quarta tela: o laboratório por dentro, visto de cima (planta aproximada, tirada do vídeo da sala):
+			   janelas em cima, porta azul e quadro verde embaixo, bancada de parede com computadores, bancada
+			   comprida no meio, mesas perto das janelas, arco branco, manequim e a caixa de areia. */
+			vec2 f=vec2((u.x-3.0*mw)/mw,u.y/mh);                       // 0..1 dentro da sala
+			vec2 cm=vec2(f.x*mw,f.y*mh);                                 // em cm, para as texturas
+			vec3 g=mix(vec3(0.60,0.61,0.60),vec3(0.66,0.67,0.66),step(0.5,fract(cm.x/4.0))*step(0.5,fract(cm.y/4.0))
+			           +(1.0-step(0.5,fract(cm.x/4.0)))*(1.0-step(0.5,fract(cm.y/4.0))));     // piso
+			g+=vec3(0.05)*exRuido(cm*0.25);
+			float dia=smoothstep(5.3,6.8,extrasMundo2.z)*(1.0-smoothstep(17.5,19.2,extrasMundo2.z));
+			g+=vec3(0.07,0.07,0.05)*dia*smoothstep(0.45,0.95,f.y);       // claridade que entra pelas janelas
+			/* paredes */
+			float borda=min(min(f.x,1.0-f.x)*mw,min(f.y,1.0-f.y)*mh);
+			if(borda<2.6)
+				{
+				g=borda<1.4?vec3(0.1,0.11,0.13):vec3(0.86,0.85,0.8);
+				if(f.y>0.5&&borda>=1.4&&f.x>0.06&&f.x<0.94)
+					g=fract(f.x*13.0)<0.08?vec3(0.5,0.52,0.55):mix(vec3(0.1,0.14,0.28),vec3(0.62,0.82,0.95),dia);   // janelas
+				if(f.y<0.5&&borda>=1.4&&f.x>0.405&&f.x<0.465)
+					g=vec3(0.13,0.3,0.72);                                // porta azul
+				if(f.y<0.5&&borda>=1.4&&f.x>0.18&&f.x<0.34)
+					g=vec3(0.16,0.4,0.3);                                 // quadro verde
+				if(f.y<0.5&&borda>=1.4&&f.x>0.6&&f.x<0.66)
+					g=vec3(0.85,0.2,0.2);                                 // cartaz vermelho
+				if(f.x>0.5&&borda>=1.4&&((f.y>0.34&&f.y<0.43)||(f.y>0.5&&f.y<0.59)))
+					g=vec3(0.12,0.12,0.16);                               // as duas portas escuras do fundo
+				if(f.x<0.5&&borda>=1.4&&f.y>0.4&&f.y<0.7)
+					g=vec3(0.2,0.22,0.3);                                 // cartaz escuro
+				}
+			else
+				{
+				/* armário elétrico ao lado da porta */
+				if(f.x>0.345&&f.x<0.395&&f.y<0.13)
+					g=mix(vec3(0.6,0.61,0.62),vec3(0.9,0.2,0.15),step(distance(f,vec2(0.37,0.1)),0.008));
+				/* coluna com o extintor */
+				if(abs(f.x-0.36)<0.022&&f.y>0.86)
+					g=vec3(0.7,0.7,0.68);
+				if(distance(cm,vec2(0.385*mw,0.9*mh))<0.8)
+					g=vec3(0.85,0.1,0.1);
+				/* bancada de parede com computadores, e as cadeiras */
+				if(f.x>0.5&&f.x<0.92&&f.y>0.075&&f.y<0.17)
+					{
+					g=vec3(0.9,0.9,0.88);
+					if(abs(fract((f.x-0.56)*10.0+0.5)-0.5)<0.24&&f.y<0.12)
+						g=vec3(0.08,0.09,0.12);                           // monitores
+					if(abs(fract((f.x-0.56)*10.0+0.5)-0.5)<0.2&&f.y>0.135&&f.y<0.155)
+						g=vec3(0.25);                                     // teclados
+					}
+				for(int k=0;k<4;++k)
+					if(distance(cm,vec2((0.56+0.1*float(k))*mw,0.215*mh))<1.15)
+						g=k==3?vec3(0.9,0.75,0.1):(k==2?vec3(0.85,0.2,0.15):vec3(0.13));   // cadeiras (uma amarela e uma vermelha)
+				/* bancada comprida do meio, com prateleira e cabos azuis */
+				if(f.x>0.42&&f.x<0.8&&f.y>0.44&&f.y<0.56)
+					{
+					g=vec3(0.93,0.93,0.91);
+					if(abs(f.y-0.5)<0.022)
+						g=vec3(0.45,0.47,0.5);
+					if(fract(f.x*23.0)<0.3&&abs(f.y-0.47)<0.012)
+						g=vec3(0.15,0.4,0.85);
+					g*=mix(1.0,0.75,smoothstep(0.05,0.06,abs(f.y-0.5)));
+					}
+				/* mesas perto das janelas, com monitores e cadeiras */
+				if(f.x>0.1&&f.x<0.3&&f.y>0.7&&f.y<0.8)
+					g=abs(fract((f.x-0.14)*16.7+0.5)-0.5)<0.22&&f.y>0.75?vec3(0.08,0.09,0.12):vec3(0.86,0.82,0.74);
+				if(f.x>0.06&&f.x<0.13&&f.y>0.3&&f.y<0.56)
+					g=abs(f.y-0.42)<0.04&&f.x<0.09?vec3(0.08,0.09,0.12):vec3(0.86,0.82,0.74);
+				for(int k=0;k<3;++k)
+					if(distance(cm,vec2((0.14+0.06*float(k))*mw,0.65*mh))<1.1)
+						g=vec3(0.13);
+				if(distance(cm,vec2(0.17*mw,0.42*mh))<1.1)
+					g=vec3(0.13);
+				/* arco branco */
+				float arco=abs(length((cm-vec2(0.3*mw,0.5*mh))/vec2(1.0,1.0))-3.2);
+				if(arco<0.28&&cm.y>0.5*mh)
+					g=vec3(0.97);
+				if(distance(cm,vec2(0.3*mw-3.2,0.5*mh))<0.7)
+					g=vec3(0.95);
+				/* manequim */
+				if(length((cm-vec2(0.9*mw,0.62*mh))/vec2(0.7,1.3))<1.0||distance(cm,vec2(0.9*mw,0.62*mh))<0.62)
+					g=vec3(0.96,0.96,0.94);
+				/* a caixa de areia: moldura de madeira e o relevo colorido dentro */
+				vec2 ca=(f-vec2(0.64,0.77))/vec2(0.075,0.08);
+				if(max(abs(ca.x),abs(ca.y))<1.0)
+					{
+					float rel=exRuido(ca*2.2+vec2(et*0.05,0.0));
+					g=max(abs(ca.x),abs(ca.y))>0.86?vec3(0.5,0.33,0.16)
+					  :(rel<0.35?vec3(0.2,0.5,0.85):(rel<0.5?vec3(0.3,0.7,0.35):(rel<0.68?vec3(0.92,0.84,0.5):vec3(0.75,0.4,0.2))));
+					}
+				/* a câmera do Willbert, olhando para a porta */
+				vec2 cw2=cm-vec2(0.44*mw,mh-3.4);
+				if(length(cw2)<0.6)
+					g=vec3(0.98);
+				else if(cw2.y<0.0&&cw2.y>-9.0&&abs(cw2.x)<-cw2.y*0.45)
+					g+=vec3(0.06,0.08,0.1)*(0.6+0.4*sin(et*2.0));
+				}
+			baseColor=vec4(g,1.0);
+			}
+		else
+			{
 		float cw=mw/3.0;
 		float RA=2.4;
 		float RV=1.6;
@@ -1261,7 +1366,9 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			if(bairro<0.5&&abs(abs(q.x)-(cw*0.5-RV-CAL-0.25))<0.12&&fract(u.y/0.7)<0.6)
 				g=vec3(0.93,0.9,0.82);                                      // cerquinha das casas
 			}
+		exNoite=1.0-smoothstep(5.3,6.8,extrasMundo2.z)*(1.0-smoothstep(17.5,19.2,extrasMundo2.z));
 		baseColor=vec4(g,1.0);
+			}
 		}
 	/* (as peças vêm antes dos bonecos: no mundo LAOB eles andam por cima da praça e do campinho) */
 	/* Jogos de água (Jogos.cpp): peças desenhadas sobre o relevo */
@@ -1323,7 +1430,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					vec3 telha=b.w>0.5?vec3(0.5)+0.45*cos(6.2832*(vec3(b.w/100.0)+vec3(0.0,0.33,0.67))):vec3(0.78,0.2,0.14);
 					vec3 cc=corpo?vec3(0.96,0.9,0.74):telha;
 					if(corpo&&b.w>0.5&&abs(abs(p.x)-0.68)<0.2&&abs(p.y+0.3)<0.22)
-						cc=mix(vec3(0.25,0.3,0.4),vec3(1.0,0.9,0.4),b.y); // janelas: acesas com o dono em casa
+						cc=mix(vec3(0.25,0.3,0.4),vec3(1.0,0.9,0.4),max(b.y,exNoite*step(0.35,exHash(a.xy+vec2(extrasMundo.x,0.0))))); // janelas: acesas com o dono em casa (e à noite, na maioria)
 					if(porta)
 						cc=vec3(0.45,0.28,0.15);
 					if(est>1.5)
@@ -1433,7 +1540,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					if(q.y<-r*0.12)
 						c=mix(vec3(0.15,0.6,0.3),vec3(0.98),step(0.0,sin(q.x*4.0)));
 					else if(abs(q.x)<r*0.6&&abs(q.y-r*0.2)<r*0.18)
-						c=mix(vec3(0.3,0.38,0.48),vec3(1.0,0.9,0.5),b.y);
+						c=mix(vec3(0.3,0.38,0.48),vec3(1.0,0.9,0.5),max(b.y,exNoite));
 					if(q.y>r*0.47)
 						c=vec3(0.8,0.3,0.2);
 					c*=mix(1.0,0.75,smoothstep(r*0.8,r*0.9,abs(q.x)));
@@ -1485,7 +1592,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					if(q.y<-r*0.15)
 						c=mix(vec3(0.85,0.2,0.2),vec3(0.98),step(0.0,sin(q.x*5.0)));
 					else if(abs(abs(q.x)-r*0.4)<r*0.18&&abs(q.y-r*0.2)<r*0.16)
-						c=mix(vec3(0.3,0.35,0.45),vec3(1.0,0.88,0.45),b.y);
+						c=mix(vec3(0.3,0.35,0.45),vec3(1.0,0.88,0.45),max(b.y,exNoite));
 					c*=mix(1.0,0.75,smoothstep(r*0.75,r*0.85,abs(q.x)));
 					}
 				for(int k=0;k<3;++k)
@@ -1520,7 +1627,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 						{
 						float wx=(float(k)-1.5)*r*0.42;
 						if(abs(q.x-wx)<r*0.13&&abs(q.y-r*0.08)<r*0.16)
-							c=float(k)<est-0.5?mix(vec3(1.0,0.85,0.3),vec3(1.0,0.97,0.7),0.5+0.5*sin(et*3.0+float(k))):vec3(0.2,0.27,0.4);
+							c=(float(k)<est-0.5||(exNoite>0.5&&k!=2))?mix(vec3(1.0,0.85,0.3),vec3(1.0,0.97,0.7),0.5+0.5*sin(et*3.0+float(k))):vec3(0.2,0.27,0.4);
 						}
 					if(abs(q.x)<r*0.12&&q.y<-r*0.3)
 						c=vec3(0.35,0.25,0.18);
@@ -1581,6 +1688,22 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				}
 			baseColor.rgb=c;
 			}
+		}
+	/* Cidade LAOB à noite (hora de verdade): tudo escurece e fica azulado; o que é luz (janelas acesas,
+	   faixas refletivas) continua claro, e os postes das esquinas fazem poças de luz quente */
+	if(extrasMundo.w>0.5&&exNoite>0.01)
+		{
+		vec2 un=vec2(ep.x-extrasMundo2.x+extrasMundo.x,ep.y-extrasMundo2.y);
+		float cwn=extrasMundo.y/3.0;
+		vec2 poste=vec2(abs(abs(un.x-floor(un.x/cwn+0.5)*cwn)-2.3),abs(abs(un.y-extrasMundo.z*0.5)-3.1));
+		float luzP=smoothstep(5.0,0.0,length(poste));
+		vec3 antes=baseColor.rgb;
+		float acesa=step(0.85,antes.r)*step(0.72,antes.g)*step(antes.b,0.62);
+		vec3 escuro=antes*vec3(0.3,0.36,0.56);
+		vec3 noiteCor=mix(escuro,antes,max(acesa,luzP*0.75))+vec3(1.0,0.8,0.45)*luzP*luzP*0.3;
+		if(length(poste)<0.35)
+			noiteCor=vec3(1.0,0.95,0.75);
+		baseColor.rgb=mix(antes,noiteCor,exNoite);
 		}
 	/* Peixes e carrinhos (vistos de cima, com sombra): */
 	for(int i=0;i<24;++i)
@@ -1683,21 +1806,31 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				}
 			else if(a.w<6.0)
 				{
-				/* tartaruga: casco com gomos, cabeça e quatro nadadeiras que remam */
+				/* tartaruga: casco abaulado com gomos e borda clara, cabeça com olhos, rabinho e quatro nadadeiras
+				   pintadas que remam */
 				float rema=0.35*sin(et*3.0+fase);
 				float casco=length(l/vec2(1.9,1.5));
-				float cabecaT=length((l-vec2(2.3,0.0))/vec2(0.62,0.5));
-				float nadF=length((vec2(l.x-1.2-rema*0.4,abs(l.y)-1.75))/vec2(0.85,0.42));
-				float nadT=length((vec2(l.x+1.4+rema*0.3,abs(l.y)-1.35))/vec2(0.6,0.35));
+				float cabecaT=length((l-vec2(2.35,0.0))/vec2(0.66,0.5));
+				float nadF=length((vec2(l.x-1.25-rema*0.45,abs(l.y)-1.8))/vec2(0.95,0.44));
+				float nadT=length((vec2(l.x+1.45+rema*0.3,abs(l.y)-1.35))/vec2(0.62,0.36));
+				bool rabo=l.x<-1.8&&l.x>-2.5&&abs(l.y)<(l.x+2.5)*0.3;
+				vec3 pele=mix(vec3(0.42,0.6,0.3),vec3(0.6,0.62,0.36),fract(a.w));
 				if(casco<1.0)
 					{
 					vec2 gomo=fract(l*0.95+vec2(0.5*step(0.5,fract(l.y*0.475)),0.0))-0.5;
-					cb=mix(vec3(0.2,0.42,0.2),vec3(0.5,0.42,0.18),fract(a.w)*0.8);
-					cb*=mix(0.6,1.0,smoothstep(0.0,0.12,0.5-max(abs(gomo.x),abs(gomo.y))));
-					cb*=mix(1.15,0.7,smoothstep(0.3,1.0,casco));
+					vec3 fundoC=mix(vec3(0.18,0.4,0.2),vec3(0.5,0.4,0.17),fract(a.w)*0.8);
+					cb=mix(fundoC*1.35,fundoC*0.8,smoothstep(0.0,0.42,length(gomo)));                       // cada gomo é mais claro no meio
+					cb*=mix(0.5,1.0,smoothstep(0.0,0.1,0.5-max(abs(gomo.x),abs(gomo.y))));                    // sulcos
+					cb=mix(cb,vec3(0.72,0.66,0.38),smoothstep(0.84,0.93,casco));                             // borda clara
+					cb*=mix(1.2,0.75,smoothstep(0.2,1.0,casco))+0.25*smoothstep(0.6,0.0,distance(l,vec2(0.5,0.4)));
+					cb*=mix(1.0,0.6,smoothstep(0.95,1.0,casco));
 					}
-				else if(cabecaT<1.0||nadF<1.0||nadT<1.0)
-					cb=distance(l,vec2(2.5,0.25*sign(l.y)))<0.1?vec3(0.02):vec3(0.45,0.6,0.32);
+				else if(cabecaT<1.0)
+					cb=distance(l,vec2(2.55,0.27*sign(l.y)))<0.11?vec3(0.02):pele*mix(1.15,0.8,cabecaT);
+				else if(nadF<1.0||nadT<1.0)
+					cb=pele*0.9*(0.8+0.3*step(0.7,exRuido(l*4.0)));                                          // nadadeiras com pintas
+				else if(rabo)
+					cb=pele*0.85;
 				else
 					desenhou=false;
 				}
@@ -1755,17 +1888,21 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				}
 			else
 				{
-				/* arraia: corpo em losango com as asas batendo e um rabo fino */
+				/* arraia: corpo em losango de pontas arredondadas, asas que batem, olhos, pintas claras e rabo fino */
 				float bate=0.25*sin(et*3.2+fase);
 				vec2 f=vec2(l.x,l.y*(1.0+bate*smoothstep(0.4,2.4,abs(l.y))));
-				float losango=abs(f.x)/2.0+abs(f.y)/2.5;
-				bool rabo=f.x<-1.6&&f.x>-5.0&&abs(f.y-0.25*sin(f.x*1.4+et*3.0+fase))<0.11;
+				float losango=pow(pow(abs(f.x)/2.05,1.5)+pow(abs(f.y)/2.5,1.5),1.0/1.5);
+				bool rabo=f.x<-1.6&&f.x>-5.2&&abs(f.y-0.28*sin(f.x*1.4+et*3.0+fase))<0.11*smoothstep(-5.2,-1.6,f.x)+0.03;
 				if(losango<1.0)
 					{
-					cb=mix(vec3(0.45,0.42,0.36),vec3(0.26,0.3,0.4),fract(a.w));
-					cb*=mix(1.2,0.65,smoothstep(0.2,1.0,losango));
-					cb+=vec3(0.25)*exPontos(f*1.6,0.2,0.5)*0.4;                                              // pintas
-					if(distance(f,vec2(1.2,0.45*sign(f.y)))<0.12)
+					vec3 lombo=mix(vec3(0.5,0.45,0.36),vec3(0.24,0.3,0.42),fract(a.w));
+					cb=mix(lombo*1.25,lombo*0.7,smoothstep(0.1,1.0,losango));
+					cb=mix(cb,vec3(0.85,0.87,0.85),smoothstep(0.88,0.98,losango)*0.7);                       // beirada clara
+					cb+=vec3(0.3)*exPontos(f*1.5+vec2(fase),0.22,0.55)*0.5;                                  // pintas
+					cb*=0.9+0.2*smoothstep(0.0,2.0,abs(f.y))*bate*2.0;                                       // a asa que sobe pega luz
+					if(abs(f.y)<0.14&&f.x<1.2&&f.x>-1.5)
+						cb*=0.8;                                                                            // espinha
+					if(distance(f,vec2(1.15,0.48*sign(f.y)))<0.13)
 						cb=vec3(0.02);
 					}
 				else if(rabo)
@@ -1810,7 +1947,11 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			else if(enfeite<0.25&&abs(pl.y)<0.38&&pl.x>0.4&&pl.x<1.0)
 				baseColor=vec4((vec3(0.55)+0.45*cos(6.2832*(vec3(jeito*5.0)+vec3(0.0,0.33,0.67))))*0.8,1.0);  // aba do boné
 			else if(cabeca<0.52)
-				baseColor=vec4(pl.x>0.3?pele:cabelo*(0.85+0.3*smoothstep(0.5,0.0,cabeca)),1.0);
+				{
+				vec3 topo=cabelo*(0.8+0.35*smoothstep(0.5,0.0,cabeca))+vec3(0.25)*smoothstep(0.22,0.0,distance(pl,vec2(-0.05,0.18)));  // brilho no cabelo
+				baseColor=vec4(pl.x>0.3?pele*(1.05-0.25*smoothstep(0.3,0.52,cabeca)):topo,1.0);            // rosto para a frente
+				baseColor.rgb*=mix(1.0,0.7,smoothstep(0.46,0.52,cabeca));
+				}
 			else if(comprido)
 				baseColor=vec4(cabelo*0.9,1.0);
 			else if(mochila)
@@ -1823,9 +1964,9 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				baseColor=vec4(camisa,1.0);
 				}
 			else if(bracoE<0.27||bracoD<0.27)
-				baseColor=vec4(pele*0.95,1.0);
+				baseColor=vec4(min(bracoE,bracoD)<0.15?pele:cor*0.82,1.0);                                 // manga da camisa e a mão
 			else if(peE<1.0||peD<1.0)
-				baseColor=vec4(0.12,0.1,0.1,1.0);
+				baseColor=vec4(fract(jeito*23.0)<0.5?vec3(0.12,0.1,0.1):mix(vec3(0.95),vec3(0.8,0.15,0.15),step(0.75,fract(jeito*23.0))),1.0);  // sapato preto ou tênis
 			else if(sombra<1.0)
 				baseColor.rgb*=0.72;
 			}
@@ -2091,7 +2232,15 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 	glUniform4fvARB(locations[14],MAX_CHUVAS,ch);
 	bool cidade=modo==MUNDO&&nPecas>0;
 	glUniform4fARB(locations[12],camX,bmax[0]-bmin[0],bmax[1]-bmin[1],cidade?1.0f:0.0f);
-	glUniform4fARB(locations[13],bmin[0],bmin[1],0.0f,0.0f);
+	/* hora local (0-24): a cidade escurece à noite e as janelas e os postes acendem */
+	float hora=horaFixa;
+	if(hora<0.0f)
+		{
+		std::time_t agora=std::time(0);
+		std::tm* lt=std::localtime(&agora);
+		hora=lt!=0?float(lt->tm_hour)+float(lt->tm_min)/60.0f:12.0f;
+		}
+	glUniform4fARB(locations[13],bmin[0],bmin[1],hora,0.0f);
 	/* painel de rostos na unidade de textura 6 (a 5 é a foto do modo Foto). O número da unidade vai
 	   sempre: um sampler2D deixado na unidade 0 (das texturas retangulares) invalidaria o desenho. */
 	glUniform1iARB(locations[11],6);

@@ -33,6 +33,10 @@ tela() {
   fi
 }
 
+# Água: grade da simulação e passos por quadro (AREIA_GRADE_AGUA e AREIA_PASSOS_AGUA trocam, para testes).
+GRADE_AGUA=${AREIA_GRADE_AGUA:-320 240}
+PASSOS_AGUA=${AREIA_PASSOS_AGUA:-30}
+
 CORES=(-uhm)
 [ -f "$TEMA" ] && CORES=(-uhm "$(readlink -f "$TEMA")")
 
@@ -82,7 +86,7 @@ case "${1:-estado}" in
     fifo "$FIFO"
     tela
     parar
-    ( cd "$HOME" && exec setsid nohup "$ROSTO" "${TELA[@]}" "${CORES[@]}" -wts 320 240 -fpv -cp "$FIFO" ) > "$LOG" 2>&1 < /dev/null &
+    ( cd "$HOME" && exec setsid nohup "$ROSTO" "${TELA[@]}" "${CORES[@]}" -wts $GRADE_AGUA -ws 1.0 "$PASSOS_AGUA" -fpv -cp "$FIFO" ) > "$LOG" 2>&1 < /dev/null &
     sleep 8  # o Kinect e a janela levam uns segundos para ficar prontos para comandos
     if [ "$(qual)" != rosto ]; then
       echo "a versão com Foto não subiu (veja $LOG); voltando à topografia"
