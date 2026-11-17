@@ -1,15 +1,15 @@
 # Projetor-LAOB
 
-> Caixa de areia de realidade aumentada do Laboratório LAOB: projeta relevo colorido, fotos que se deformam com a areia e brincadeiras e jogos de água (tesouro, fósseis, peixes, labirinto, corrida de rios, vila, vulcão) a partir de um Kinect e um projetor.
+> Caixa de areia de realidade aumentada do Laboratório LAOB: projeta relevo colorido, fotos que se deformam com a areia, bichos que vivem no relevo e reagem às mãos, e brincadeiras e jogos de água a partir de um Kinect e um projetor, tudo controlado por um painel no navegador.
 
-![SARndbox](https://img.shields.io/badge/base-SARndbox%202.8-blue) ![Kinect](https://img.shields.io/badge/sensor-Kinect%20v1-lightgrey) ![Testes](https://img.shields.io/badge/testes-80-brightgreen) ![Licença GPL-2.0](https://img.shields.io/badge/licença-GPL--2.0-orange)
+![SARndbox](https://img.shields.io/badge/base-SARndbox%202.8-blue) ![Kinect](https://img.shields.io/badge/sensor-Kinect%20v1-lightgrey) ![Testes](https://img.shields.io/badge/testes-83-brightgreen) ![Licença GPL-2.0](https://img.shields.io/badge/licença-GPL--2.0-orange)
 
 ## Sumário
 
 - [Sobre](#sobre) · [Funcionalidades](#funcionalidades) · [Arquitetura](#arquitetura) · [Requisitos](#requisitos)
 - [Instalação](#instalação) · [Uso](#uso) · [Configuração](#configuração) · [Testes](#testes)
 - [Como funciona por dentro](#como-funciona-por-dentro) · [Estrutura do projeto](#estrutura-do-projeto)
-- [Solução de problemas](#solução-de-problemas) · [Licença](#licença)
+- [Solução de problemas](#solução-de-problemas) · [Roadmap](#roadmap) · [Equipe](#equipe) · [Licença](#licença)
 
 ## Sobre
 
@@ -17,19 +17,22 @@ Roda no PC **laob**, junto ao AR Sandbox (SARndbox 2.8, Kinect v1 e projetor). A
 abre a **topografia** de sempre; por comando, atalho, painel do celular ou pelo
 [Willbert-LAOB](https://github.com/VituColombo0/Willbert-LAOB), a caixa passa a mostrar uma
 **foto** que se deforma conforme mexem na areia, ou uma das brincadeiras. Tudo roda localmente
-(Python e modelos na própria pasta); só a instalação baixa coisas.
+(Python e modelos na própria pasta); só a instalação baixa coisas. O jeito normal de usar é o
+**painel** no navegador, pelo computador ou pelo celular.
 
 ## Funcionalidades
 
-- **Topografia:** o SARndbox original, sem mudanças, com 8 temas de cor e animação por tema (lava, neve, poeira, vento, mar, estrelas); o Clássico é o visual original, sem efeito.
+- **Topografia:** o relevo colorido de sempre, com 7 temas de cor (Clássico, Vulcão, Inverno, Marte, Deserto, Oceano e Arco-íris) e animação por tema (lava, neve, poeira, vento, mar, estrelas); o Clássico é o visual original, sem efeito.
 - **Foto:** a imagem é projetada sobre a areia, amplia onde está alta (efeito lente) e ganha a sombra do relevo; rosto sai recortado, sem fundo.
 - **Esculpir:** o rosto vira relevo-alvo; o projetor pinta onde falta areia (vermelho) e onde sobra (azul).
 - **Caça ao tesouro** e **fósseis de dinossauro** (T-Rex, Triceratops, Pterodáctilo, pegada): cave para achar.
-- **Bichos, carros e pessoas à escolha:** no painel escolhe-se quantos de cada aparecem (peixes, tubarões, tartarugas, águas-vivas, polvos, arraias, carrinhos e pessoas; até 24). Os marinhos nadam nos lagos (areia baixa) e na água da chuva.
-- **Carrinhos e pessoas:** quatro modelos de carro (sedã, picape, van, esportivo, e táxi) seguindo os vales; pessoas de vários jeitos (criança ou adulto, chapéu, boné, mochila, cabelo) passeando pela areia.
-- **Chuva:** pela mão aberta sobre a areia ou pelo painel (toque no ponto onde chover, chover em tudo, secar). A água tem o visual do lago e a cor do tema: lava no vulcão, água gelada no inverno, lama em marte, oásis no deserto.
+- **Vida na areia:** no painel (aba Vida, em grupos água / terra / ar) escolhe-se quantos de cada aparecem, até 32: na água (peixes, tubarões, tartarugas, águas-vivas, polvos, arraias, patos e barquinhos a vela), em terra (carrinhos, pessoas e cachorros) e no ar (pássaros, que voam por cima de tudo com a sombra no chão). Os da água nadam nos lagos (areia baixa) e na água da chuva; os de terra andam só na areia seca, sem encostar na margem.
+- **Bichos que reagem:** com a mão sobre a areia (mesmo bem perto dela), os bichos da água fogem, os pássaros pousam em volta e os cachorros correm até ela e sentam abanando o rabo; um anel de luz mostra que a mão foi vista. Com bichos na areia a mão não faz chover (a chuva fica no painel). Entre eles: o tubarão caça os peixes e o cardume foge, os pássaros mergulham para pescar, os patinhos nadam em fila atrás da mãe e os cachorros correm atrás dos pássaros.
+- **Carrinhos e pessoas:** quatro modelos de carro (sedã, picape, van e esportivo; o sedã amarelo vira táxi) seguindo os vales; pessoas de vários jeitos (criança ou adulto, chapéu, boné, mochila, cabelo) passeando pela areia.
+- **Chuva:** pela mão aberta sobre a areia (quando não há bichos) ou pelo painel, tocando na imagem do projetor ao vivo no ponto onde chover (também chover em tudo e secar). A água tem o visual do lago e a cor do tema: lava no vulcão, água gelada no inverno, lama em marte, oásis no deserto.
 - **Mundo LAOB:** o laboratório por dentro, desenhado sobre a areia a partir da planta da sala (janelas, porta, quadro, bancadas, caixa de areia). Quem o Willbert está vendo no laboratório de verdade fica lá dentro, na própria bancada ou andando pela sala; os outros entram pela porta de tempos em tempos. O rosto aparece num balão quando alguém entra ou quando se toca no nome dele no painel. À noite as janelas da planta escurecem.
 - **Labirinto de água:** leve a água da nascente até o alvo sem encostar nas armadilhas do caminho (encostou, recomeça), com placar.
+- **Copie o relevo:** o projetor mostra um relevo-alvo sorteado (montanha, duas montanhas, vulcão, cratera, ilha e lago, serra) com as curvas de nível em branco; azul onde falta areia, vermelho onde sobra, verde onde já está certo. Uma barra no canto da areia e o painel dão a nota de 0 a 100%; acima de 85% comemora e sorteia outro relevo.
 - **Jogos de água** (fácil, normal, difícil; nova rodada 20 s após o fim):
 
   | Jogo | Objetivo |
@@ -41,7 +44,7 @@ abre a **topografia** de sempre; por comando, atalho, painel do celular ou pelo
 
   Na vila e no vulcão, uma fila de casinhas num canto da areia (e o painel) mostra quantas estão de pé e quantas foram perdidas.
 - **Uma brincadeira por vez:** começar uma encerra as outras; o tema de cor fica.
-- **Painel no navegador** (:8090): organizado em abas (Jogos, Bichos, Chuva, LAOB, Fotos, Projetor), cada uma cabendo numa tela de celular; controla tudo (modos, temas, jogos em cartões com a descrição ao passar o mouse ou tocar, nível, fotos, Willbert, "Reabrir a areia"); a Área de Trabalho tem só o atalho para ele.
+- **Painel no navegador** (:8090): organizado em abas (Jogos, Vida, Chuva, LAOB, Fotos, Projetor), cada uma cabendo numa tela; no computador, uma miniatura ao vivo do projetor fica no cabeçalho; cada botão mostra que está enviando e um ✓ quando a areia aceitou; trocas de brincadeira aparecem na areia com uma transição suave; `#chuva`, `#vida`... no endereço abre direto na aba; controla tudo (modos, temas, jogos em cartões com a descrição ao passar o mouse ou tocar, nível, fotos, Willbert, "Reabrir a areia"); a Área de Trabalho tem só o atalho para ele.
 - **Vigia:** reabre a topografia se ela fechar, se ficar parada (sem desenhar por 2 min) ou se o GNOME travar.
 
 ## Arquitetura
@@ -58,8 +61,9 @@ flowchart LR
         AR -->|colorMap| ORIG
         PN --> AR
     end
-    WB["Willbert<br/>POST /foto · voz"] --> PN
-    CEL[Celular] --> PN
+    WB["Willbert<br/>POST /foto · voz · presença (status.json)"] --> PN
+    CEL["Celular ou computador<br/>(navegador)"] --> PN
+    PJ -.->|imagem ao vivo<br/>ffmpeg x11grab| PN
     SB --> PJ[Projetor HDMI-0]
     ORIG --> PJ
 ```
@@ -112,14 +116,16 @@ O jeito normal é o painel (`http://localhost:8090`, atalho na Área de Trabalho
 | `areia-tesouro [facil\|normal\|dificil\|achou\|parar]` | Caça ao tesouro |
 | `areia-fossil trex [facil\|dificil]` | Fóssil: `trex`, `triceratops`, `pterodactilo`, `pegada` (também `achou`, `parar`) |
 | `areia-animais todos [n]` | `peixes`, `carros`, `pessoas` ou `todos` (também `parar`) |
-| `areia-animais mar peixe=8 tubarao=1 carro=3` | Quantos de cada: `peixe`, `tubarao`, `tartaruga`, `aguaviva`, `polvo`, `arraia`, `carro`, `pessoa` |
+| `areia-animais mar peixe=8 tubarao=1 carro=3` | Quantos de cada: `peixe`, `tubarao`, `tartaruga`, `aguaviva`, `polvo`, `arraia`, `pato`, `barco`, `carro`, `pessoa`, `cachorro`, `passaro` |
 | `areia-animais mundo` | Mundo LAOB: o laboratório por dentro, com os membros (fotos `Nome.jpg` em `~/SARndbox-rosto/membros/`) |
 | `areia-labirinto [facil\|normal\|dificil\|nova\|placar\|parar]` | Labirinto de água |
+| `areia-jogo copia [sorteio\|montanha\|duas\|vulcao\|cratera\|ilha\|serra] [nível]` | Copie o relevo (também `placar`, `nova`, `parar`) |
 | `areia-jogo <jogo> [facil\|normal\|dificil]` | Jogo de água: `corrida`, `vila`, `rota`, `vulcao` (também `placar`, `nova`, `parar`, `ajuda`) |
 | `areia-vigia pausa` / `liga` | Pausa ou religa o vigia da topografia |
 
-**Painel do celular:** `http://<IP-DO-LAOB>:8090` — selfie, foto salva ou câmera do laboratório,
-modo, cores, brincadeiras e girar. O endereço aparece no canto do papel de parede do laob
+**Painel pelo celular ou por outro computador:** `http://<IP-DO-LAOB>:8090` — tudo o que a tabela
+acima faz, mais selfie, câmera do laboratório, imagem do projetor ao vivo e ligar/desligar o Willbert.
+`http://<IP-DO-LAOB>:8090/#vida` (ou `#jogos`, `#chuva`, `#laob`, `#fotos`, `#projetor`) abre direto na aba. O endereço aparece no canto do papel de parede do laob
 (`atualizar_papel_parede.py`, a cada minuto) e no atalho "Abrir painel da caixa de areia".
 
 ## Configuração
@@ -164,24 +170,35 @@ trocar para uma já usada leva ~1 s.
 hora pelo `colorMap` do SARndbox (~0,1 s). Pontos ajustados aos morros de ~8–10 cm do laob.
 
 **Extras** (`sarndbox/Extras.*`): mapa de alturas de 1,5 cm por célula, 2× por segundo, simulação
-na CPU e desenho no shader. Comandos: `tesouro [cm]`, `tesouroFim`, `animais peixes|carros|pessoas|todos|nada [n]`, `mundo …`, `mundoRosto NOME`,
-`labirinto [nível]`, `labirintoNovo`, `labirintoFim`, `labirintoTeste`,
-`jogo <nome> [1-3]`, `jogoNovo`, `jogoFim`, `jogoTeste`, `jogoInfo`.
+na CPU e desenho no shader. Comandos pelo cano (`./sandbox.sh cmd "..."`): `tesouro [cm]`, `tesouroFim`,
+`tesouroTeste`, `animais peixes|carros|pessoas|todos|nada [n]`, `mar peixe=N tubarao=N …`, `chuva x y s`, `secar`,
+`mundo …`, `mundoRosto NOME`, `mundoHora <h|auto>`, `labirinto [nível]`, `labirintoNovo`, `labirintoFim`,
+`labirintoTeste`, `jogo <nome> [1-3]`, `jogoNovo`, `jogoFim`, `jogoTeste`, `jogoInfo`, `jogoVazao <f>`,
+`copia [forma] [1-3]`, `copiaNova`, `copiaFim`, `maoTeste x y s`, `maoDiag`.
 
 - **Tesouro:** sorteado onde há areia acima da média; ao cavar aparece só o baú (madeira, cintas de ferro, fechadura), sem disco em volta; achado, a tampa abre em 1,4 s, aparecem ouro e joias e moedas saltam para fora; grãozinhos dourados piscam a menos de 2,5 cm; "Tesouro encontrado!" vai para o `sandbox.log`. Achado, reaparece em outro lugar após 20 s.
 - **Fósseis:** mesmo mecanismo (`tipoTesouro` 2–5), raio maior; aparecem só os ossos em marfim com manchas, poros e rachaduras (Tiranossauro de corpo inteiro, crânio de Triceratops com escudo, Pterodáctilo de asas abertas, pegada calcada na lama) e, perto, o quadro de escavação com estacas e barbante; `tesouroTeste` mostra o desenho sem cavar; outro aparece em 30 s.
-- **Água da chuva para os animais:** 2× por segundo o Sandbox lê a água simulada e preenche `aguaSim` (profundidade por célula do mapa); `agua()` vale para o lago e para células com 0,45 cm ou mais. O shader dos extras marca os pixels dos animais (`extrasMarca`) e o da água os deixa à vista. `chuva x y s` cria uma nuvem que joga água por alguns segundos; `secar` tira tudo.
+- **Água da chuva para os animais:** 2× por segundo o Sandbox lê a água simulada e preenche `aguaSim` (profundidade por célula do mapa); `agua()` vale para o lago e para células com 0,45 cm ou mais. O shader dos extras marca os pixels dos animais (`extrasMarca`) e o da água os deixa à vista. `chuva x y s` cria uma nuvem que joga água por alguns segundos; `secar` tira tudo. A imagem ao vivo do painel (`/projetor.jpg`) vem de um `ffmpeg -f x11grab` na saída do projetor, 3 quadros/s, ligado só enquanto alguém olha (desliga 15 s depois e morre junto com o painel).
+- **Margem da água:** a altura usada pelos bichos é interpolada entre as células, para concordar com o desenho (que pinta o lago ponto a ponto). Quem anda em terra precisa de 4 mm de folga acima do lago e evita água da chuva a partir de 0,15 cm; o corpo é conferido em 8 direções.
 - **Peixes:** água = 1,5 cm abaixo da mediana; só nadam onde o corpo inteiro cabe na água (1,8 cm de folga da margem), com rastro e bolhas; cardume com separação de ~5,5 cm, curvas suaves (até 2,8 rad/s); preso numa poça por 4 s, reaparece num lago de verdade.
 - **Carrinhos:** só andam onde cabem inteiros em chão firme (2,2 cm de folga do lago e da borda), levantam poeira; seguem a curva de nível dos vales, evitam rampas e lagos, freiam só para o de número menor; travado 3 s, dá meia-volta.
 - **Pessoas:** mesmo movimento dos carrinhos com corpo menor (1,7 cm de folga) e passo lento; desenhadas de cima (sapatos, ombros, braços, cabeça).
 - **Mundo LAOB** (`sarndbox/Mundo.cpp`): a planta é desenhada no shader e as posições (porta, oito assentos, quatro pontos da sala) são frações da área iluminada, iguais no C++ e no shader. Cada membro tem três estados: fora, dentro e saindo. Presente (visto pelo Willbert) entra logo e não sai; ausente entra, fica de 25 a 55 s e sai por 35 a 105 s. Dentro, alterna entre a própria bancada (60%) e os pontos da sala. O movimento não depende do relevo da areia. As linhas `Mundo: NOME entrou…/está…/foi…/saiu…` do `sandbox.log` alimentam a seção LAOB do painel; com o mundo aberto as linhas de relevo ficam desligadas (`extrasMundo.w`). `extrasMundo2.z` leva a hora local ao shader; `mundoHora <h|auto>` troca a hora para testes. Até 16/11/2026 havia uma cidade em volta do laboratório; foi retirada.
 - **Rostos dos membros:** `membros.py` acha o rosto de cada foto de `membros/` (YuNet), recorta em círculo e monta `fotos/membros.rgba` (8 quadros de 128 px, RGBA); o Sandbox lê esse arquivo (textura na unidade 6) e o shader mostra o quadro num balão quando o painel manda `mundoRosto NOME`. O nome é desenhado em letras de 3×5 pontos. O painel lê `present` do `status.json` do Willbert em `/dev/shm/visao/` a cada 5 s (`+` no nome = presente). As fotos ficam só na máquina, fora do repositório.
 - **Labirinto:** de 2 a 4 armadilhas (`P_PERIGO`) perto da reta nascente-alvo, medidas como as peças dos jogos; a nascente (disco de 2 cm) usa a água do próprio SARndbox (`addWater`); 2× por segundo mede a profundidade no alvo (`glGetTexImage`); com 0,25 cm escreve "Labirinto: a água chegou!", e após 20 s começa rodada nova.
-- **Jogos de água** (`sarndbox/Jogos.cpp`): até 4 nascentes e 16 peças (casa, portão, bandeira, placar) desenhadas no shader; fazenda, lago, barquinho e resgate foram retirados em 14/11/2026 (o código continua, sem comando). 2× por segundo a GPU devolve a água (`glGetTexImage` do nível e do fundo) e mede a maior e a média da profundidade em cada peça; com 0,3 cm conta como molhada. No vulcão, `extrasEfeito.w` escurece o relevo e pinta a água de lava em qualquer tema. Os avisos vão para o `sandbox.log` como linhas `Jogo: …`, que o painel e `areia-jogo placar` leem.
+- **Mãos sobre a areia:** cerca de 8× por segundo o quadro cru do sensor é comparado com o mapa de alturas (célula de 1,5 cm); acima de 1,2 cm é mão (sem ninguém, o ruído medido fica abaixo de 0,5 cm). A comparação usa uma areia de referência que fica congelada por 3 s embaixo da mão, para o filtro do SARndbox não transformar a mão parada em morro; os bichos sempre usam o mapa atual. Conta como mão a mancha que entra pela beirada (o braço; a mão é a ponta) ou a que apareceu há menos de 4 s (um monte de areia novo deixa de contar). `maoDiag` imprime a calibração no `sandbox.log` e `maoTeste x y s` cria uma mão de teste.
+- **Bichos entre si e com a mão:** os da água fogem da mão (até 10 cm da beira dela) e do tubarão (12 cm); o tubarão vai atrás do peixe mais perto (25 cm) e, depois de pegar um, fica satisfeito por 12 a 18 s; o pássaro escolhe um lugar em chão firme perto da mão, pousa e levanta voo se a mão some, vem para cima dele, chega um cachorro (7 cm) ou a água; sem mão, mergulha sobre um peixe (1,8 s, pega em 45% das vezes). O primeiro pato é a mãe e os outros, patinhos menores, seguem em fila. O cachorro senta a 3 cm da mão; sem mão, corre atrás de um pássaro por até 8 s. Linhas `Maos: N` e `Vida: …` vão para o `sandbox.log`.
+- **Copie o relevo:** o alvo é a soma de até 4 gaussianas (morros e buracos) sobre a altura mediana da areia no começo, igual no C++ e no shader. A cada mapa de alturas (2× por segundo), nota = 1 − Σ max(0, |erro| − folga) / Σ max(0, |alvo| − folga): areia lisa dá 0%, cópia perfeita 100%, mexer onde não devia desconta. Folga de 1,5 / 1,1 / 0,8 cm por nível. A nota vai para o `sandbox.log` como `Copia: N%`.
+- **Transição:** quando a brincadeira muda, o desenho novo entra por cima do relevo em 0,6 s (`extrasMundo2.w`).
+- **Jogos de água** (`sarndbox/Jogos.cpp`): até 4 nascentes e 16 peças (casa, portão, bandeira, placar) desenhadas no shader; fazenda, lago, barquinho e resgate foram retirados em 14/11/2026 (o código continua, sem comando). 2× por segundo a GPU devolve a água (`glGetTexImage` do nível e do fundo) e mede a maior e a média da profundidade em cada peça; com 0,3 cm conta como molhada. Toda nascente é multiplicada por `fatorVazao` (0,66, medido em 16/11/2026 para o ritmo dos jogos continuar o de antes da correção da água; `jogoVazao <f>` troca). No vulcão, `extrasEfeito.w` escurece o relevo e pinta a água de lava em qualquer tema. Os avisos vão para o `sandbox.log` como linhas `Jogo: …`, que o painel e `areia-jogo placar` leem.
 - **Fluidez:** grade de água em 320×240 (`-wts 320 240`; 640×480 não dava conta na GTX 750 Ti). O log mostra a cada 30 s `Desempenho: N quadros/s` e quanto a água acompanhou o tempo real (`a água andou X% do tempo real`). `AREIA_GRADE_AGUA` e `AREIA_PASSOS_AGUA` trocam a grade e os passos por quadro para testes.
 
+**Chuva pela mão:** só com a mão a mais de 4 cm da beirada iluminada (em 16/11/2026 a borda da caixa
+era vista como mão e chovia sem parar num canto, deixando a água inteira lenta) e nunca com bichos na areia.
+
 **Willbert:** o gesto das duas mãos manda a foto já recortada para `POST /foto` (só aceita a
-própria máquina). Fotos `willbert-*` ficam na subpasta "Fotos do Willbert". O painel responde à
+própria máquina). O painel lê se o Willbert está ligado com `systemctl show visao-detector` (sem sudo)
+e liga/desliga com `sudo -n willbert-controle`. Fotos `willbert-*` ficam na subpasta "Fotos do Willbert". O painel responde à
 própria máquina, à rede local e à Tailscale; o resto recebe 403.
 
 **Comandos internos** (`areia/sandbox.sh`):
@@ -217,6 +234,14 @@ No PC, tudo fica em `~/SARndbox-rosto` (cópia do SARndbox + estes arquivos, `ve
 | Areia a 1 quadro/s, projetor sumiu | Kernel novo sem o driver NVIDIA | Rode `kernel-com-driver.sh` (Willbert-LAOB) e reinicie |
 | Foto aparece de lado | Orientação de quem olha a caixa | `areia-foto girar` |
 | "Ran out of time" no log | Grade de água grande demais | Mantenha `-wts 320 240` |
+| Bichos não reagem à mão | Mão baixa demais ou parada há muito tempo longe da beirada | `./sandbox.sh cmd maoDiag`: sem ninguém, a média fica perto de 0 cm; confira `Maos: N` no `sandbox.log` |
+| Integração acusa "vigia da areia agendado" | Vigia pausado num teste | `areia-vigia liga` |
+| `glPrintError: Invalid operation` ao abrir a foto | Aviso único do OpenGL na troca de shader | Inofensivo: a foto sai certa |
+
+## Roadmap
+
+- Planta do laboratório: confirmar onde fica a caixa de areia na sala e quem senta em cada bancada (hoje estimados).
+- Willbert vai para uma máquina nova, com várias câmeras: ligar o painel a ele pela rede (presença dos membros, foto pela câmera, ligar/desligar).
 
 
 ## Equipe
