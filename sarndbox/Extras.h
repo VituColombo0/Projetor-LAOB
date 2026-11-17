@@ -22,7 +22,7 @@ Não existe no SARndbox original.
 class Extras
 	{
 	public:
-	enum {MAX_AGENTES=24};
+	enum {MAX_AGENTES=32};
 	enum Modo {NADA=0,PEIXES=1,CARROS=2,TODOS=3,PESSOAS=4,MEMBROS=5,MUNDO=6}; // MUNDO: a cidade LAOB (Mundo.cpp) // TODOS = peixes, carrinhos e pessoas
 	enum {NUM_UNIFORMS=15};
 	enum {MAX_NOMES=8,MAX_LETRAS=8}; // membros do laboratório andando na areia, com o nome em cima
@@ -135,7 +135,7 @@ class Extras
 	void jogoPasso(float dt);
 	/* Animais marinhos: espécie = parte inteira do tipo (1 peixe, 4 tubarão, 5 tartaruga, 6 água-viva,
 	   7 polvo, 8 arraia). Nadam no lago (areia baixa) e na água da chuva (aguaSim, medida pelo Sandbox). */
-	enum {NUM_ESPECIES=8}; // seis marinhos + carro + pessoa
+	enum {NUM_ESPECIES=12}; // seis marinhos, pato e barquinho (na água), carro, pessoa e cachorro (em terra), pássaro (no ar)
 	static const char* nomeEspecie(int k);    // "peixe", "tubarao", ..., "carro", "pessoa"
 	static int codigoEspecie(int k);          // 1, 4, 5, 6, 7, 8, 2 (carro), 3 (pessoa)
 	void mar(const int quantidades[NUM_ESPECIES]);

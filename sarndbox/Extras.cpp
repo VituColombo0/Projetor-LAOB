@@ -151,20 +151,24 @@ bool Extras::dentro(float x,float y,float margem) const
 	}
 
 namespace {
-inline bool aquatico(float t) {return t>0.5f&&(t<2.0f||t>=4.0f);}  // peixe e os outros animais marinhos
-inline bool terrestre(float t) {return t>=2.0f&&t<4.0f;}           // carrinho ou pessoa
-inline bool ehPessoa(float t) {return t>=3.0f&&t<4.0f;}
+/* parte inteira do tipo: 1 peixe, 2 carro, 3 pessoa, 4 tubarão, 5 tartaruga, 6 água-viva, 7 polvo, 8 arraia,
+   9 pato, 10 barquinho, 11 pássaro, 12 cachorro (a fração é a cor) */
+inline bool aquatico(float t) {return t>0.5f&&(t<2.0f||(t>=4.0f&&t<11.0f));} // na água: peixes, bichos do mar, pato, barco
+inline bool voador(float t) {return t>=11.0f&&t<12.0f;}                      // pássaro: voa por cima de tudo
+inline bool ehPessoa(float t) {return (t>=3.0f&&t<4.0f)||(t>=12.0f&&t<13.0f);} // a pé (pessoa ou cachorro)
+inline bool terrestre(float t) {return (t>=2.0f&&t<4.0f)||(t>=12.0f&&t<13.0f);} // em terra: carro, pessoa, cachorro
 }
 
 const char* Extras::nomeEspecie(int k)
 	{
-	static const char* nomes[NUM_ESPECIES]={"peixe","tubarao","tartaruga","aguaviva","polvo","arraia","carro","pessoa"};
+	static const char* nomes[NUM_ESPECIES]={"peixe","tubarao","tartaruga","aguaviva","polvo","arraia","pato","barco",
+	                                        "carro","pessoa","cachorro","passaro"};
 	return k>=0&&k<NUM_ESPECIES?nomes[k]:"";
 	}
 
 int Extras::codigoEspecie(int k)
 	{
-	static const int codigos[NUM_ESPECIES]={1,4,5,6,7,8,2,3};
+	static const int codigos[NUM_ESPECIES]={1,4,5,6,7,8,9,10,2,3,12,11};
 	return k>=0&&k<NUM_ESPECIES?codigos[k]:1;
 	}
 
@@ -419,6 +423,8 @@ void Extras::nasce(int i)
 	/* cada um no seu ritmo: tubarão rápido, tartaruga e polvo devagar, água-viva quase parada */
 	vb[i]=esp==4?(5.0f+aleatorio()*1.8f):esp==5?(1.7f+aleatorio()*0.9f):esp==6?(0.8f+aleatorio()*0.6f):
 	      esp==7?(1.5f+aleatorio()*1.0f):esp==8?(2.6f+aleatorio()*1.0f):
+	      esp==9?(1.6f+aleatorio()*0.8f):esp==10?(2.2f+aleatorio()*0.8f):esp==11?(5.0f+aleatorio()*2.0f):
+	      esp==12?(3.4f+aleatorio()*1.2f):
 	      peixe?(4.0f+aleatorio()*3.0f):ehPessoa(tipo[i])?(2.2f+aleatorio()*1.4f):(6.0f+aleatorio()*4.0f);
 	vel[i]=vb[i];
 	parado[i]=0.0f;
@@ -571,6 +577,26 @@ void Extras::passo(float dt)
 			continue;
 			}
 		float c0=std::cos(ang[i]),s0=std::sin(ang[i]);
+		if(voador(tipo[i]))
+			{
+			/* Pássaro: voa por cima de tudo (relevo e água não importam), em curvas largas; perto da beirada
+			   da área iluminada vira de volta para o meio */
+			float vira=0.8f*std::sin(float(tempo)*0.37f+float(i)*2.1f)+0.35f*std::sin(float(tempo)*1.13f+float(i)*0.7f);
+			if(!dentro(ax[i]+c0*7.0f,ay[i]+s0*7.0f,3.0f))
+				{
+				float cx=(bmin[0]+bmax[0])*0.5f-ax[i],cy=(bmin[1]+bmax[1])*0.5f-ay[i];
+				vira=difAng(std::atan2(cy,cx)-ang[i])>0.0f?1.6f:-1.6f;
+				}
+			ang[i]=difAng(ang[i]+vira*dt);
+			ax[i]+=std::cos(ang[i])*vb[i]*dt;
+			ay[i]+=std::sin(ang[i])*vb[i]*dt;
+			if(!dentro(ax[i],ay[i],0.5f))
+				{
+				ax[i]=std::max(bmin[0]+1.0f,std::min(bmax[0]-1.0f,ax[i]));
+				ay[i]=std::max(bmin[1]+1.0f,std::min(bmax[1]-1.0f,ay[i]));
+				}
+			continue;
+			}
 		if(peixe)
 			{
 			bool folgado=aguaLarga(ax[i],ay[i],1.8f);
@@ -782,7 +808,7 @@ extrasPos=(extrasCaixa*vertexCc).xyz;
 )GLSL";
 
 const char* Extras::glslFragmentUniforms=R"GLSL(
-uniform vec4 extrasAg[24];   // x, y (cm), ângulo, tipo (1.xx peixe, 2.xx carrinho; xx = cor)
+uniform vec4 extrasAg[32];   // x, y (cm), ângulo, tipo (1.xx peixe, 2.xx carrinho; xx = cor)
 uniform vec4 extrasTesouro;  // x, y, raio (cm), altura a alcançar cavando (cm)
 uniform vec4 extrasInfo;     // tempo (s), achou, tesouro ligado, nível do lago (cm; -1000 = sem lago)
 uniform vec4 extrasEfeito;   // efeito do tema (0 nenhum, 1 lava, 2 neve, 3 poeira, 4 areia, 5 ondas, 6 brilho, 7 chuva), altura média da areia (cm)
@@ -813,6 +839,26 @@ float exRuido(vec2 p)
 	vec2 f=fract(p);
 	f=f*f*(3.0-2.0*f);
 	return mix(mix(exHash(i),exHash(i+vec2(1.0,0.0)),f.x),mix(exHash(i+vec2(0.0,1.0)),exHash(i+vec2(1.0,1.0)),f.x),f.y);
+	}
+/* Pássaro visto de cima, voando para +x: 1 = corpo e cabeça, 2 = asa, 3 = cauda, 0 = nada.
+   abre = 0..1 (asas abertas no plano ou levantadas, parecendo mais curtas) */
+float exPassaro(vec2 p,float abre)
+	{
+	if(length(p/vec2(0.95,0.3))<1.0||length(p-vec2(0.85,0.0))<0.24)
+		return 1.0;
+	float alc=2.3*(0.45+0.55*abre);
+	float ay=abs(p.y);
+	if(ay>0.18&&ay<alc)
+		{
+		float t=ay/alc;
+		float frente=0.32-0.55*t*t;
+		float tras=frente-0.55*(1.0-t)-0.12;
+		if(p.x<frente&&p.x>tras)
+			return 2.0;
+		}
+	if(p.x<-0.75&&p.x>-1.45&&ay<(-p.x-0.75)*0.65+0.08)
+		return 3.0;
+	return 0.0;
 	}
 /* Um osso: haste entre dois pontos, mais grossa nas juntas */
 float exOsso(vec2 p,vec2 a,vec2 b,float w)
@@ -1472,7 +1518,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			}
 		}
 	/* Peixes e carrinhos (vistos de cima, com sombra): */
-	for(int i=0;i<24;++i)
+	for(int i=0;i<32;++i)
 		{
 		vec4 a=extrasAg[i];
 		if(a.w<0.5)
@@ -1537,6 +1583,153 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					bolhas=max(bolhas,smoothstep(0.1,0.0,abs(distance(l,pb)-rb))*(1.0-ph));
 					}
 				baseColor.rgb=mix(baseColor.rgb,vec3(0.9,0.97,1.0),clamp(rastro*0.35+bolhas*0.8,0.0,1.0));
+				}
+			}
+		else if(a.w>=9.0)
+			{
+			/* Pato, barquinho, pássaro e cachorro */
+			float fase=float(i)*1.7;
+			vec3 cb=baseColor.rgb;
+			bool desenhou=true;
+			if(a.w<10.0)
+				{
+				/* pato: corpo, cabeça, bico laranja, asas dobradas e a esteira em V atrás; branco ou marreco */
+				vec2 p=l+vec2(0.0,0.06*sin(et*3.0+fase));
+				float corpoP=length(p/vec2(1.35,0.82));
+				float cabP=length((p-vec2(1.15,0.0))/vec2(0.5,0.46));
+				float bico=length((p-vec2(1.66,0.0))/vec2(0.3,0.17));
+				bool rabo=p.x<-1.1&&p.x>-1.75&&abs(p.y)<(p.x+1.75)*0.45;
+				bool branco=hue<0.45;
+				vec3 corC=branco?vec3(0.97,0.96,0.92):vec3(0.56,0.46,0.37);
+				vec3 corH=branco?vec3(0.99):vec3(0.08,0.45,0.22);
+				if(bico<1.0)
+					cb=vec3(1.0,0.6,0.1);
+				else if(cabP<1.0)
+					{
+					cb=corH*mix(1.15,0.8,cabP);
+					if(distance(p,vec2(1.3,0.24*sign(p.y)))<0.08)
+						cb=vec3(0.02);
+					}
+				else if(corpoP<1.0)
+					{
+					cb=corC*mix(1.15,0.72,corpoP);
+					if(abs(abs(p.y)-0.45)<0.2&&p.x<0.6&&p.x>-0.95)
+						cb*=0.8;                                                                         // asas dobradas
+					if(!branco&&abs(p.x-0.72)<0.07)
+						cb=vec3(0.95);                                                                   // colarinho branco
+					}
+				else if(rabo)
+					cb=corC*0.78;
+				else
+					{
+					float v=smoothstep(0.12,0.0,abs(abs(p.y)-(-p.x-1.6)*0.5))*step(p.x,-1.6)*smoothstep(-5.0,-1.7,p.x)
+					        *(0.5+0.5*sin(p.x*3.0+et*6.0));
+					if(v>0.05)
+						cb=mix(cb,vec3(0.92,0.97,1.0),v*0.6);
+					else
+						desenhou=false;
+					}
+				}
+			else if(a.w<11.0)
+				{
+				/* barquinho a vela: casco de madeira com tábuas, borda escura, mastro, vela branca que enche e a esteira */
+				vec2 p=l;
+				float meia=p.x>0.6?0.78*clamp((1.95-p.x)/1.35,0.0,1.0):0.78;
+				bool casco=p.x>-1.6&&p.x<1.95&&abs(p.y)<meia&&!(p.x<-1.3&&length((p-vec2(-1.3,0.0))/vec2(0.3,0.78))>1.0);
+				bool vela=p.x<0.3&&p.x>-1.25&&p.y>0.05&&p.y<(0.3-p.x)*0.62+0.07*sin(et*3.0+p.x*2.0+fase);
+				if(vela)
+					cb=mix(vec3(0.99),vec3(0.82,0.86,0.9),smoothstep(0.0,0.9,p.y))*(0.92+0.08*sin(p.x*9.0));
+				else if(casco)
+					{
+					cb=mix(vec3(0.58,0.38,0.2),vec3(0.75,0.52,0.3),step(0.5,fract(p.y*3.2)));
+					if(abs(p.y)>meia-0.14)
+						cb=vec3(0.32,0.2,0.1);                                                           // borda
+					if(fract(a.w)>0.5&&abs(p.y)>meia-0.3&&abs(p.y)<=meia-0.14)
+						cb=vec3(0.75,0.15,0.15);                                                         // faixa colorida
+					}
+				else
+					{
+					float v=smoothstep(0.13,0.0,abs(abs(p.y)-(-p.x-1.6)*0.45))*step(p.x,-1.6)*smoothstep(-6.0,-1.7,p.x)
+					        *(0.5+0.5*sin(p.x*2.6+et*5.0));
+					if(v>0.05)
+						cb=mix(cb,vec3(0.92,0.97,1.0),v*0.65);
+					else
+						desenhou=false;
+					}
+				if(distance(p,vec2(0.3,0.0))<0.13)
+					cb=vec3(0.25,0.16,0.08);                                                             // mastro
+				}
+			else if(a.w<12.0)
+				{
+				/* pássaro: a sombra no chão (longe, porque ele está alto) e a ave batendo as asas; gaivota ou andorinha */
+				float abre=0.5+0.5*sin(et*7.0+fase);
+				vec2 rsb=r-vec2(1.5,-1.5);
+				vec2 lsb=vec2(c*rsb.x+s*rsb.y,-s*rsb.x+c*rsb.y);
+				float ave=exPassaro(l,abre);
+				bool gaivota=hue<0.55;
+				if(ave>0.5)
+					{
+					vec3 corpoA=gaivota?vec3(0.97):vec3(0.12,0.16,0.3);
+					vec3 asaA=gaivota?vec3(0.72,0.75,0.8):vec3(0.1,0.12,0.22);
+					cb=ave<1.5?corpoA:(ave<2.5?asaA:corpoA*0.85);
+					if(ave>1.5&&ave<2.5&&abs(l.y)>2.3*(0.45+0.55*abre)*0.78)
+						cb=gaivota?vec3(0.1):vec3(0.05);                                                 // pontas das asas
+					if(ave<1.5&&l.x>0.95&&abs(l.y)<0.08)
+						cb=gaivota?vec3(1.0,0.75,0.1):vec3(0.05);                                        // bico
+					if(!gaivota&&ave<1.5&&l.x<0.5&&l.x>-0.4&&abs(l.y)<0.14)
+						cb=vec3(0.9,0.5,0.35);                                                           // peito
+					}
+				else if(exPassaro(lsb,abre)>0.5)
+					cb*=0.75;
+				else
+					desenhou=false;
+				}
+			else
+				{
+				/* cachorro andando: corpo, cabeça com orelhas e focinho, rabo abanando, patas que alternam */
+				float passo=sin(et*9.0+fase);
+				vec2 p=l;
+				float corpoD=length(p/vec2(1.1,0.5));
+				float cabD=length(p-vec2(1.05,0.0));
+				float foc=length((p-vec2(1.45,0.0))/vec2(0.25,0.18));
+				float orelha=min(length((p-vec2(0.9,0.36))/vec2(0.24,0.13)),length((p-vec2(0.9,-0.36))/vec2(0.24,0.13)));
+				vec2 rr=p-vec2(-1.05,0.0);
+				float abana=0.35*sin(et*12.0+fase);
+				bool rabo=rr.x<0.0&&rr.x>-0.7&&abs(rr.y-abana*(-rr.x))<0.09;
+				float pata=min(min(length(p-vec2(0.55+0.18*passo,0.42)),length(p-vec2(0.55-0.18*passo,-0.42))),
+				               min(length(p-vec2(-0.6-0.18*passo,0.42)),length(p-vec2(-0.6+0.18*passo,-0.42))));
+				float tom=fract(hue*5.3);
+				vec3 pelo=tom<0.35?vec3(0.78,0.52,0.25):(tom<0.6?vec3(0.15,0.12,0.1):(tom<0.8?vec3(0.95,0.93,0.88):vec3(0.55,0.55,0.57)));
+				vec2 sl=ls;
+				if(foc<1.0)
+					cb=distance(p,vec2(1.67,0.0))<0.09?vec3(0.03):pelo*0.85;
+				else if(cabD<0.42)
+					{
+					cb=pelo*mix(1.12,0.85,cabD/0.42);
+					if(distance(p,vec2(1.2,0.17*sign(p.y)))<0.07)
+						cb=vec3(0.02);
+					}
+				else if(orelha<1.0)
+					cb=pelo*0.65;
+				else if(corpoD<1.0)
+					{
+					cb=pelo*mix(1.12,0.75,corpoD);
+					if(tom>=0.6&&tom<0.8&&exPontos(p*2.2+vec2(fase),0.3,0.45)>0.5)
+						cb=vec3(0.15);                                                                   // manchas
+					}
+				else if(rabo)
+					cb=pelo*0.85;
+				else if(pata<0.15)
+					cb=pelo*0.7;
+				else if(length(sl/vec2(1.15,0.55))<1.0)
+					cb*=0.72;                                                                            // sombra
+				else
+					desenhou=false;
+				}
+			if(desenhou)
+				{
+				extrasMarca=1.0;
+				baseColor=vec4(cb,1.0);
 				}
 			}
 		else if(a.w>=4.0)

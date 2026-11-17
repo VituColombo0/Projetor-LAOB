@@ -598,10 +598,17 @@ def animais_situacao():
 # nome do comando: (rótulo, figurinha)
 ESPECIES = {"peixe": ("Peixes", "🐟"), "tubarao": ("Tubarões", "🦈"), "tartaruga": ("Tartarugas", "🐢"),
             "aguaviva": ("Águas-vivas", "🪼"), "polvo": ("Polvos", "🐙"), "arraia": ("Arraias", "🐠"),
-            "carro": ("Carrinhos", "🚗"), "pessoa": ("Pessoas", "🚶")}
-MARINHOS = ("peixe", "tubarao", "tartaruga", "aguaviva", "polvo", "arraia")
-MAR_PADRAO = {"peixe": 6, "tubarao": 1, "tartaruga": 2, "aguaviva": 2, "polvo": 1, "arraia": 1, "carro": 4, "pessoa": 4}
-MAX_BICHOS = 24
+            "pato": ("Patos", "🦆"), "barco": ("Barquinhos", "⛵"),
+            "carro": ("Carrinhos", "🚗"), "pessoa": ("Pessoas", "🚶"), "cachorro": ("Cachorros", "🐕"),
+            "passaro": ("Pássaros", "🐦")}
+# onde cada um vive (só para agrupar no painel)
+GRUPOS = {"peixe": "Na água", "tubarao": "Na água", "tartaruga": "Na água", "aguaviva": "Na água", "polvo": "Na água",
+          "arraia": "Na água", "pato": "Na água", "barco": "Na água", "carro": "Em terra", "pessoa": "Em terra",
+          "cachorro": "Em terra", "passaro": "No ar"}
+MARINHOS = ("peixe", "tubarao", "tartaruga", "aguaviva", "polvo", "arraia", "pato", "barco")
+MAR_PADRAO = {"peixe": 6, "tubarao": 1, "tartaruga": 2, "aguaviva": 2, "polvo": 1, "arraia": 1, "pato": 2, "barco": 1,
+              "carro": 4, "pessoa": 4, "cachorro": 2, "passaro": 3}
+MAX_BICHOS = 32
 
 
 def mar_escolhido():
@@ -616,7 +623,7 @@ def mar_escolhido():
 def mar(selecao=None):
     """Solta na areia o que foi escolhido: {"peixe": 8, "tubarao": 1, "carro": 3, "pessoa": 5, ...}
     (animais marinhos, carrinhos e pessoas). Sem escolha, a última. Devolve a escolha usada (o total
-    é limitado a 24)."""
+    é limitado a 32)."""
     sel = mar_escolhido() if selecao is None else {}
     if selecao is not None:
         for k in ESPECIES:
@@ -625,7 +632,7 @@ def mar(selecao=None):
             except (TypeError, ValueError, AttributeError):
                 raise Erro("quantidade inválida")
     falta = MAX_BICHOS
-    for k in ESPECIES:   # corta o que passar de 24, na ordem da lista
+    for k in ESPECIES:   # corta o que passar de 32, na ordem da lista
         sel[k] = min(sel[k], falta)
         falta -= sel[k]
     if sum(sel.values()) == 0:

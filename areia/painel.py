@@ -74,7 +74,7 @@ def ver_estado():
     e["animais"] = areia.animais_situacao()
     e["mundo"] = areia.mundo_situacao()
     e["mar"] = areia.mar_escolhido()
-    e["especies"] = [[k, r, f] for k, (r, f) in areia.ESPECIES.items()]
+    e["especies"] = [[k, r, f, areia.GRUPOS.get(k, "")] for k, (r, f) in areia.ESPECIES.items()]
     e["tema"] = areia.tema_atual()
     e["temas"] = [[t, areia.NOMES_TEMAS.get(t, t)] for t in areia.temas()]
     e["fotos_salvas"] = [os.path.basename(f) for f in areia.imagens()]
@@ -238,6 +238,85 @@ def chuva():
         areia.chuva(d.get("x"), d.get("y"), d.get("segundos") or 8)
         return "Chovendo nesse ponto por uns segundos"
     return resposta(faz)
+
+
+# Imagem do projetor ao vivo (quadro da chuva): um ffmpeg captura a saída do projetor 3x por segundo
+# para um arquivo na memória, só enquanto alguém está olhando (para depois de 15 s sem pedido).
+AO_VIVO = f"/dev/shm/areia-projetor-{os.getuid()}.jpg"
+_ao_vivo = {"proc": None, "pedido": 0.0}
+_ao_vivo_trava = threading.Lock()
+
+
+def _tela_do_projetor():
+    """(largura, altura, x, y) da saída do projetor (HDMI-0), ou None se ele não está ligado."""
+    env = dict(os.environ, DISPLAY=os.environ.get("DISPLAY") or ":0")
+    xa = f"/run/user/{os.getuid()}/gdm/Xauthority"
+    if not env.get("XAUTHORITY") and os.path.exists(xa):
+        env["XAUTHORITY"] = xa
+    try:
+        out = subprocess.run(["xrandr"], capture_output=True, text=True, timeout=5, env=env).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None, env
+    m = re.search(r"^HDMI-0 connected (?:primary )?(\d+)x(\d+)\+(\d+)\+(\d+)", out, re.M)
+    return (tuple(int(v) for v in m.groups()) if m else None), env
+
+
+def _morre_com_o_painel():
+    """No ffmpeg (antes de rodar): morre junto se o painel morrer. O serviço tem KillMode=process e,
+    sem isto, uma captura em andamento ficava órfã para sempre quando o painel reiniciava."""
+    try:
+        import ctypes
+        import signal
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGTERM)   # PR_SET_PDEATHSIG
+    except Exception:
+        pass
+
+
+def _limpa_capturas_velhas():
+    subprocess.run(["pkill", "-f", f"x11grab.*{AO_VIVO}"], capture_output=True)
+
+
+def _liga_ao_vivo():
+    with _ao_vivo_trava:
+        _ao_vivo["pedido"] = time.time()
+        proc = _ao_vivo["proc"]
+        if proc is not None and proc.poll() is None:
+            return True
+        tela, env = _tela_do_projetor()
+        if tela is None:
+            return False
+        w, h, x, y = tela
+        try:
+            _ao_vivo["proc"] = subprocess.Popen(
+                ["ffmpeg", "-nostdin", "-loglevel", "error", "-f", "x11grab", "-framerate", "3",
+                 "-video_size", f"{w}x{h}", "-i", f"{env['DISPLAY']}.0+{x},{y}", "-vf", "scale=512:-2",
+                 "-q:v", "6", "-update", "1", "-y", AO_VIVO],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env,
+                preexec_fn=_morre_com_o_painel)
+        except OSError:
+            return False
+        return True
+
+
+def _desliga_ao_vivo_parado():
+    while True:
+        time.sleep(3)
+        with _ao_vivo_trava:
+            proc = _ao_vivo["proc"]
+            if proc is not None and proc.poll() is None and time.time() - _ao_vivo["pedido"] > 15:
+                proc.terminate()
+                _ao_vivo["proc"] = None
+
+
+@app.get("/projetor.jpg")
+def projetor_jpg():
+    if not _liga_ao_vivo():
+        return "", 404
+    for _ in range(20):   # o primeiro quadro leva uns instantes
+        if os.path.exists(AO_VIVO) and time.time() - os.path.getmtime(AO_VIVO) < 5:
+            return send_file(AO_VIVO, mimetype="image/jpeg", max_age=0)
+        time.sleep(0.1)
+    return "", 404
 
 
 @app.post("/mundo/rosto")
@@ -510,13 +589,20 @@ h2 { margin-bottom: 10px; }
 .especie button { min-height: 36px; width: 36px; padding: 0; font-size: 1.1rem; }
 .especie .n { width: 1.6em; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
 .especie.zero .r, .especie.zero .e { opacity: .45; }
+.grupo-especie { grid-column: 1 / -1; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--muted); margin-top: 4px; }
 .quadro-chuva {
-  aspect-ratio: 59 / 42; width: 100%; max-width: 420px; margin: 0 auto; border-radius: 12px; cursor: crosshair;
+  aspect-ratio: 4 / 3; width: 100%; max-width: 420px; overflow: hidden; margin: 0 auto; border-radius: 12px; cursor: crosshair;
   display: grid; place-items: center; color: var(--muted); font-size: .9rem; user-select: none; position: relative;
   background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 22%, var(--surface2)), var(--surface2));
   border: 1px dashed var(--border-strong); touch-action: manipulation;
 }
-.quadro-chuva .pingo {
+.quadro-chuva img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
+.quadro-chuva .selo-vivo {
+  position: absolute; top: 8px; left: 8px; font-size: .72rem; font-weight: 700; padding: 3px 8px; border-radius: 999px;
+  background: rgba(0,0,0,.55); color: #ff6b6b; pointer-events: none;
+}
+.quadro-chuva .pingo { z-index: 2;
   position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%;
   border: 2px solid var(--accent); animation: pingo 1.2s ease-out forwards; pointer-events: none;
 }
@@ -561,7 +647,7 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
   .jogo .c { display: block; }
   .especies { grid-template-columns: repeat(4, 1fr); }
   .moradores { grid-template-columns: repeat(4, 1fr); }
-  .quadro-chuva { max-width: 620px; }
+  .quadro-chuva { max-width: 640px; }
   .abas { flex-wrap: nowrap; }
   .abas button { flex: 0 1 auto; padding: 6px 18px; }
   img#prev { max-height: 300px; }
@@ -597,7 +683,7 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
     </div>
     <nav class="abas" id="abas" aria-label="Partes do painel">
       <button data-ir="jogos">🎮 Jogos</button>
-      <button data-ir="bichos">🐟 Bichos</button>
+      <button data-ir="bichos">🐾 Vida</button>
       <button data-ir="chuva">🌧️ Chuva</button>
       <button data-ir="laob">🔬 LAOB</button>
       <button data-ir="fotos">📷 Fotos</button>
@@ -634,8 +720,8 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
   </section>
 
   <section class="card" data-aba="bichos">
-    <h2>Bichos, carros e pessoas <span class="extra" id="mar-total"></span></h2>
-    <p class="hint">Escolha quantos de cada um aparecem na areia. Os animais marinhos nadam no lago (onde a areia é baixa) e na água da chuva; carrinhos e pessoas andam em chão firme.</p>
+    <h2>Vida na areia <span class="extra" id="mar-total"></span></h2>
+    <p class="hint">Escolha quantos de cada um aparecem. Os da água nadam no lago (onde a areia é baixa) e na água da chuva; os de terra andam em chão firme; os pássaros voam por cima de tudo.</p>
     <div class="especies" id="especies"></div>
     <div class="grid" style="margin-top:12px">
       <button class="primary" id="mar-soltar">▶ Soltar na areia</button>
@@ -645,8 +731,12 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
 
   <section class="card" data-aba="chuva">
     <h2>Chuva</h2>
-    <p class="hint">Além de abrir a mão sobre a areia: toque no quadro, no ponto onde quer que chova. O quadro é a areia vista de cima, como o projetor a mostra.</p>
-    <div class="quadro-chuva" id="quadro-chuva" role="button" tabindex="0" aria-label="Tocar onde chover">☁️ toque onde chover</div>
+    <p class="hint">Além de abrir a mão sobre a areia: toque na imagem, no ponto onde quer que chova. É o que o projetor está mostrando agora, atualizada ao vivo.</p>
+    <div class="quadro-chuva" id="quadro-chuva" role="button" tabindex="0" aria-label="Tocar onde chover">
+      <img id="ao-vivo" alt="" hidden>
+      <span class="aviso-vivo" id="aviso-vivo">☁️ toque onde chover</span>
+      <span class="selo-vivo" id="selo-vivo" hidden>● ao vivo</span>
+    </div>
     <div class="grid" style="margin-top:12px">
       <button id="chuva-geral">🌧️ Chover em tudo</button>
       <button id="chuva-secar">☀️ Secar a água</button>
@@ -661,6 +751,8 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
       <label class="btn">🖼️ Escolher arquivo<input id="galeria" type="file" accept="image/*"></label>
       <button id="girar">↻ Girar 90°</button>
       <button id="espelhar">⇋ Espelhar</button>
+      <button data-m="rosto">🖼️ Mostrar a foto na areia</button>
+      <button data-m="esculpir">✋ Esculpir a foto</button>
     </div>
     <div id="box-fotos" hidden>
       <div class="chips" id="chips"></div>
@@ -669,12 +761,10 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
   </section>
 
   <section class="card" data-aba="projetor">
-    <h2>Modo do projetor</h2>
-    <div class="grid g4" id="modos">
-      <button data-m="original">⛰️ Topografia</button>
-      <button data-m="rosto">🖼️ Foto</button>
-      <button data-m="relevo">🎨 Relevo</button>
-      <button data-m="esculpir">✋ Esculpir</button>
+    <h2>Areia</h2>
+    <p class="hint">Volta ao relevo colorido de sempre e encerra o que estiver na areia (foto, jogo, bichos).</p>
+    <div class="grid" id="modos">
+      <button data-m="original" class="full">⛰️ Voltar à topografia</button>
     </div>
   </section>
 
@@ -798,7 +888,7 @@ function situacao(a) {
   if (a === 'tesouro') return E.tesouro === 'achado' ? 'Tesouro achado!' : 'Tesouro enterrado';
   if (a === 'trex') return E.fossil === 'achado' ? 'Fóssil escavado!' : 'Fóssil enterrado';
   if (a === 'mundo') return 'Laboratório LAOB';
-  if (a === 'mar' || a === 'peixes' || a === 'carros' || a === 'pessoas' || a === 'todos') return 'Bichos, carros e pessoas';
+  if (a === 'mar' || a === 'peixes' || a === 'carros' || a === 'pessoas' || a === 'todos') return 'Vida na areia';
   return 'Animação na areia';
 }
 
@@ -811,7 +901,7 @@ async function carrega() {
                 original: 'Topografia', nenhum: 'Areia desligada'}[E.sandbox] || E.sandbox;
     $('#sb').textContent = sb;
     $('#p-sb').classList.toggle('on', E.sandbox !== 'nenhum');
-    $$('#modos button').forEach(b => {
+    $$('[data-m]').forEach(b => {
       const m = b.dataset.m;
       b.classList.toggle('active', E.sandbox === 'original' ? m === 'original' : (E.sandbox === 'rosto' && m === E.modo));
     });
@@ -924,7 +1014,15 @@ function montaMar() {
   if (!E.especies) return;
   if (MAR === null) MAR = Object.assign({}, E.mar || {});
   if (!box.children.length) {
-    for (const [k, rotulo, fig] of E.especies) {
+    let grupoAntes = '';
+    for (const [k, rotulo, fig, grupo] of E.especies) {
+      if (grupo && grupo !== grupoAntes) {
+        const t = document.createElement('div');
+        t.className = 'grupo-especie';
+        t.textContent = grupo;
+        box.appendChild(t);
+        grupoAntes = grupo;
+      }
       const el = document.createElement('div');
       el.className = 'especie';
       el.dataset.k = k;
@@ -933,7 +1031,7 @@ function montaMar() {
       el.querySelector('.r').textContent = rotulo;
       const [menos, mais] = el.querySelectorAll('button');
       menos.onclick = () => { MAR[k] = Math.max(0, (MAR[k] || 0) - 1); pintaMar(); };
-      mais.onclick = () => { if (totalMar() < 24) MAR[k] = (MAR[k] || 0) + 1; pintaMar(); };
+      mais.onclick = () => { if (totalMar() < 32) MAR[k] = (MAR[k] || 0) + 1; pintaMar(); };
       box.appendChild(el);
     }
     pintaMar();
@@ -946,8 +1044,34 @@ function pintaMar() {
     el.querySelector('.n').textContent = n;
     el.classList.toggle('zero', n === 0);
   });
-  $('#mar-total').textContent = totalMar() + ' de 24';
+  $('#mar-total').textContent = totalMar() + ' de 32';
 }
+let VIVO = false;
+function aoVivo() {
+  /* enquanto a aba Chuva está aberta e a página à vista, uma imagem nova logo depois da anterior chegar */
+  const img = $('#ao-vivo');
+  const aberta = !$('section.card[data-aba="chuva"]').hidden && !document.hidden;
+  if (!aberta) { VIVO = false; return; }
+  if (VIVO) return;
+  VIVO = true;
+  const proxima = () => {
+    if ($('section.card[data-aba="chuva"]').hidden || document.hidden) { VIVO = false; return; }
+    const n = new Image();
+    n.onload = () => {
+      img.src = n.src; img.hidden = false;
+      $('#selo-vivo').hidden = false; $('#aviso-vivo').hidden = true;
+      setTimeout(proxima, 300);
+    };
+    n.onerror = () => {
+      img.hidden = true; $('#selo-vivo').hidden = true; $('#aviso-vivo').hidden = false;
+      setTimeout(proxima, 4000);   // projetor desligado ou areia fechada: tenta de novo devagar
+    };
+    n.src = '/projetor.jpg?' + Date.now();
+  };
+  proxima();
+}
+document.addEventListener('visibilitychange', aoVivo);
+
 function chove(ev) {
   const q = $('#quadro-chuva');
   const r = q.getBoundingClientRect();
@@ -968,6 +1092,7 @@ function abre(aba) {
   $$('#abas button').forEach(b => b.classList.toggle('active', b.dataset.ir === aba));
   try { localStorage.setItem('areia-aba', aba); } catch (e) {}
   window.scrollTo(0, 0);
+  aoVivo();
 }
 
 function envia(inp) {
@@ -984,7 +1109,8 @@ monta();
 $$('#abas button').forEach(b => b.onclick = () => abre(b.dataset.ir));
 let ABA = 'jogos';
 try { ABA = localStorage.getItem('areia-aba') || 'jogos'; } catch (e) {}
-if (location.hash.length > 1) ABA = location.hash.slice(1);   // ex.: http://...:8090/#bichos abre direto na aba
+if (location.hash.length > 1) ABA = location.hash.slice(1);   // ex.: http://...:8090/#chuva abre direto na aba
+if (ABA === 'vida') ABA = 'bichos';
 abre($$('#abas button[data-ir="' + ABA + '"]').length ? ABA : 'jogos');
 envia($('#selfie'));
 envia($('#galeria'));
@@ -1027,6 +1153,8 @@ def _vigia_membros():
 
 if __name__ == "__main__":
     threading.Thread(target=_vigia_membros, daemon=True, name="membros").start()
+    _limpa_capturas_velhas()   # de um painel anterior (antes da correção, ou se ele foi morto à força)
+    threading.Thread(target=_desliga_ao_vivo_parado, daemon=True, name="ao-vivo").start()
     try:  # papel de parede com o endereço do painel (o timer atualizar-papel-parede repete a cada minuto)
         from atualizar_papel_parede import atualizar as atualiza_papel_parede
         atualiza_papel_parede()

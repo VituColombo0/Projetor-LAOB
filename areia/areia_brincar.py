@@ -8,7 +8,7 @@
 
   areia-animais peixes       peixes nadando no lago (cave um buraco e ele vira lago)
   areia-animais carros       carrinhos andando pelos vales
-  areia-animais mar [peixe=6 tubarao=1 tartaruga=2 aguaviva=2 polvo=1 arraia=1 carro=4 pessoa=4]   quantos de cada
+  areia-animais mar [peixe=6 tubarao=1 ... pato=2 barco=1 carro=4 pessoa=4 cachorro=2 passaro=3]   quantos de cada
   areia-animais pessoas      pessoinhas passeando pela areia
   areia-animais mundo        o mundo LAOB: o laboratório por dentro, com os membros (fotos em membros/)
   areia-animais todos        tudo junto (pode pôr a quantidade: areia-animais peixes 15)

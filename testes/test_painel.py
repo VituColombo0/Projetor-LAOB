@@ -150,7 +150,8 @@ class Painel(Ambiente):
 
     def test_mar_e_chuva_pelo_painel(self):
         e = self.get("/estado").get_json()
-        self.assertEqual(len(e["especies"]), 8)                          # seis marinhos, carro e pessoa
+        self.assertEqual(len(e["especies"]), 12)                         # 8 na água, 3 em terra, 1 no ar
+        self.assertEqual(sorted({g for _, _, _, g in e["especies"]}), ["Em terra", "Na água", "No ar"])
         self.assertEqual((e["mar"]["peixe"], e["mar"]["carro"]), (6, 4))
         r = self.post("/mar", json={"peixe": 3, "tartaruga": 1})
         self.assertEqual(r.status_code, 200, r.get_json())
@@ -162,6 +163,11 @@ class Painel(Ambiente):
         self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd chuva 0.400 0.600 8")
         self.assertEqual(self.post("/chuva", json={"x": 3, "y": 0.6}).status_code, 400)
         self.assertEqual(self.post("/chuva", json={"secar": True}).status_code, 200)
+        self.assertIn(self.get("/projetor.jpg").status_code, (200, 404))   # sem tela nos testes: 404, nunca erro
+        pagina = self.get("/").get_data(as_text=True)
+        self.assertIn('id="ao-vivo"', pagina)
+        self.assertEqual(pagina.count('data-m="rosto"'), 1)                # a foto só na aba Fotos
+        self.assertIn("Vida na areia", pagina)
         self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd secar")
 
     def test_fossil_pelo_painel(self):
