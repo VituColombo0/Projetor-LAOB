@@ -760,7 +760,7 @@ void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
 			if(extras.chuvas[k].ate<=extras.tempo)
 				continue;
 			Point centro=boxTransform.inverseTransform(Point(extras.chuvas[k].x,extras.chuvas[k].y,extras.referencia));
-			glVertexAttrib1fARB(1,GLfloat(0.7/waterSpeed));
+			glVertexAttrib1fARB(1,GLfloat(0.7*extras.chuvaForca(k)/waterSpeed)); // começa e termina aos poucos
 			glBegin(GL_POLYGON);
 			for(int i=0;i<24;++i)
 				{
@@ -950,15 +950,42 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
 			}
 		/* Água única (Projetor-LAOB, 17/11/2026): a chuva, o lago dos bichos e o azul do mapa são a MESMA
 		   água, a da simulação. Com bichos da água, o lago é mantido cheio de verdade até o nível do mar
-		   (cavar faz a água brotar devagar) e a água a mais (chuva) a areia absorve aos poucos; só o nível
-		   muda: a correnteza continua. 4x por segundo, a profundidade e a correnteza de cada célula do mapa
-		   vão para os bichos. */
+		   (cavar faz a água brotar devagar) e a água a mais (chuva) a areia absorve aos poucos, na GPU, em
+		   todo passo da simulação (WaterTable2::setLencol). 4x por segundo, a profundidade e a correnteza de
+		   cada célula do mapa vão para os bichos. */
 		static double aguaLeitura=0.0;
 		static std::vector<GLfloat> aQ,aB;
 		double agoraA=Vrui::getApplicationTime();
+		/* o lençol vale em todo passo da simulação (na GPU): aqui só a geometria, a cada quadro */
+		if(extras.lencol())
+			{
+			const ONTransform& wb=waterTable->getBaseTransform();
+			const GLfloat* cs=waterTable->getCellSize();
+			double dmx=waterTable->getDomain().min[0],dmy=waterTable->getDomain().min[1];
+			float H=extras.nivelAgua;
+			Point w0=wb.transform(boxTransform.inverseTransform(Point(0,0,H)));
+			Point w1=wb.transform(boxTransform.inverseTransform(Point(10,0,H)));
+			Point w2=wb.transform(boxTransform.inverseTransform(Point(0,10,H)));
+			double m00=(w1[0]-w0[0])/10.0,m01=(w2[0]-w0[0])/10.0,m10=(w1[1]-w0[1])/10.0,m11=(w2[1]-w0[1])/10.0;
+			double det=m00*m11-m01*m10;
+			if(std::abs(det)>1.0e-9)
+				{
+				/* célula (x, y) -> caixa: (x*cs + dmin - w0) passado pela inversa de M */
+				double i00=m11/det,i01=-m01/det,i10=-m10/det,i11=m00/det;
+				double ox=dmx-w0[0],oy=dmy-w0[1];
+				GLfloat pr[15];
+				pr[0]=GLfloat(i00*ox+i01*oy); pr[1]=GLfloat(i00*cs[0]); pr[2]=GLfloat(i01*cs[1]);
+				pr[3]=GLfloat(i10*ox+i11*oy); pr[4]=GLfloat(i10*cs[0]); pr[5]=GLfloat(i11*cs[1]);
+				pr[6]=GLfloat(w0[2]); pr[7]=GLfloat((w1[2]-w0[2])/10.0); pr[8]=GLfloat((w2[2]-w0[2])/10.0);
+				pr[9]=GLfloat(faceBoxMin[0]); pr[10]=GLfloat(faceBoxMin[1]); pr[11]=GLfloat(faceBoxMax[0]); pr[12]=GLfloat(faceBoxMax[1]);
+				pr[13]=1.6f; pr[14]=extras.absorcao;
+				waterTable->setLencol(true,pr);
+				}
+			}
+		else
+			waterTable->setLencol(false,0);
 		if(extras.querAguaSim()&&extras.celulasX()>0&&agoraA-aguaLeitura>0.25)
 			{
-			float dtA=aguaLeitura>0.0?float(std::min(1.0,agoraA-aguaLeitura)):0.25f;
 			aguaLeitura=agoraA;
 			GLint qw=0,qh=0,bw=0,bh=0;
 			waterTable->bindQuantityTexture(contextData);
@@ -987,41 +1014,6 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
 				double m00=(w1[0]-w0[0])/10.0,m01=(w2[0]-w0[0])/10.0,m10=(w1[1]-w0[1])/10.0,m11=(w2[1]-w0[1])/10.0;
 				double zx=(w1[2]-w0[2])/10.0,zy=(w2[2]-w0[2])/10.0;
 				double det=m00*m11-m01*m10;
-				if(extras.lencol()&&std::abs(det)>1.0e-9)
-					{
-					bool mudou=false;
-					const float sobe=std::min(1.0f,1.6f*dtA);        // brota: ~35% do que falta a cada leitura
-					const float absorve=extras.absorcao*dtA;           // cm de água a mais que a areia absorve
-					for(int j=1;j<nj;++j)
-						for(int i=1;i<ni;++i)
-							{
-							double xw=dmx+(i+0.5)*cs[0]-w0[0],yw=dmy+(j+0.5)*cs[1]-w0[1];
-							double bx=(m11*xw-m01*yw)/det,by=(-m10*xw+m00*yw)/det;
-							if(bx<faceBoxMin[0]||bx>faceBoxMax[0]||by<faceBoxMin[1]||by>faceBoxMax[1])
-								continue; // só dentro da área iluminada
-							float T=float(w0[2]+zx*bx+zy*by);
-							float b=0.25f*(aB[(j-1)*bw+i-1]+aB[(j-1)*bw+i]+aB[j*bw+i-1]+aB[j*bw+i]);
-							GLfloat* q=&aQ[(size_t(j)*qw+i)*3];
-							if(b<T&&q[0]<T-0.002f)
-								{
-								q[0]+=(T-q[0])*sobe;
-								mudou=true;
-								}
-							else
-								{
-								float chao=std::max(b,T);
-								if(q[0]>chao+0.0005f&&absorve>0.0f)
-									{
-									q[0]-=std::min(q[0]-chao,absorve);
-									if(q[0]<=b+0.001f)
-										q[1]=q[2]=0.0f;
-									mudou=true;
-									}
-								}
-							}
-					if(mudou)
-						waterTable->setQuantity(&aQ[0],contextData);
-					}
 				/* para os bichos: profundidade e correnteza no centro de cada célula do mapa */
 				int gx=extras.celulasX(),gy=extras.celulasY();
 				extras.aguaSim.assign(size_t(gx)*size_t(gy),0.0f);
@@ -1169,20 +1161,52 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
 	extras.passo(dt);""")
     open("Sandbox.cpp", "w").write(c)
 
-# WaterTable2 (Projetor-LAOB, 17/11/2026): setWaterLevel troca só o nível e ZERA a correnteza; a água
-# única precisa mexer no nível várias vezes por segundo sem parar a água, então setQuantity sobe as três
-# grandezas (nível, hu, hv) como estão.
+# WaterTable2 (Projetor-LAOB, 17/11/2026): o "lençol" do lago dos bichos roda na GPU, em TODO passo da
+# simulação, dentro do passo que já soma a água da chuva (Water2WaterUpdateShader, mudado pelo patch_agua.py):
+# onde o fundo está abaixo do nível do mar a água brota até ele, e a água acima do nível a areia absorve.
+# Assim o lago fica sempre cheio sem ler/escrever a água pela CPU (antes, 4x/s, a água "pulava").
 wh = open("WaterTable2.h").read()
-if "setQuantity" not in wh:
-    wh = rep(wh, "\tGLfloat runSimulationStep(", "\tvoid setQuantity(const GLfloat* quantityGrid,GLContextData& contextData) const; // Projetor-LAOB: nível e correnteza (RGB por célula)\n\tGLfloat runSimulationStep(")
+if "setLencol" not in wh:
+    wh = rep(wh, "\t\tGLint waterShaderUniformLocations[3];", "\t\tGLint waterShaderUniformLocations[8]; // Projetor-LAOB: +5 do lençol")
+    wh = rep(wh, "\tbool dryBoundary;", "\tbool lencolLigado; // Projetor-LAOB: lago dos bichos mantido cheio\n\tGLfloat lencol[16]; // bx(3), by(3), T(3), área(4), enche, absorve, -\n\tbool dryBoundary;")
+    wh = rep(wh, "\tGLfloat runSimulationStep(", "\tvoid setLencol(bool ligado,const GLfloat* params); // Projetor-LAOB: 15 números (ver WaterTable2.cpp)\n\tGLfloat runSimulationStep(")
     open("WaterTable2.h", "w").write(wh)
 wc = open("WaterTable2.cpp").read()
-if "setQuantity" not in wc:
-    a = wc.index("void WaterTable2::setWaterLevel(")
-    b = wc.index("GLfloat WaterTable2::runSimulationStep(")
-    f = wc[a:b].replace("setWaterLevel(const GLfloat* waterGrid", "setQuantity(const GLfloat* quantityGrid")
-    f = rep(f, "GL_RED,GL_FLOAT,waterGrid", "GL_RGB,GL_FLOAT,quantityGrid")
-    wc = wc[:b] + f + wc[b:]
+if "setLencol" not in wc:
+    wc = wc.replace("dryBoundary(true)", "lencolLigado(false),dryBoundary(true)")
+    wc = rep(wc, """	dataItem->waterShaderUniformLocations[2]=glGetUniformLocationARB(dataItem->waterShader,"waterSampler");
+""", """	dataItem->waterShaderUniformLocations[2]=glGetUniformLocationARB(dataItem->waterShader,"waterSampler");
+	dataItem->waterShaderUniformLocations[3]=glGetUniformLocationARB(dataItem->waterShader,"lencolBx");
+	dataItem->waterShaderUniformLocations[4]=glGetUniformLocationARB(dataItem->waterShader,"lencolBy");
+	dataItem->waterShaderUniformLocations[5]=glGetUniformLocationARB(dataItem->waterShader,"lencolT");
+	dataItem->waterShaderUniformLocations[6]=glGetUniformLocationARB(dataItem->waterShader,"lencolArea");
+	dataItem->waterShaderUniformLocations[7]=glGetUniformLocationARB(dataItem->waterShader,"lencolTaxa");
+""")
+    wc = rep(wc, "\tif(waterDeposit!=0.0f||!renderFunctions.empty())\n", "\tif(waterDeposit!=0.0f||!renderFunctions.empty()||lencolLigado)\n")
+    wc = rep(wc, """		glUniform1iARB(dataItem->waterShaderUniformLocations[2],2);
+""", """		glUniform1iARB(dataItem->waterShaderUniformLocations[2],2);
+		/* Projetor-LAOB: lençol (posição da célula -> caixa, nível do mar, área iluminada, ritmo por passo) */
+		glUniform3fARB(dataItem->waterShaderUniformLocations[3],lencol[0],lencol[1],lencol[2]);
+		glUniform3fARB(dataItem->waterShaderUniformLocations[4],lencol[3],lencol[4],lencol[5]);
+		glUniform3fARB(dataItem->waterShaderUniformLocations[5],lencol[6],lencol[7],lencol[8]);
+		glUniform4fARB(dataItem->waterShaderUniformLocations[6],lencol[9],lencol[10],lencol[11],lencol[12]);
+		glUniform3fARB(dataItem->waterShaderUniformLocations[7],lencolLigado?1.0f:0.0f,
+		               std::min(1.0f,lencol[13]*stepSize),lencol[14]*stepSize);
+""")
+    wc = rep(wc, "GLfloat WaterTable2::runSimulationStep(", """void WaterTable2::setLencol(bool ligado,const GLfloat* params)
+	{
+	/* params: bx = p0+p1*x+p2*y e by = p3+p4*x+p5*y (célula -> caixa, cm); nível do mar T = p6+p7*bx+p8*by
+	   (altura da água); área iluminada p9..p12 (min x, min y, max x, max y na caixa); p13 = quanto do que falta
+	   brota por segundo; p14 = cm/s de água a mais que a areia absorve */
+	lencolLigado=ligado;
+	if(params!=0)
+		for(int i=0;i<15;++i)
+			lencol[i]=params[i];
+	}
+
+GLfloat WaterTable2::runSimulationStep(""")
+    if "#include <algorithm>" not in wc:
+        wc = "#include <algorithm>\n" + wc
     open("WaterTable2.cpp", "w").write(wc)
 
 m = open("makefile").read()

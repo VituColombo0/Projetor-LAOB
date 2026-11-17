@@ -158,7 +158,8 @@ class Extras
 	float celulaCm(void) const {return celula;} const float* cantoMin(void) const {return bmin;}
 	/* Chuva pelo painel: até quatro nuvens que jogam água num ponto por alguns segundos */
 	enum {MAX_CHUVAS=4};
-	struct Chuva {float x,y; double ate;};
+	struct Chuva {float x,y; double ate,desde;};
+	float chuvaForca(int k) const; // 0..1: a nuvem chega e vai embora aos poucos (água e desenho acompanham)
 	Chuva chuvas[MAX_CHUVAS]; bool temChuva;
 	void chove(float fx,float fy,float segundos); // fx, fy = 0..1 dentro da área iluminada
 	char nomes[MAX_NOMES][MAX_LETRAS+1]; int nNomes,giroNomes;

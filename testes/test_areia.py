@@ -621,10 +621,13 @@ class CopieORelevo(Ambiente):
         with self.assertRaisesRegex(self.areia.Erro, "forma"):
             self.areia.copia("pirâmide")
         log = os.path.join(self.D, "sandbox.log")
-        escreve(log, "Copia: forma vulcao (nível 2)\nCopia: 12%\nCopia: 47%\n")
-        self.assertEqual(self.areia.copia_situacao(), {"forma": "vulcao", "nota": 47, "conseguiu": False, "rodadas": 0})
+        escreve(log, "Copia: forma vulcao (nível 2)\nCopia: alvo 0.500,0.500,6.33,0.143 0.500,0.500,-4.12,0.046\n"
+                     "Copia: 12%\nCopia: 47%\n")
+        self.assertEqual(self.areia.copia_situacao(), {"forma": "vulcao", "nota": 47, "conseguiu": False, "rodadas": 0,
+                                                       "alvo": [[0.5, 0.5, 6.33, 0.143], [0.5, 0.5, -4.12, 0.046]]})
         escreve(log, "Copia: forma vulcao (nível 2)\nCopia: 80%\nCopia: conseguiu! 87% em 95 s\n")
-        self.assertEqual(self.areia.copia_situacao(), {"forma": "vulcao", "nota": 87, "conseguiu": True, "rodadas": 1})
+        self.assertEqual(self.areia.copia_situacao(), {"forma": "vulcao", "nota": 87, "conseguiu": True, "rodadas": 1,
+                                                       "alvo": []})
         self.areia.copia_nova()
         self.assertEqual(self.cmds()[-1], "cmd copiaNova")
         for fim in ("Copia desligada\n", "Animais: mar (10)\n", "Modo Rosto: foto.png\n"):

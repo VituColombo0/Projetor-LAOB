@@ -40,7 +40,7 @@ Extras::Extras(void)
 	for(int k=0;k<MAX_CHUVAS;++k)
 		{
 		chuvas[k].x=chuvas[k].y=0.0f;
-		chuvas[k].ate=-1.0;
+		chuvas[k].ate=chuvas[k].desde=-1.0;
 		}
 	mundoPedido=mundoPronto=false;
 	camX=camAlvo=0.0f;
@@ -510,8 +510,20 @@ void Extras::chove(float fx,float fy,float segundos)
 			livre=k;
 	chuvas[livre].x=bmin[0]+std::max(0.05f,std::min(0.95f,fx))*(bmax[0]-bmin[0]);
 	chuvas[livre].y=bmin[1]+std::max(0.05f,std::min(0.95f,fy))*(bmax[1]-bmin[1]);
+	if(chuvas[livre].ate<=tempo)
+		chuvas[livre].desde=tempo; // nuvem nova (tocar de novo no mesmo lugar só estica a chuva)
 	chuvas[livre].ate=tempo+std::max(1.0f,std::min(60.0f,segundos));
 	temChuva=true;
+	}
+
+float Extras::chuvaForca(int k) const
+	{
+	const Chuva& c=chuvas[k];
+	if(c.desde<0.0)
+		return 0.0f;
+	float chega=float(std::min(1.0,std::max(0.0,(tempo-c.desde)/0.7)));
+	float vai=float(std::min(1.0,std::max(0.0,(c.ate-tempo)/0.9+1.0)));   // some em 0,9 s depois do fim
+	return chega*vai;
 	}
 
 /* ---------------------------------------------------------- copie o relevo */
@@ -541,7 +553,7 @@ void Extras::copiaNova(int forma,int nivel)
 		f=(f+1+int(aleatorio()*(NUM_FORMAS-1)))%NUM_FORMAS; // não repete a mesma em seguida
 	copiaForma=f;
 	const float w=bmax[0]-bmin[0],h=bmax[1]-bmin[1];
-	const float cx=(bmin[0]+bmax[0])*0.5f+(aleatorio()-0.5f)*0.25f*w,cy=(bmin[1]+bmax[1])*0.5f+(aleatorio()-0.5f)*0.2f*h;
+	const float cx=(bmin[0]+bmax[0])*0.5f,cy=(bmin[1]+bmax[1])*0.5f; // sempre no meio: o painel mostra a miniatura
 	const float alto=copiaNivel==1?4.0f:copiaNivel==2?5.5f:7.0f; // cm acima da areia
 	const float L=0.11f*w;                                     // largura típica de um morro
 	for(int k=0;k<COPIA_MAX;++k)
@@ -566,6 +578,16 @@ void Extras::copiaNova(int forma,int nivel)
 	char m[120];
 	std::snprintf(m,sizeof(m),"Copia: forma %s (nível %d)",nomeForma(f),copiaNivel);
 	anuncia(m);
+	/* o alvo para a miniatura do painel: x, y (0..1 na área iluminada), altura (cm), largura (fração da largura) */
+	std::string alvo="Copia: alvo";
+	for(int k=0;k<COPIA_MAX;++k)
+		if(copiaG[k][3]>0.0f)
+			{
+			char g[80];
+			std::snprintf(g,sizeof(g)," %.3f,%.3f,%.2f,%.3f",(copiaG[k][0]-bmin[0])/w,(copiaG[k][1]-bmin[1])/h,copiaG[k][2],copiaG[k][3]/w);
+			alvo+=g;
+			}
+	anuncia(alvo);
 	}
 
 float Extras::copiaAlvo(float x,float y) const
@@ -1040,7 +1062,7 @@ void Extras::passo(float dt)
 		{
 		temChuva=false;
 		for(int k=0;k<MAX_CHUVAS;++k)
-			temChuva=temChuva||chuvas[k].ate>tempo;
+			temChuva=temChuva||chuvas[k].ate+1.0>tempo; // fica ligada mais 1 s: a nuvem se desfaz aos poucos
 		}
 	if(!mapaOk||modo==NADA)
 		return;
@@ -1737,7 +1759,7 @@ uniform float extrasNomes[72]; // membros: por pessoa, nº de letras e 8 letras 
 uniform vec4 extrasNomesCfg;  // quantos nomes, giro do texto (quartos de volta), quantos têm rosto no painel
 uniform vec4 extrasCopia[4];    // copie o relevo: morros/buracos do alvo (x, y, altura cm, largura cm)
 uniform vec4 extrasCopiaInfo;   // ligado, folga (cm), altura de referência (cm), nota (+1000 = conseguiu)
-uniform vec4 extrasChuva[4]; // nuvens de chuva do painel: x, y (cm), ligada (1)
+uniform vec4 extrasChuva[4]; // nuvens de chuva do painel: x, y (cm), força 0..1 (chega e vai aos poucos), segundos desde o começo
 uniform vec4 extrasAg2[32];  // por bicho: estado (0 normal, 1 pousado/sentado, 2 mergulho, 3 indo, 4 caçando), altura do voo (0-1), tamanho, andamento do mergulho (0-1)
 uniform vec4 extrasMaos[4];  // mãos sobre a areia: x, y, raio (cm), vista agora (1)
 float extrasMarca;          // 1 onde há um animal marinho (o shader da água o deixa à vista)
@@ -1790,6 +1812,26 @@ float exOsso(vec2 p,vec2 a,vec2 b,float w)
 	return max(smoothstep(w,w*0.4,d),smoothstep(w*1.8,w*0.9,min(length(pa),length(p-b))));
 	}
 /* Pontinhos que andam (neve, brilhos): grade de células com no máximo um ponto cada */
+float exDigito(float d,vec2 p)
+	{
+	/* algarismo 3x5 (10 = %): p = coluna (0..3) e linha (0..5, 0 = em cima) */
+	if(p.x<0.0||p.y<0.0||p.x>=3.0||p.y>=5.0)
+		return 0.0;
+	float c=0.0;
+	if(d<0.5) c=31599.0;
+	else if(d<1.5) c=11415.0;
+	else if(d<2.5) c=29671.0;
+	else if(d<3.5) c=29647.0;
+	else if(d<4.5) c=23497.0;
+	else if(d<5.5) c=31183.0;
+	else if(d<6.5) c=31215.0;
+	else if(d<7.5) c=29257.0;
+	else if(d<8.5) c=31727.0;
+	else if(d<9.5) c=31695.0;
+	else if(d<10.5) c=21157.0;
+	float idx=floor(p.y)*3.0+floor(p.x);
+	return mod(floor(c/pow(2.0,14.0-idx)),2.0);
+	}
 float exPontos(vec2 p,float tamanho,float chance)
 	{
 	vec2 c=floor(p);
@@ -1883,45 +1925,36 @@ const char* Extras::glslFragmentMain=R"GLSL(
 	   SurfaceAddWaterColor com o mesmo visual, junto com a chuva) */
 	if(extrasCopiaInfo.x>0.5)
 		{
-		/* Copie o relevo: o relevo fica desbotado; vermelho = sobra areia (tirar), azul = falta (pôr),
-		   verde = já está certo; linhas brancas tracejadas = curvas de nível do alvo (a cada 1,5 cm) */
-		float T=0.0;
-		for(int k=0;k<4;++k)
-			{
-			vec4 g=extrasCopia[k];
-			if(g.w>0.0)
-				{
-				vec2 dg=ep.xy-g.xy;
-				T+=g.z*exp(-dot(dg,dg)/(2.0*g.w*g.w));
-				}
-			}
-		float tol=extrasCopiaInfo.y;
-		float err=ep.z-(extrasCopiaInfo.z+T);
+		/* Copie o relevo (17/11/2026, pedido do Victor: estava confuso e feio): a areia fica com o relevo
+		   normal do tema, sem nada por cima; no canto só a barra com a porcentagem de acerto. O alvo fica
+		   no meio da areia e o painel mostra a miniatura dele. */
 		float nota=mod(extrasCopiaInfo.w,1000.0);
 		bool feito=extrasCopiaInfo.w>=1000.0;
-		vec3 c=mix(vec3(dot(exAntes.rgb,vec3(0.3,0.5,0.2))),exAntes.rgb,0.35)*0.7+vec3(0.12); // relevo sem a animação do tema (lê melhor as cores)
-		float sobra=smoothstep(tol,tol+2.5,err);
-		float falta=smoothstep(tol,tol+2.5,-err);
-		c=mix(c,vec3(0.95,0.25,0.15),sobra*0.85);
-		c=mix(c,vec3(0.15,0.45,0.98),falta*0.85);
-		if(abs(err)<tol&&abs(T)>0.6)
-			c=mix(c,vec3(0.25,0.88,0.4),0.5);
-		float nivelT=T/1.5;
-		float iso=smoothstep(0.1,0.0,abs(fract(nivelT+0.5)-0.5))*step(0.5,abs(T))*step(0.5,fract((ep.x+ep.y)*0.55));
-		c=mix(c,vec3(1.0),iso*0.7);
-		if(feito)
-			c+=vec3(1.0,0.85,0.3)*smoothstep(0.6,0.0,abs(fract(length(ep.xy-extrasCopia[0].xy)*0.25-et*0.8)-0.5))*0.35*step(0.6,abs(T));
-		baseColor=vec4(c,1.0);
-		/* barra da nota no canto de baixo, à esquerda (de quem olha a imagem do projetor) */
 		vec2 pb=ep.xy-(extrasMundo2.xy+vec2(3.0,2.5));
-		if(pb.x>-0.35&&pb.x<20.35&&pb.y>-0.35&&pb.y<1.85)
+		if(pb.x>-0.7&&pb.x<31.0&&pb.y>-0.8&&pb.y<2.8)
 			{
-			vec3 corB=vec3(0.06,0.07,0.1);
-			if(pb.x>0.0&&pb.x<20.0&&pb.y>0.0&&pb.y<1.5&&pb.x<nota*0.2)
-				corB=feito?mix(vec3(1.0,0.8,0.2),vec3(1.0,0.97,0.7),0.5+0.5*sin(et*6.0)):
-				     mix(mix(vec3(0.9,0.2,0.15),vec3(0.95,0.8,0.15),smoothstep(20.0,55.0,nota)),vec3(0.25,0.85,0.35),smoothstep(55.0,85.0,nota));
-			if(abs(pb.x-17.0)<0.08&&pb.y>-0.2&&pb.y<1.7)
-				corB=vec3(1.0);                                     // marca dos 85%
+			vec3 corB=vec3(0.05,0.06,0.09);                              // fundo do quadro
+			if(pb.x>0.0&&pb.x<22.0&&pb.y>0.0&&pb.y<2.0)
+				{
+				corB=vec3(0.16,0.17,0.22);                               // trilho vazio
+				if(pb.x<nota*0.22)
+					corB=feito?mix(vec3(1.0,0.78,0.2),vec3(1.0,0.97,0.7),0.5+0.5*sin(et*6.0)):
+					     mix(mix(vec3(0.92,0.25,0.18),vec3(0.98,0.78,0.15),smoothstep(25.0,55.0,nota)),vec3(0.25,0.86,0.38),smoothstep(55.0,85.0,nota));
+				if(abs(pb.x-18.7)<0.1)
+					corB=vec3(0.9);                                      // marca dos 85%
+				}
+			/* número: até 3 algarismos e o % */
+			float n=floor(nota+0.5);
+			float c0=floor(n/100.0),c1=floor(mod(n,100.0)/10.0),c2=mod(n,10.0);
+			float cel=0.5;
+			vec2 t=vec2(pb.x-23.0,2.25-pb.y)/cel;                        // coluna, linha (0 = em cima)
+			float tinta=0.0;
+			if(c0>0.5) tinta=max(tinta,exDigito(c0,t));
+			if(c0>0.5||c1>0.5) tinta=max(tinta,exDigito(c1,t-vec2(4.0,0.0)));
+			tinta=max(tinta,exDigito(c2,t-vec2(8.0,0.0)));
+			tinta=max(tinta,exDigito(10.0,t-vec2(12.0,0.0)));
+			if(tinta>0.5)
+				corB=feito?vec3(1.0,0.9,0.4):vec3(1.0);
 			baseColor=vec4(corB,1.0);
 			}
 		}
@@ -2479,22 +2512,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			baseColor.rgb=c;
 			}
 		}
-	/* Mão sobre a areia: ondas de luz saindo dela (os bichos estão sentindo a mão) */
-	for(int k=0;k<4;++k)
-		{
-		vec4 mh=extrasMaos[k];
-		if(mh.w<0.5)
-			continue;
-		float dm=distance(ep.xy,mh.xy)-mh.z;
-		if(dm<0.0||dm>8.0)
-			continue;
-		float o=fract(et*0.6+float(k)*0.3);
-		float o2=fract(o+0.5);
-		float anel=smoothstep(0.5,0.0,abs(dm-(0.5+o*7.0)))*(1.0-o)*0.85
-		          +smoothstep(0.5,0.0,abs(dm-(0.5+o2*7.0)))*(1.0-o2)*0.85
-		          +smoothstep(1.8,0.0,dm)*0.45;                                                  // brilho colado na mão
-		baseColor.rgb=mix(baseColor.rgb,vec3(1.0,0.97,0.75),clamp(anel,0.0,0.9));
-		}
+	/* (a mão não desenha mais nada: o anel piscando em volta dela foi tirado a pedido do Victor, 17/11/2026) */
 	/* Peixes e carrinhos (vistos de cima, com sombra): */
 	for(int i=0;i<32;++i)
 		{
@@ -3045,23 +3063,43 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				}
 			}
 		}
-	/* Chuva pelo painel: uma nuvem branca com gotas caindo em cada ponto de chuva */
+	/* Chuva pelo painel: a nuvem chega crescendo, deriva de leve, as gotas caem em riscos e respingam no
+	   chão; no fim ela se desfaz aos poucos (antes aparecia e sumia de uma vez, com gotas em faixas) */
 	for(int k=0;k<4;++k)
 		{
 		vec4 ch=extrasChuva[k];
-		if(ch.z<0.5)
+		if(ch.z<0.01)
 			continue;
-		vec2 qn=ep.xy-ch.xy;
-		if(dot(qn,qn)>36.0)
+		float f=ch.z;
+		vec2 centro=ch.xy+vec2(0.35*sin(ch.w*0.9+float(k)),0.25*sin(ch.w*0.7+float(k)*2.0));
+		vec2 qn=ep.xy-centro;
+		if(dot(qn,qn)>42.0)
 			continue;
-		float gota=smoothstep(0.12,0.02,abs(fract(qn.x*0.9)-0.5))*step(0.55,fract(qn.y*0.45+et*2.2+floor(qn.x*0.9)*0.37))
-		           *smoothstep(3.6,2.0,length(qn));
-		baseColor.rgb=mix(baseColor.rgb,vec3(0.75,0.9,1.0),gota*0.8);
-		float nuvem=min(min(length((qn-vec2(-1.3,0.3))/vec2(1.5,1.1)),length((qn-vec2(1.2,0.2))/vec2(1.6,1.2))),
-		                length((qn-vec2(0.0,0.9))/vec2(1.7,1.3)));
-		if(nuvem<1.0)
+		/* gotas: cada coluna de 0,7 cm tem a sua velocidade e fase; riscos curtos caindo para "baixo" da imagem */
+		float col=floor(qn.x/0.7);
+		float vel=3.0+1.5*exHash(vec2(col,float(k)));
+		float fase=fract((qn.y+ch.w*vel*2.2)/2.3+exHash(vec2(col,7.0+float(k))));
+		float risco=smoothstep(0.16,0.0,abs(fract(qn.x/0.7)-0.5)*0.7)*smoothstep(0.0,0.12,fase)*smoothstep(0.42,0.18,fase);
+		float dentroR=smoothstep(3.8,2.4,length(qn*vec2(1.0,0.9)))*step(qn.y,0.6);
+		baseColor.rgb=mix(baseColor.rgb,vec3(0.72,0.88,1.0),risco*dentroR*0.75*f);
+		/* respingos: anéis pequenos que abrem onde as gotas chegam */
+		vec2 cr=floor((qn+vec2(4.0))/1.6);
+		float tr=fract(ch.w*1.3+exHash(cr+float(k)*3.1));
+		vec2 pr=(cr+vec2(0.3+0.4*exHash(cr+vec2(1.0,9.0)),0.3+0.4*exHash(cr+vec2(5.0,2.0))))*1.6-vec2(4.0);
+		float anelR=smoothstep(0.08,0.0,abs(distance(qn,pr)-tr*0.55))*(1.0-tr)*smoothstep(3.6,2.2,length(qn));
+		baseColor.rgb=mix(baseColor.rgb,vec3(0.85,0.95,1.0),anelR*0.6*f);
+		/* nuvem: três bolas fofas com sombra embaixo; cresce ao chegar e se desfaz no fim */
+		float esc=0.75+0.25*f;
+		vec2 qc=(qn-vec2(0.0,1.2))/esc;
+		float nuvem=min(min(length((qc-vec2(-1.3,0.0))/vec2(1.5,1.1)),length((qc-vec2(1.2,-0.1))/vec2(1.6,1.2))),
+		                length((qc-vec2(0.0,0.6))/vec2(1.7,1.3)));
+		float sombraN=smoothstep(1.25,0.9,length((qc-vec2(0.15,-0.55))/vec2(2.6,1.2)));
+		baseColor.rgb*=1.0-0.18*sombraN*f;
+		float cobreN=smoothstep(1.0,0.86,nuvem)*f;
+		if(cobreN>0.01)
 			{
-			baseColor.rgb=mix(baseColor.rgb,mix(vec3(1.0),vec3(0.78,0.82,0.9),smoothstep(0.3,1.0,nuvem)),0.9);
+			vec3 corN=mix(vec3(1.0),vec3(0.74,0.79,0.88),smoothstep(0.2,1.0,nuvem)+0.25*smoothstep(0.3,-0.6,qc.y));
+			baseColor.rgb=mix(baseColor.rgb,corN,cobreN*0.95);
 			extrasMarca=1.0; // a água que cai não cobre a nuvem
 			}
 		}
@@ -3216,7 +3254,7 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 	GLfloat ch[MAX_CHUVAS*4];
 	for(int k=0;k<MAX_CHUVAS;++k)
 		{
-		ch[k*4]=chuvas[k].x; ch[k*4+1]=chuvas[k].y; ch[k*4+2]=chuvas[k].ate>tempo?1.0f:0.0f; ch[k*4+3]=0.0f;
+		ch[k*4]=chuvas[k].x; ch[k*4+1]=chuvas[k].y; ch[k*4+2]=chuvaForca(k); ch[k*4+3]=chuvas[k].desde>=0.0?GLfloat(tempo-chuvas[k].desde):0.0f;
 		}
 	glUniform4fvARB(locations[14],MAX_CHUVAS,ch);
 	bool cidade=modo==MUNDO&&mundoPronto; // (o nome ficou da cidade antiga: hoje é a sala do laboratório)

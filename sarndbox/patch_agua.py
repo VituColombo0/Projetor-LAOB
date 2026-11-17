@@ -17,11 +17,11 @@ uniform vec4 extrasEfeito; // Projetor-LAOB: efeito do tema (0 = água normal)
 		/* Projetor-LAOB: a água da chuva tem o mesmo jeito do lago dos peixes (clara no raso, escura no
 		   fundo, ondinhas e brilho) e a cor combina com o tema: lava, água gelada, lama, oásis... */
 		float efA=extrasEfeito.x;
-		float fundoA=clamp(waterLevel/2.5,0.0,1.0);
+		float fundoA=clamp(waterLevel/2.0,0.0,1.0);
 		float ondaA=0.5+0.5*sin(waterAnimationTime*2.0+fragCoord.x*0.045+fragCoord.y*0.03);
-		vec3 rasoA=vec3(0.30,0.72,0.90);
-		vec3 profA=vec3(0.03,0.20,0.50);
-		float brilhoA=0.55;
+		vec3 rasoA=vec3(0.14,0.56,0.93);   // azul firme (17/11: a água estava transparente e difícil de ver)
+		vec3 profA=vec3(0.02,0.11,0.42);
+		float brilhoA=0.4;
 		/* com bichos da água (lago ligado: extrasInfo.w = nível do mar) a água é água em todo tema: peixe não nada em lava */
 		bool lagoA=extrasInfo.w>-999.0;
 		if(extrasEfeito.w>0.5||(efA>0.5&&efA<1.5&&!lagoA))
@@ -50,10 +50,11 @@ uniform vec4 extrasEfeito; // Projetor-LAOB: efeito do tema (0 = água normal)
 		if(!(extrasEfeito.w>0.5||(efA>0.5&&efA<1.5&&!lagoA)))
 			{
 			float finaA=1.0-smoothstep(0.12,0.7,waterLevel);
-			vec3 molhadaA=baseColor.rgb*0.66+rasoA*0.10+vec3(colorW*brilhoA*0.3);
+			vec3 molhadaA=baseColor.rgb*0.76+rasoA*0.08+vec3(colorW*brilhoA*0.3);
 			waterColor=vec4(mix(waterColor.rgb,molhadaA,finaA),1.0);
 			cobreA=max(cobreA,smoothstep(0.0,0.04,waterLevel)*0.92);
 			}
+		cobreA=max(cobreA,smoothstep(0.08,0.4,waterLevel)); // água de verdade (4 mm ou mais) cobre por inteiro
 		if(extrasInfo.x>0.0&&extrasMarca>0.5)
 			cobreA*=0.25; // tem um animal marinho aqui (marcado pelo shader dos extras)
 		baseColor=mix(baseColor,waterColor,cobreA);
@@ -63,4 +64,40 @@ uniform vec4 extrasInfo;   // .x = tempo dos extras (0 = extras desligados)
 float extrasMarca;         // posta em 1 pelo shader dos extras onde há um animal marinho
 """)
     open(ARQ, "w").write(s)
+
+# Lençol do lago dos bichos (17/11/2026): no passo que soma a água da chuva, em toda célula da área iluminada
+# cujo fundo está abaixo do nível do mar a água brota até ele; acima do nível, a areia absorve aos poucos.
+ARQ2 = "share/SARndbox-2.8/Shaders/Water2WaterUpdateShader.fs"
+u = open(ARQ2).read()
+if "lencolT" not in u:
+    u = rep(u, "uniform sampler2DRect waterSampler;\n", """uniform sampler2DRect waterSampler;
+uniform vec3 lencolBx;   // Projetor-LAOB: célula -> caixa (cm): bx = x + y.x*célula + z*célula
+uniform vec3 lencolBy;
+uniform vec3 lencolT;    // nível do mar (altura da água) = x + y*bx + z*by
+uniform vec4 lencolArea; // área iluminada na caixa (min x, min y, max x, max y)
+uniform vec3 lencolTaxa; // ligado, fração que brota neste passo, cm absorvidos neste passo
+""")
+    u = rep(u, "\t/* Write the updated quantity: */\n", """	/* Projetor-LAOB: lençol do lago dos bichos */
+	if(lencolTaxa.x>0.5)
+		{
+		float bx=lencolBx.x+lencolBx.y*gl_FragCoord.x+lencolBx.z*gl_FragCoord.y;
+		float by=lencolBy.x+lencolBy.y*gl_FragCoord.x+lencolBy.z*gl_FragCoord.y;
+		if(bx>lencolArea.x&&by>lencolArea.y&&bx<lencolArea.z&&by<lencolArea.w)
+			{
+			float T=lencolT.x+lencolT.y*bx+lencolT.z*by;
+			float h0=q.x-b;
+			if(b<T&&q.x<T)
+				q.x+=(T-q.x)*lencolTaxa.y;                      // brota (água nova entra parada)
+			else if(q.x>max(b,T))
+				{
+				q.x-=min(q.x-max(b,T),lencolTaxa.z);              // a areia absorve a água a mais
+				float h1=max(q.x-b,0.0);
+				q.yz=h1<=0.0?vec2(0.0):q.yz*(h1/max(h0,1.0e-6));
+				}
+			}
+		}
+	
+	/* Write the updated quantity: */
+""")
+    open(ARQ2, "w").write(u)
 print("água ok")

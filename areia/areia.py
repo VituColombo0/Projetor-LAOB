@@ -978,8 +978,9 @@ def copia(forma="sorteio", nivel="normal"):
 
 
 def copia_situacao():
-    """{"forma", "nota" (0-100), "conseguiu" (bool), "rodadas"} ou forma None se o jogo não está ligado."""
-    vazio = {"forma": None, "nota": 0, "conseguiu": False, "rodadas": 0}
+    """{"forma", "nota" (0-100), "conseguiu" (bool), "rodadas", "alvo" ([x, y, altura cm, largura] por morro,
+    x/y/largura em fração da área iluminada)} ou forma None se o jogo não está ligado."""
+    vazio = {"forma": None, "nota": 0, "conseguiu": False, "rodadas": 0, "alvo": []}
     if qual() != "rosto":
         return vazio
     linhas = _registro_caca()
@@ -991,13 +992,19 @@ def copia_situacao():
                          "Jogo pedido", "Animais:", "Modo Rosto:", "Modo Esculpir:")) for l in depois[1:]):
         return vazio
     m = re.match(r"Copia: forma (.+) \(nível", depois[0])
-    nota, conseguiu = 0, False
+    nota, conseguiu, alvo = 0, False, []
     for l in depois[1:]:
+        if l.startswith("Copia: alvo"):
+            try:
+                alvo = [[float(v) for v in g.split(",")] for g in l.split()[2:]]
+            except ValueError:
+                alvo = []
+            continue
         n = re.match(r"Copia: (?:conseguiu! )?(\d+)%", l)
         if n:
             nota, conseguiu = int(n.group(1)), l.startswith("Copia: conseguiu")
     rodadas = sum(1 for l in linhas if l.startswith("Copia: conseguiu"))
-    return {"forma": m.group(1) if m else "?", "nota": nota, "conseguiu": conseguiu, "rodadas": rodadas}
+    return {"forma": m.group(1) if m else "?", "nota": nota, "conseguiu": conseguiu, "rodadas": rodadas, "alvo": alvo}
 
 
 def copia_nova():

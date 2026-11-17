@@ -298,7 +298,7 @@ def _liga_ao_vivo():
         w, h, x, y = tela
         try:
             _ao_vivo["proc"] = subprocess.Popen(
-                ["ffmpeg", "-nostdin", "-loglevel", "error", "-f", "x11grab", "-framerate", "3",
+                ["ffmpeg", "-nostdin", "-loglevel", "error", "-f", "x11grab", "-framerate", "6",
                  "-video_size", f"{w}x{h}", "-i", f"{env['DISPLAY']}.0+{x},{y}", "-vf", "scale=512:-2",
                  "-q:v", "6", "-update", "1", "-y", AO_VIVO],
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env,
@@ -607,6 +607,8 @@ h2 { margin-bottom: 10px; }
   font-size: .88rem;
 }
 .placar b { font-weight: 700; }
+.alvo-copia { display: flex; gap: 12px; align-items: center; margin-top: 8px; font-size: .86rem; line-height: 1.35; }
+.alvo-copia canvas { width: 118px; height: 84px; border-radius: 8px; flex: none; border: 1px solid var(--border-strong); }
 .placar .nota { height: 10px; border-radius: 999px; background: color-mix(in srgb, var(--fg) 12%, transparent); margin: 8px 0 4px; overflow: hidden; }
 .placar .nota-barra { height: 100%; width: 0; border-radius: 999px; transition: width .6s ease;
   background: linear-gradient(90deg, #e2463a, #e8b72c 45%, #3cb35b 85%); background-size: 600px 100%; }
@@ -640,12 +642,17 @@ h2 { margin-bottom: 10px; }
   position: absolute; top: 8px; left: 8px; font-size: .72rem; font-weight: 700; padding: 3px 8px; border-radius: 999px;
   background: rgba(0,0,0,.55); color: #ff6b6b; pointer-events: none;
 }
-.quadro-chuva .pingo { z-index: 2;
-  position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%;
-  border: 2px solid var(--accent); animation: pingo 1.2s ease-out forwards; pointer-events: none;
-}
-@keyframes pingo { from { transform: scale(.3); opacity: 1; } to { transform: scale(2.2); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .quadro-chuva .pingo { animation-duration: .01s; } }
+.quadro-chuva .nuvem-chuva { z-index: 2; position: absolute; width: 64px; height: 64px; margin: -40px 0 0 -32px;
+  pointer-events: none; animation: nuvem-chega .45s ease-out both; transition: opacity .8s ease; }
+.quadro-chuva .nuvem-chuva.indo { opacity: 0; }
+.quadro-chuva .nuvem-corpo { position: absolute; left: 4px; right: 4px; top: 0; height: 26px; border-radius: 14px;
+  background: radial-gradient(circle at 30% 60%, #fff 0 40%, transparent 41%), radial-gradient(circle at 62% 40%, #fff 0 46%, transparent 47%),
+              linear-gradient(#f4f7fb, #dfe6ef); box-shadow: 0 3px 8px rgba(0,0,0,.25); }
+.quadro-chuva .nuvem-chuva i { position: absolute; top: 24px; width: 2px; height: 10px; border-radius: 2px;
+  background: linear-gradient(transparent, #8fd0ff); animation: gota .6s linear infinite; }
+@keyframes nuvem-chega { from { transform: translateY(-8px) scale(.7); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes gota { from { transform: translateY(0); opacity: 0; } 20% { opacity: 1; } to { transform: translateY(30px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .quadro-chuva .nuvem-chuva, .quadro-chuva .nuvem-chuva i { animation: none; } }
 
 /* mundo LAOB */
 .moradores { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
@@ -989,7 +996,11 @@ async function carrega() {
     } else if (a === 'copia') {
       const c = E.copia;
       pl.innerHTML = '<b>Copie o relevo</b> · <span class="forma"></span>'
+        + '<div class="alvo-copia"><canvas width="236" height="168" aria-label="Como o relevo deve ficar"></canvas>'
+        + '<span>Faça este relevo <b>no meio da areia</b>. Verde e marrom = monte (põe areia), azul = buraco (tira areia). '
+        + 'A barra no canto da areia mostra quanto já está certo: passe de 85%.</span></div>'
         + '<div class="nota"><div class="nota-barra"></div></div><span class="nota-txt"></span>';
+      desenhaAlvo(pl.querySelector('.alvo-copia canvas'), c.alvo || []);
       pl.querySelector('.forma').textContent = ({vulcao: 'Vulcão', montanha: 'Montanha', 'duas montanhas': 'Duas montanhas',
         cratera: 'Cratera', 'ilha e lago': 'Ilha e lago', serra: 'Serra'})[c.forma] || c.forma;
       pl.querySelector('.nota-barra').style.width = Math.min(100, c.nota) + '%';
@@ -1117,9 +1128,9 @@ function pintaMar() {
 }
 let VIVO = false;
 function querVivo() {
-  /* aba Chuva aberta: rápido (3 por segundo); tela larga: a miniatura do cabeçalho, 1 por segundo */
+  /* aba Chuva aberta: rápido (6 por segundo); tela larga: a miniatura do cabeçalho, 1 por segundo */
   if (document.hidden) return 0;
-  if (!$('section.card[data-aba="chuva"]').hidden) return 300;
+  if (!$('section.card[data-aba="chuva"]').hidden) return 160;
   if (window.matchMedia('(min-width: 900px)').matches) return 1000;
   return 0;
 }
@@ -1149,18 +1160,44 @@ function aoVivo() {
 window.addEventListener('resize', aoVivo);
 document.addEventListener('visibilitychange', aoVivo);
 
+function desenhaAlvo(cv, alvo) {
+  /* miniatura do relevo-alvo do Copie o relevo: mesmo enquadramento da imagem do projetor */
+  if (!cv || !cv.getContext) return;
+  const g = cv.getContext('2d'), W = cv.width, H = cv.height, img = g.createImageData(W, H);
+  let maior = 1;
+  alvo.forEach(m => { maior = Math.max(maior, Math.abs(m[2])); });
+  for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) {
+    const x = (px + .5) / W, y = 1 - (py + .5) / H;
+    let t = 0;
+    alvo.forEach(m => { const dx = x - m[0], dy = (y - m[1]) * H / W, l = m[3]; t += m[2] * Math.exp(-(dx*dx + dy*dy) / (2*l*l)); });
+    const u = t / maior;                                   // -1 buraco .. 1 topo
+    let c;
+    if (u < -0.06) { const k = Math.min(1, -u); c = [70 - 50*k, 150 - 60*k, 220 - 40*k]; }
+    else if (u < 0.08) c = [214, 196, 150];                // areia como está
+    else { const k = Math.min(1, u);
+      c = k < 0.5 ? [120 + 200*k, 180 - 20*k, 80] : [220 - 60*(k-.5), 160 - 140*(k-.5), 70 - 40*(k-.5)]; }
+    const i = (py * W + px) * 4;
+    img.data[i] = c[0]; img.data[i+1] = c[1]; img.data[i+2] = c[2]; img.data[i+3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+}
+
 function chove(ev) {
   const q = $('#quadro-chuva');
   const r = q.getBoundingClientRect();
   const p = ev.touches ? ev.touches[0] : ev;
   const x = Math.min(1, Math.max(0, (p.clientX - r.left) / r.width));
   const y = Math.min(1, Math.max(0, (p.clientY - r.top) / r.height));
-  const pingo = document.createElement('span');
-  pingo.className = 'pingo';
-  pingo.style.left = (x * 100) + '%';
-  pingo.style.top = (y * 100) + '%';
-  q.appendChild(pingo);
-  setTimeout(() => pingo.remove(), 1300);
+  /* nuvem com chuva desenhada aqui mesmo (suave): a imagem ao vivo do projetor tem poucos quadros por segundo */
+  const nuvem = document.createElement('div');
+  nuvem.className = 'nuvem-chuva';
+  nuvem.style.left = (x * 100) + '%';
+  nuvem.style.top = (y * 100) + '%';
+  nuvem.innerHTML = '<span class="nuvem-corpo"></span>' + Array.from({length: 9}, (_, i) =>
+    `<i style="left:${8 + i * 10 + (i % 2) * 3}%;animation-delay:${(i * 0.137) % 0.6}s"></i>`).join('');
+  q.appendChild(nuvem);
+  setTimeout(() => nuvem.classList.add('indo'), 7400);
+  setTimeout(() => nuvem.remove(), 8200);
   post('/chuva', {x: x, y: 1 - y});
 }
 
