@@ -46,7 +46,7 @@ Extras::Extras(void)
 	camX=camAlvo=0.0f;
 	camTroca=0.0;
 	horaFixa=-1.0f;
-	fatorVazao=1.0f;
+	fatorVazao=1.32f; // o dobro da calibração de 16/11 (0,66), pedido em 17/11; as bocas maiores não mudam o total (ver patch_sandbox)
 	copia=false;
 	copiaForma=copiaNivel=copiaRodadas=0;
 	copiaRef=0.0f;
@@ -865,7 +865,7 @@ void Extras::novoLabirinto(int dificuldade)
 	ltx=bx;
 	lty=by;
 	lraio=labDificuldade==1?5.0f:4.0f;
-	labVazao=labDificuldade==3?1.0f:1.4f;
+	labVazao=labDificuldade==3?0.6f:1.0f;
 	labirinto=true;
 	labEstado=1;
 	labInicio=tempo;

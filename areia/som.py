@@ -7,6 +7,7 @@ tesouros e seres vivos.
 """
 import json
 import os
+import re
 import subprocess
 import threading
 import time
@@ -29,6 +30,11 @@ def _caminho_log():
 
 PADRAO = {"volume": 80, "mudo": False, "saida": "combinado"}
 
+
+def _falso():
+    """Testes: não mexe no som de verdade (pactl/paplay). Em 17/11 o teste do painel deixava o volume do laob em 0%."""
+    return bool(os.environ.get("AREIA_SOM_FALSO"))
+
 _lock = threading.Lock()
 _vigia_thread = None
 _vigia_ativo = False
@@ -38,6 +44,8 @@ _ultimo_toque_geral = 0.0
 
 def _garantir_sink_combinado():
     """Garante que a saída combinada (HDMI + analógica) existe no PulseAudio sem duplicatas."""
+    if _falso():
+        return
     try:
         res = subprocess.run(["pactl", "list", "short", "sinks"],
                              capture_output=True, text=True, timeout=1.5)
@@ -83,6 +91,8 @@ def definir_volume(vol):
     e = estado()
     e["volume"] = vol
     salva_estado(e)
+    if _falso():
+        return e
     # Tenta sincronizar volume do PulseAudio se pactl estiver disponível
     try:
         vol_pct = f"{vol}%"
@@ -109,7 +119,7 @@ def tocar(nome):
     if e.get("mudo", False) or e.get("volume", 80) <= 0:
         return
     caminho = os.path.join(_dir_sons(), f"{nome}.wav")
-    if not os.path.isfile(caminho):
+    if not os.path.isfile(caminho) or _falso():
         return
 
     agora = time.time()
@@ -177,16 +187,14 @@ def _loop_vigia():
                     if ("Tesouro encontrado" in linha or "Fossil encontrado" in linha
                             or "Tesouro: achou" in linha or "Fossil: achou" in linha):
                         tocar("tesouro")
-                    elif ("venceu o time" in linha
-                          or "Labirinto: a água chegou" in linha
-                          or "Copia: conseguiu" in linha
-                          or "casas a salvo" in linha or "casas secas" in linha
-                          or "casas de pé" in linha
-                          or "plantações vivas" in linha or "plantacoes vivas" in linha
-                          or "o lago encheu na medida" in linha
-                          or "peixes salvos" in linha
-                          or "barquinho chegou ao porto" in linha
-                          or "passou pelos portões e chegou" in linha):
+                    elif linha.startswith("Jogo: fim da rodada"):
+                        # "N de M casas a salvo", "N de M peixes salvos"...: ganhou se salvou algo; empate e
+                        # "o tempo acabou" (sem chegar) contam como derrota
+                        m = re.search(r"(\d+) de (\d+)", linha)
+                        perdeu = ("empate" in linha or "o tempo acabou" in linha
+                                  or (m is not None and int(m.group(1)) == 0))
+                        tocar("alerta" if perdeu else "vitoria")
+                    elif ("Labirinto: a água chegou" in linha or "Copia: conseguiu" in linha):
                         tocar("vitoria")
                     elif ("Jogo pedido:" in linha or "Jogo: corrida" in linha
                           or "Labirinto: nascente" in linha or "Labirinto: rodada nova" in linha
@@ -195,8 +203,9 @@ def _loop_vigia():
                     elif ("aviso de lava" in linha or "boca de lava" in linha or "terra tremeu" in linha
                           or "tocou numa armadilha" in linha or "casa alagou" in linha or "lava pegou" in linha):
                         tocar("alerta")
-                    elif ("o tubarao pegou um peixe" in linha or "passaro pescou um peixe" in linha
-                          or "Chuva: nuvem" in linha):
+                    elif "passaro pescou um peixe" in linha:
+                        tocar("passaro")
+                    elif "o tubarao pegou um peixe" in linha or "Chuva: nuvem" in linha:
                         tocar("splash")
         except Exception:
             time.sleep(1.0)

@@ -177,7 +177,7 @@ void Extras::novoJogo(void)
 				naBorda(l,f,sx,sy);
 				naBorda(o,f,bx,by);
 				/* pouca água: com 0,9 ela atravessava a caixa sozinha e a rodada acabava em segundos */
-				addFonte(sx,sy,n==1?0.95f:n==2?0.80f:0.65f);
+				addFonte(sx,sy,n==1?0.4f:n==2?0.32f:0.25f);
 				addPeca(P_ALVO,sx+(bx-sx)*lev,sy+(by-sy)*lev,n==1?5.0f:4.0f,t);
 				}
 			jogoDuracao=240.0f; // sem vencedor em 4 min: empate (a água não enche a caixa para sempre)
@@ -203,7 +203,7 @@ void Extras::novoJogo(void)
 						py=qy;
 						}
 					}
-				addFonte(px,py,n==1?1.3f:n==2?1.7f:2.2f);
+				addFonte(px,py,n==1?0.9f:n==2?1.3f:1.7f);
 				jogoDuracao=n==1?40.0f:n==2?55.0f:70.0f;
 				for(int i=0;i<casas;++i)
 					if(pontoLivre(x,y,7.0f,12.0f,r-4.0f,r+0.5f))
@@ -217,7 +217,7 @@ void Extras::novoJogo(void)
 				for(int k=0;k<3;++k)
 					{
 					naBorda((lado+1+k)%4,0.25f+0.5f*aleatorio(),x,y);
-					addFonte(x,y,n==1?0.70f:n==2?0.85f:1.05f); // de três lados, água forte e visível
+					addFonte(x,y,n==1?0.3f:n==2?0.4f:0.55f); // de três lados, cada uma mais fraca
 					}
 				jogoDuracao=n==1?40.0f:n==2?55.0f:70.0f;
 				for(int i=0;i<casas;++i)
@@ -230,7 +230,7 @@ void Extras::novoJogo(void)
 		case FAZENDA:
 			{
 			naBorda(lado,0.5f,x,y);
-			addFonte(x,y,1.1f);
+			addFonte(x,y,0.8f);
 			int plantas=n+2;
 			for(int i=0;i<plantas;++i)
 				if(pontoLivre(x,y,5.0f,9.0f,r-2.0f,r+2.0f))
@@ -243,7 +243,7 @@ void Extras::novoJogo(void)
 			{
 			float sx,sy,bx,by;
 			naBorda(lado,0.2f+0.6f*aleatorio(),sx,sy);
-			addFonte(sx,sy,1.2f);
+			addFonte(sx,sy,0.9f);
 			int portoes=n==1?2:n==2?3:4;
 			/* portões sorteados pela caixa inteira, longe uns dos outros e da nascente, em ordem
 			   também sorteada: o caminho vira um zigue-zague (antes ficavam em fila entre a nascente
@@ -269,7 +269,7 @@ void Extras::novoJogo(void)
 			/* num lugar baixo ou médio (em cima de um morro a água não chegaria) e longe da nascente */
 			float sx,sy;
 			naBorda(lado,0.5f,sx,sy);
-			addFonte(sx,sy,1.2f);
+			addFonte(sx,sy,1.0f);
 			if(!pontoLivre(x,y,10.0f,18.0f,r-6.0f,r+0.5f))
 				{
 				x=(bmin[0]+bmax[0])/2;
@@ -286,7 +286,7 @@ void Extras::novoJogo(void)
 			float sx,sy,bx,by;
 			naBorda(lado,0.2f+0.6f*aleatorio(),sx,sy);
 			naBorda(oposto[lado],0.2f+0.6f*aleatorio(),bx,by);
-			addFonte(sx,sy,1.3f);
+			addFonte(sx,sy,1.1f);
 			/* o barco começa logo abaixo da nascente */
 			float dx=bx-sx,dy=by-sy,dl=std::sqrt(dx*dx+dy*dy)+1e-6f;
 			addPeca(P_BARCO,sx+dx/dl*6.0f,sy+dy/dl*6.0f,2.6f);
@@ -300,7 +300,7 @@ void Extras::novoJogo(void)
 		case RESGATE:
 			{
 			naBorda(lado,0.5f,x,y);
-			addFonte(x,y,1.2f);
+			addFonte(x,y,1.0f);
 			int peixes=n+2;
 			for(int i=0;i<peixes;++i)
 				if(pontoLivre(x,y,5.0f,10.0f,r-3.0f,r+0.5f))

@@ -884,7 +884,7 @@ JOGOS = {
                 "A água é pouca e não chega sozinha: ganha quem abrir o melhor caminho. "
                 "Dá para atrapalhar o outro time com diques!"),
     "vila": ("Salve a vila", "A enchente vem de três lados; proteja as casinhas.",
-             "Há 10 segundos para se preparar. Depois a água desce de três bordas diferentes: "
+             "A água começa a descer na hora, de três bordas diferentes: "
              "levantem diques e cavem valas em volta das casas. No canto da areia, uma fila de "
              "casinhas mostra quantas continuam de pé (branca) e quantas alagaram (vermelha)."),
     "rota": ("Rota com paradas", "A água tem que passar pelos portões 1, 2, 3… na ordem.",

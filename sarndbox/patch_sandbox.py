@@ -723,6 +723,11 @@ void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
 		glPopAttrib();
 		}
 	
+	/* Bocas das nascentes com 3,2 cm de raio (mais visíveis); a água por cm² é reduzida na mesma proporção
+	   (2/3,2)², para o total ser o de sempre vezes o fatorVazao. Sem isso (17/11, 18:47) os jogos recebiam
+	   4 a 9 vezes mais água: a vila alagava inteira em 1 min e a simulação atrasava. */
+	const double BOCA=(2.0*2.0)/(3.2*3.2);
+	
 	/* Labirinto de água: a nascente joga água enquanto a rodada corre: */
 	if(extras.labirinto&&extras.labEstado==1&&waterSpeed>0.0)
 		{
@@ -734,7 +739,7 @@ void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
 		x.normalize();
 		y.normalize();
 		Point centro=boxTransform.inverseTransform(Point(extras.lsx,extras.lsy,extras.referencia));
-		glVertexAttrib1fARB(1,GLfloat(extras.labVazao*extras.fatorVazao/waterSpeed));
+		glVertexAttrib1fARB(1,GLfloat(extras.labVazao*extras.fatorVazao*BOCA/waterSpeed)); // BOCA: a boca de 3,2 cm joga o mesmo total que a antiga de 2 cm
 		glBegin(GL_POLYGON);
 		for(int i=0;i<24;++i)
 			{
@@ -788,7 +793,7 @@ void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
 			if(!f.ativa)
 				continue;
 			Point centro=boxTransform.inverseTransform(Point(f.x,f.y,extras.referencia));
-			glVertexAttrib1fARB(1,GLfloat(extras.labVazao*f.vazao*extras.fatorVazao/waterSpeed));
+			glVertexAttrib1fARB(1,GLfloat(extras.labVazao*f.vazao*extras.fatorVazao*BOCA/waterSpeed));
 			glBegin(GL_POLYGON);
 			for(int i=0;i<24;++i)
 				{
