@@ -52,7 +52,8 @@ if "FaceImage" not in h:
 	mutable unsigned int quadrosAgua,atrasosAgua; // Desempenho: passos de água e quantos atrasaram
 	mutable double aguaPedida,aguaFaltou; // Desempenho: tempo de água que devia ser simulado e o que ficou para trás
 	double desempenhoTempo; unsigned int quadros; // Desempenho: quadros desde a última linha no log
-	double extrasMapaTempo,extrasUltimoPasso; // Última atualização do mapa e do movimento
+	double extrasMapaTempo,extrasUltimoPasso,extrasMaosTempo; // Última atualização do mapa, do movimento e das mãos
+	Threads::TripleBuffer<Kinect::FrameBuffer> brutoFrames; // Quadros crus do sensor (mãos sobre a areia)
 	float tesouroPedido; // Profundidade do tesouro pedido antes de haver mapa (<0 = nenhum)
 """)
     h = rep(h, "\tfloat measureSandHeight(void) const; // Altura mediana da areia (cm acima do plano base)\n",
@@ -267,7 +268,7 @@ void Sandbox::toggleDEM(DEM* dem)
 """)
     # --- Extras (Projetor-LAOB)
     c = rep(c, "\t faceImage(0),faceDem(0),faceRefTime(0.0)",
-            "\t faceImage(0),faceDem(0),faceRefTime(0.0),\n\t extrasMapaTempo(0.0),extrasUltimoPasso(0.0),tesouroPedido(-1.0f),\n"
+            "\t faceImage(0),faceDem(0),faceRefTime(0.0),\n\t extrasMapaTempo(0.0),extrasUltimoPasso(0.0),extrasMaosTempo(0.0),tesouroPedido(-1.0f),\n"
             "\t labLeitura(0.0),quadrosAgua(0),atrasosAgua(0),aguaPedida(0.0),aguaFaltou(0.0),desempenhoTempo(0.0),quadros(0)")
     c = rep(c, """<<" cm"<<std::endl;
 			break;
@@ -301,6 +302,15 @@ void Sandbox::toggleDEM(DEM* dem)
 						extras.efeito=e;
 						std::cout<<"Efeito: "<<tokens[1]<<std::endl;
 						}
+					}
+				else if(isToken(tokens[0],"maoDiag"))
+					extras.maoDiag=true;
+				else if(isToken(tokens[0],"maoTeste")&&tokens.size()>=3)
+					{
+					/* mão de mentira (testes e prints): fração x, y da área iluminada e segundos */
+					float seg=tokens.size()>=4?float(atof(tokens[3].c_str())):15.0f;
+					extras.maoTeste(float(atof(tokens[1].c_str())),float(atof(tokens[2].c_str())),seg);
+					std::cout<<"Mao de teste em x "<<extras.maos[Extras::MAX_MAOS-1].x<<" y "<<extras.maos[Extras::MAX_MAOS-1].y<<" por "<<seg<<" s"<<std::endl;
 					}
 				else if(isToken(tokens[0],"tesouroTeste"))
 					{
@@ -999,6 +1009,52 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
 			/* Render a rain disk approximating the hand: */
 			glBegin(GL_POLYGON);
 """)
+    # Vida mais viva (17/11/2026): os bichos reagem às mãos. O quadro cru do sensor vai também para o
+    # Extras, que o compara com o mapa de alturas (veja Extras::fechaMaos).
+    c = rep(c, """	if(handExtractor!=0)
+		handExtractor->receiveRawFrame(frameBuffer);
+	}
+""", """	if(handExtractor!=0)
+		handExtractor->receiveRawFrame(frameBuffer);
+	brutoFrames.postNewValue(frameBuffer); // Projetor-LAOB: mãos sobre a areia
+	}
+""")
+    c = rep(c, """	/* Movimento dos peixes e carrinhos: */
+	extras.passo(dt);""", """	/* Mãos sobre a areia (os bichos reagem), ~8x por segundo: o quadro CRU do sensor contra o mapa de
+	   alturas. O filtro do SARndbox demora a aceitar o que se mexe e o mapa fica congelado embaixo da
+	   mão: assim a mão é vista mesmo bem perto da areia. */
+	if(extras.querMaos()&&agora-extrasMaosTempo>0.12&&pixelDepthCorrection!=0)
+		{
+		float dtm=extrasMaosTempo>0.0?float(std::min(1.0,agora-extrasMaosTempo)):0.12f;
+		extrasMaosTempo=agora;
+		brutoFrames.lockNewValue();
+		const Kinect::FrameBuffer& rb=brutoFrames.getLockedValue();
+		const Kinect::FrameSource::DepthPixel* rd=rb.getData<Kinect::FrameSource::DepthPixel>();
+		if(rd!=0&&int(rb.getSize(0))==int(frameSize[0])&&int(rb.getSize(1))==int(frameSize[1]))
+			{
+			int w=int(rb.getSize(0)),h=int(rb.getSize(1));
+			PTransform full=PTransform(OGTransform(boxTransform));
+			full*=depthImageRenderer->getDepthProjection();
+			extras.comecaMaos();
+			for(int y=1;y<h;y+=4)
+				for(int x=1;x<w;x+=4)
+					{
+					unsigned int bruto=rd[y*w+x];
+					if(bruto==0||bruto>=Kinect::FrameSource::invalidDepth)
+						continue;
+					float z=pixelDepthCorrection[y*w+x].correct(float(bruto));
+					Point p=full.transform(Point(Scalar(x)+Scalar(0.5),Scalar(y)+Scalar(0.5),Scalar(z)));
+					extras.amostraMao(float(p[0]),float(p[1]),float(p[2]));
+					}
+			extras.fechaMaos(dtm);
+			for(size_t i=0;i<extras.mensagens.size();++i)
+				std::cout<<extras.mensagens[i]<<std::endl;
+			extras.mensagens.clear();
+			}
+		}
+
+	/* Movimento dos peixes e carrinhos: */
+	extras.passo(dt);""")
     open("Sandbox.cpp", "w").write(c)
 
 m = open("makefile").read()

@@ -78,6 +78,22 @@ Extras::Extras(void)
 		nomes[i][0]=0;
 		presente[i]=false;
 		}
+	maosAntes=0;
+	maoFalsaAte=-1.0;
+	maoDiag=false;
+	for(int k=0;k<MAX_MAOS;++k)
+		{
+		maos[k].x=maos[k].y=maos[k].r=0.0f;
+		maos[k].visto=maos[k].desde=-100.0;
+		}
+	for(int i=0;i<MAX_AGENTES;++i)
+		{
+		acao[i]=0;
+		presa[i]=-1;
+		acaoT[i]=0.0f;
+		voo[i]=escala[i]=1.0f;
+		acaoAte[i]=0.0;
+		}
 	jogo=SEM_JOGO;
 	jogoFase=0;
 	jogoNivel=2;
@@ -107,6 +123,9 @@ void Extras::setArea(const double areaMin[2],const double areaMax[2],const OGTra
 	gw=std::max(4,int((bmax[0]-bmin[0])/celula)+1);
 	gh=std::max(4,int((bmax[1]-bmin[1])/celula)+1);
 	alt.assign(gw*gh,SEM);
+	congela.assign(gw*gh,-1.0);
+	maoSeg.assign(gw*gh,0.0f);
+	eraMao.assign(gw*gh,0);
 	PTransform pb(cameraToBox);
 	GLfloat* p=caixa;
 	for(int j=0;j<4;++j)
@@ -132,10 +151,13 @@ void Extras::amostra(float x,float y,float z)
 void Extras::fechaMapa(void)
 	{
 	std::vector<float> todas;
+	bool comMaos=congela.size()==alt.size();
 	for(int i=0;i<gw*gh;++i)
 		if(conta[i]>0)
 			{
-			alt[i]=soma[i]/float(conta[i]);
+			/* embaixo de uma mão o mapa não muda: o filtro do sensor acaba aceitando a mão parada como areia */
+			if(!(comMaos&&congela[i]>tempo&&alt[i]>SEM+1.0f))
+				alt[i]=soma[i]/float(conta[i]);
 			todas.push_back(alt[i]);
 			}
 	if(todas.size()<10)
@@ -153,6 +175,261 @@ float Extras::altura(float x,float y) const
 	if(!mapaOk||cx<0||cy<0||cx>=gw||cy>=gh)
 		return SEM;
 	return alt[cy*gw+cx];
+	}
+
+/* ------------------------------------------------------------- mãos */
+
+void Extras::comecaMaos(void)
+	{
+	somaM.assign(gw*gh,0.0f);
+	contaM.assign(gw*gh,0);
+	if(congela.size()!=alt.size())
+		{
+		congela.assign(gw*gh,-1.0);
+		maoSeg.assign(gw*gh,0.0f);
+		eraMao.assign(gw*gh,0);
+		}
+	}
+
+void Extras::amostraMao(float x,float y,float z)
+	{
+	int cx=int((x-bmin[0])/celula),cy=int((y-bmin[1])/celula);
+	if(cx<0||cy<0||cx>=gw||cy>=gh||std::abs(z)>150.0f||contaM.empty())
+		return;
+	somaM[cy*gw+cx]+=z;
+	++contaM[cy*gw+cx];
+	}
+
+namespace {
+struct Mancha {std::vector<int> cel; float ex,ey,braco; int ne; float idade;};
+bool maior(const Mancha& a,const Mancha& b) {return a.cel.size()>b.cel.size();}
+}
+
+void Extras::fechaMaos(float dt)
+	{
+	int n=gw*gh;
+	if(int(contaM.size())!=n||int(alt.size())!=n||!mapaOk)
+		return;
+	/* 1. o que está acima da areia (média do quadro cru na célula contra o mapa de alturas) */
+	const int beira=int(3.0f/celula+0.5f); // 3 cm da beirada iluminada: lá o sensor vê a borda da caixa
+	std::vector<unsigned char> cru(n,0);
+	std::vector<float> acima(n,0.0f);
+	for(int cy=beira;cy<gh-beira;++cy)
+		for(int cx=beira;cx<gw-beira;++cx)
+			{
+			int k=cy*gw+cx;
+			if(contaM[k]<2||alt[k]<SEM+1.0f)
+				continue;
+			acima[k]=somaM[k]/float(contaM[k])-alt[k];
+			float limiar=eraMao[k]?0.8f:1.2f; // histerese: a mão que já estava é seguida mesmo mais baixa
+			cru[k]=acima[k]>limiar&&acima[k]<90.0f;
+			}
+	for(int k=0;k<n;++k)
+		maoSeg[k]=cru[k]?maoSeg[k]+dt:0.0f;
+	if(maoDiag)
+		{
+		/* calibração: sem ninguém na caixa a diferença fica perto de 0 e quase nenhuma célula passa do limiar */
+		int nc=0,nAcima=0;
+		double sm=0.0,sa=0.0;
+		float mx=-1e9f,mn=1e9f;
+		for(int k=0;k<n;++k)
+			if(contaM[k]>=2&&alt[k]>SEM+1.0f)
+				{
+				++nc;
+				sm+=acima[k];
+				sa+=std::abs(acima[k]);
+				mx=std::max(mx,acima[k]);
+				mn=std::min(mn,acima[k]);
+				nAcima+=cru[k];
+				}
+		char t[200];
+		std::snprintf(t,sizeof(t),"Maos diag: %d celulas, media %.2f cm, media abs %.2f cm, min %.1f max %.1f, acima do limiar %d",
+		              nc,nc?sm/nc:0.0,nc?sa/nc:0.0,mn,mx,nAcima);
+		anuncia(t);
+		maoDiag=false;
+		}
+	/* 2. manchas ligadas (8 vizinhos) */
+	std::vector<int> visto(n,0);
+	std::vector<int> pilha;
+	std::vector<Mancha> manchas;
+	for(int k=0;k<n;++k)
+		{
+		if(!cru[k]||visto[k])
+			continue;
+		Mancha m;
+		m.ex=m.ey=0.0f;
+		m.ne=0;
+		m.braco=0.0f;
+		m.idade=0.0f;
+		pilha.clear();
+		pilha.push_back(k);
+		visto[k]=1;
+		while(!pilha.empty())
+			{
+			int q=pilha.back();
+			pilha.pop_back();
+			m.cel.push_back(q);
+			m.idade+=maoSeg[q];
+			int qx=q%gw,qy=q/gw;
+			if(qx<=beira+1||qy<=beira+1||qx>=gw-beira-2||qy>=gh-beira-2)
+				{
+				m.ex+=float(qx);
+				m.ey+=float(qy);
+				++m.ne;
+				m.braco=std::max(m.braco,acima[q]);
+				}
+			for(int oy=-1;oy<=1;++oy)
+				for(int ox=-1;ox<=1;++ox)
+					{
+					int nx=qx+ox,ny=qy+oy;
+					if(nx<0||ny<0||nx>=gw||ny>=gh)
+						continue;
+					int nq=ny*gw+nx;
+					if(cru[nq]&&!visto[nq])
+						{
+						visto[nq]=1;
+						pilha.push_back(nq);
+						}
+					}
+			}
+		m.idade/=float(m.cel.size());
+		/* mão: o braço entra pela beirada (alto: mais de 4 cm acima da areia) ou a mancha é nova (monte de
+		   areia recém-feito também aparece aqui, mas o filtro do sensor o aceita e ele some em ~1 s) */
+		bool braco=m.ne>0&&m.braco>4.0f;
+		if(m.cel.size()>=6&&(braco||m.idade<4.0f))
+			{
+			if(!braco)
+				m.ne=0;
+			manchas.push_back(m);
+			}
+		}
+	std::sort(manchas.begin(),manchas.end(),maior);
+	/* 3. posição da mão: com braço, a ponta (os últimos 9 cm da mancha, longe da beirada); sem, o meio */
+	Mao velhas[MAX_MAOS-1],novas[MAX_MAOS-1];
+	bool usada[MAX_MAOS-1];
+	for(int k=0;k<MAX_MAOS-1;++k)
+		{
+		velhas[k]=maos[k];
+		usada[k]=false;
+		novas[k].x=novas[k].y=novas[k].r=0.0f;
+		novas[k].visto=novas[k].desde=-100.0;
+		}
+	std::fill(eraMao.begin(),eraMao.end(),0);
+	int nn=0;
+	for(size_t b=0;b<manchas.size()&&nn<MAX_MAOS-1;++b)
+		{
+		const Mancha& m=manchas[b];
+		float sx=0.0f,sy=0.0f;
+		int c=0;
+		if(m.ne>0)
+			{
+			float ex=m.ex/float(m.ne),ey=m.ey/float(m.ne),dmax=0.0f;
+			for(size_t j=0;j<m.cel.size();++j)
+				dmax=std::max(dmax,std::sqrt((m.cel[j]%gw-ex)*(m.cel[j]%gw-ex)+(m.cel[j]/gw-ey)*(m.cel[j]/gw-ey)));
+			float corte=dmax-9.0f/celula;
+			for(size_t j=0;j<m.cel.size();++j)
+				if(std::sqrt((m.cel[j]%gw-ex)*(m.cel[j]%gw-ex)+(m.cel[j]/gw-ey)*(m.cel[j]/gw-ey))>=corte)
+					{
+					sx+=float(m.cel[j]%gw);
+					sy+=float(m.cel[j]/gw);
+					++c;
+					}
+			}
+		else
+			for(size_t j=0;j<m.cel.size();++j)
+				{
+				sx+=float(m.cel[j]%gw);
+				sy+=float(m.cel[j]/gw);
+				++c;
+				}
+		if(c==0)
+			continue;
+		float x=bmin[0]+(sx/float(c)+0.5f)*celula,y=bmin[1]+(sy/float(c)+0.5f)*celula;
+		float r=std::max(2.5f,std::min(m.ne>0?7.0f:10.0f,std::sqrt(float(c)/PI)*celula));
+		/* a mesma mão do quadro anterior: suaviza (a medida treme um pouco) */
+		int perto=-1;
+		float dmin=12.0f;
+		for(int k=0;k<MAX_MAOS-1;++k)
+			if(!usada[k]&&tempo-velhas[k].visto<1.0)
+				{
+				float d=std::sqrt((velhas[k].x-x)*(velhas[k].x-x)+(velhas[k].y-y)*(velhas[k].y-y));
+				if(d<dmin)
+					{
+					dmin=d;
+					perto=k;
+					}
+				}
+		Mao h;
+		h.x=x;
+		h.y=y;
+		h.r=r;
+		h.visto=tempo;
+		h.desde=tempo;
+		if(perto>=0)
+			{
+			usada[perto]=true;
+			h.x=0.35f*velhas[perto].x+0.65f*x;
+			h.y=0.35f*velhas[perto].y+0.65f*y;
+			h.r=0.5f*velhas[perto].r+0.5f*r;
+			h.desde=velhas[perto].desde;
+			}
+		novas[nn++]=h;
+		/* embaixo da mão (e em volta) o mapa de alturas fica congelado por 3 s */
+		for(size_t j=0;j<m.cel.size();++j)
+			{
+			int q=m.cel[j],qx=q%gw,qy=q/gw;
+			eraMao[q]=1;
+			for(int oy=-1;oy<=1;++oy)
+				for(int ox=-1;ox<=1;++ox)
+					if(qx+ox>=0&&qy+oy>=0&&qx+ox<gw&&qy+oy<gh)
+						congela[(qy+oy)*gw+qx+ox]=tempo+3.0;
+			}
+		}
+	/* mão que sumiu agora continua valendo por 0,6 s (um quadro ruim do sensor não espanta ninguém) */
+	for(int k=0;k<MAX_MAOS-1&&nn<MAX_MAOS-1;++k)
+		if(!usada[k]&&tempo-velhas[k].visto<0.6)
+			novas[nn++]=velhas[k];
+	for(int k=0;k<MAX_MAOS-1;++k)
+		maos[k]=novas[k];
+	int agora=0;
+	for(int k=0;k<MAX_MAOS-1;++k)
+		if(maos[k].visto==tempo)
+			++agora;
+	if(agora!=maosAntes)
+		{
+		char t[64];
+		std::snprintf(t,sizeof(t),"Maos: %d",agora);
+		anuncia(t);
+		maosAntes=agora;
+		}
+	}
+
+int Extras::maoPerto(float x,float y,float& borda,float idade) const
+	{
+	int m=-1;
+	borda=1e9f;
+	for(int k=0;k<MAX_MAOS;++k)
+		{
+		if(tempo-maos[k].visto>idade)
+			continue;
+		float d=std::sqrt((maos[k].x-x)*(maos[k].x-x)+(maos[k].y-y)*(maos[k].y-y))-maos[k].r;
+		if(d<borda)
+			{
+			borda=d;
+			m=k;
+			}
+		}
+	return m;
+	}
+
+void Extras::maoTeste(float fx,float fy,float segundos)
+	{
+	Mao& h=maos[MAX_MAOS-1];
+	h.x=bmin[0]+std::max(0.0f,std::min(1.0f,fx))*(bmax[0]-bmin[0]);
+	h.y=bmin[1]+std::max(0.0f,std::min(1.0f,fy))*(bmax[1]-bmin[1]);
+	h.r=4.5f;
+	h.desde=h.visto=tempo;
+	maoFalsaAte=tempo+std::max(0.0f,std::min(120.0f,segundos));
 	}
 
 bool Extras::dentro(float x,float y,float margem) const
@@ -534,6 +811,13 @@ bool Extras::horaDeReesconder(void) const
 
 void Extras::nasce(int i)
 	{
+	acao[i]=0;
+	presa[i]=-1;
+	acaoT[i]=0.0f;
+	voo[i]=1.0f;
+	acaoAte[i]=tempo+2.0; // acabou de chegar: não sai caçando na hora
+	if(modo!=MUNDO)
+		temAlvo[i]=false;
 	bool peixe=aquatico(tipo[i]);
 	float x,y;
 	if(!sorteiaPonto(peixe,x,y))
@@ -684,6 +968,8 @@ void Extras::passo(float dt)
 		assinaturaAntes=sig;
 		}
 	copiaPasso();
+	if(maoFalsaAte>tempo)
+		maos[MAX_MAOS-1].visto=tempo;
 	if(temChuva)
 		{
 		temChuva=false;
@@ -697,6 +983,21 @@ void Extras::passo(float dt)
 		{
 		mundoPasso(dt); // a cidade tem ruas e rotina próprias (Mundo.cpp): não usa o movimento pelo relevo
 		return;
+		}
+	/* Patos: o primeiro é a mãe; os outros são patinhos, em fila atrás dela (cada um atrás do da frente) */
+	int patoDaFrente[MAX_AGENTES];
+	int ultimoPato=-1;
+	for(int i=0;i<quantos;++i)
+		{
+		patoDaFrente[i]=-1;
+		escala[i]=1.0f;
+		if(int(tipo[i])==9&&vel[i]!=0.0f)
+			{
+			patoDaFrente[i]=ultimoPato;
+			if(ultimoPato>=0)
+				escala[i]=0.72f;
+			ultimoPato=i;
+			}
 		}
 	for(int i=0;i<quantos;++i)
 		{
@@ -714,27 +1015,13 @@ void Extras::passo(float dt)
 		float c0=std::cos(ang[i]),s0=std::sin(ang[i]);
 		if(voador(tipo[i]))
 			{
-			/* Pássaro: voa por cima de tudo (relevo e água não importam), em curvas largas; perto da beirada
-			   da área iluminada vira de volta para o meio */
-			float vira=0.8f*std::sin(float(tempo)*0.37f+float(i)*2.1f)+0.35f*std::sin(float(tempo)*1.13f+float(i)*0.7f);
-			if(!dentro(ax[i]+c0*7.0f,ay[i]+s0*7.0f,3.0f))
-				{
-				float cx=(bmin[0]+bmax[0])*0.5f-ax[i],cy=(bmin[1]+bmax[1])*0.5f-ay[i];
-				vira=difAng(std::atan2(cy,cx)-ang[i])>0.0f?1.6f:-1.6f;
-				}
-			ang[i]=difAng(ang[i]+vira*dt);
-			ax[i]+=std::cos(ang[i])*vb[i]*dt;
-			ay[i]+=std::sin(ang[i])*vb[i]*dt;
-			if(!dentro(ax[i],ay[i],0.5f))
-				{
-				ax[i]=std::max(bmin[0]+1.0f,std::min(bmax[0]-1.0f,ax[i]));
-				ay[i]=std::max(bmin[1]+1.0f,std::min(bmax[1]-1.0f,ay[i]));
-				}
+			passaro(i,dt);
 			continue;
 			}
 		if(peixe)
 			{
-			bool folgado=aguaLarga(ax[i],ay[i],1.8f);
+			const float raioA=1.8f*std::max(0.65f,escala[i]); // patinho cabe em água mais estreita
+			bool folgado=aguaLarga(ax[i],ay[i],raioA);
 			if(!agua(ax[i],ay[i])) // o lago secou embaixo dele: reaparece em outro lugar
 				{
 				nasce(i);
@@ -770,6 +1057,78 @@ void Extras::passo(float dt)
 				}
 			vx+=2.0f*sepX;
 			vy+=2.0f*sepY;
+			/* Vida mais viva: patinhos em fila, o tubarão caça, todos fogem da mão e do perigo */
+			const int esp=int(tipo[i]);
+			float susto=0.0f,fila=-1.0f;
+			bool cacando=false;
+			if(esp==9&&patoDaFrente[i]>=0)
+				{
+				int f=patoDaFrente[i];
+				float atras=1.75f*escala[f]+1.1f*escala[i]+0.3f; // logo atrás do rabo do pato da frente
+				float tx=ax[f]-std::cos(ang[f])*atras,ty=ay[f]-std::sin(ang[f])*atras;
+				float dx=tx-ax[i],dy=ty-ay[i];
+				fila=std::sqrt(dx*dx+dy*dy);
+				vx=dx/std::max(0.3f,fila)*2.0f+0.6f*std::cos(ang[f])+0.5f*sepX;
+				vy=dy/std::max(0.3f,fila)*2.0f+0.6f*std::sin(ang[f])+0.5f*sepY;
+				}
+			if(esp==4&&acaoAte[i]<tempo)
+				{
+				/* tubarão com fome: vai atrás do peixe mais perto (a boca fica 2,8 cm à frente do meio) */
+				int alvo=-1;
+				float melhor=25.0f;
+				for(int j=0;j<quantos;++j)
+					if(int(tipo[j])==1&&vel[j]!=0.0f)
+						{
+						float d=std::sqrt((ax[j]-ax[i])*(ax[j]-ax[i])+(ay[j]-ay[i])*(ay[j]-ay[i]));
+						if(d<melhor)
+							{
+							melhor=d;
+							alvo=j;
+							}
+						}
+				if(alvo>=0)
+					{
+					cacando=true;
+					vx+=(ax[alvo]-ax[i])/std::max(0.5f,melhor)*3.0f;
+					vy+=(ay[alvo]-ay[i])/std::max(0.5f,melhor)*3.0f;
+					float bx=ax[i]+c0*2.8f-ax[alvo],by=ay[i]+s0*2.8f-ay[alvo];
+					if(bx*bx+by*by<1.8f*1.8f)
+						{
+						nasce(alvo); // pegou: outro peixe aparece em outro lugar
+						acaoAte[i]=tempo+12.0+6.0*aleatorio(); // satisfeito por um tempo
+						anuncia("Vida: o tubarao pegou um peixe");
+						}
+					}
+				}
+			if(esp!=10) // o barquinho não tem medo
+				{
+				float borda;
+				int m=maoPerto(ax[i],ay[i],borda);
+				if(m>=0&&borda<10.0f)
+					{
+					float dx=ax[i]-maos[m].x,dy=ay[i]-maos[m].y,d=std::max(0.1f,std::sqrt(dx*dx+dy*dy));
+					float f=1.0f-std::max(0.0f,borda)/10.0f;
+					vx+=dx/d*4.5f*f;
+					vy+=dy/d*4.5f*f;
+					susto=std::max(susto,f);
+					}
+				}
+			if(esp==1||esp==9||esp==5)
+				for(int j=0;j<quantos;++j)
+					{
+					/* peixe, pato e tartaruga fogem do tubarão; o peixe foge também do pássaro que mergulha */
+					bool perigo=(int(tipo[j])==4&&vel[j]!=0.0f)||(esp==1&&voador(tipo[j])&&acao[j]==2);
+					if(!perigo)
+						continue;
+					float dx=ax[i]-ax[j],dy=ay[i]-ay[j],d=std::sqrt(dx*dx+dy*dy),raio=int(tipo[j])==4?12.0f:8.0f;
+					if(d<raio&&d>0.01f)
+						{
+						float f=1.0f-d/raio;
+						vx+=dx/d*4.0f*f;
+						vy+=dy/d*4.0f*f;
+						susto=std::max(susto,0.8f*f);
+						}
+					}
 			/* Passeio: cada peixe vira devagar para um lado e para o outro */
 			float vaga=0.8f*std::sin(float(tempo)*0.6f+float(i)*1.7f)*dt;
 			float desejo=std::atan2(vy,vx)+vaga;
@@ -790,15 +1149,21 @@ void Extras::passo(float dt)
 						}
 					}
 			float giro=livre?difAng(desejo-ang[i]):2.0f;
-			ang[i]=difAng(ang[i]+std::max(-2.8f*dt,std::min(2.8f*dt,giro)));
+			const float virar=(fila>=0.0f?4.0f:2.8f)*(1.0f+0.8f*susto);
+			ang[i]=difAng(ang[i]+std::max(-virar*dt,std::min(virar*dt,giro)));
 			/* Nadadas: acelera e desacelera de leve, mais devagar quando está virando */
 			float alvoVel=vb[i]*(0.85f+0.25f*std::sin(float(tempo)*2.3f+float(i)))*(1.0f-0.35f*std::min(1.0f,std::abs(giro)));
+			if(fila>=0.0f) // patinho: acompanha a mãe; atrasado, corre
+				alvoVel=std::max(0.5f,std::min(4.5f,vel[patoDaFrente[i]]*0.9f+1.4f*fila));
+			if(cacando)
+				alvoVel=vb[i]*1.6f;
+			alvoVel*=1.0f+0.9f*susto;
 			vel[i]+=(alvoVel-vel[i])*std::min(1.0f,2.0f*dt);
 			vel[i]=std::max(vel[i],0.5f);
 			float nx=ax[i]+std::cos(ang[i])*vel[i]*dt,ny=ay[i]+std::sin(ang[i])*vel[i]*dt;
 			/* só avança se o corpo inteiro continuar na água (encostado na margem, qualquer água serve
 			   para ele conseguir sair dali) */
-			if(aguaLarga(nx,ny,1.8f)||(!folgado&&agua(nx,ny)))
+			if(aguaLarga(nx,ny,raioA)||(!folgado&&agua(nx,ny)))
 				{
 				ax[i]=nx;
 				ay[i]=ny;
@@ -818,6 +1183,12 @@ void Extras::passo(float dt)
 				{
 				nasce(i); // cavaram um lago embaixo dele (ou a areia sumiu dali): aparece em chão firme
 				continue;
+				}
+			if(int(tipo[i])==12&&cachorro(i,dt))
+				{
+				vel[i]=std::max(0.05f,vel[i]*(1.0f-std::min(1.0f,4.0f*dt)));
+				parado[i]=0.0f;
+				continue; // sentado do lado da mão, abanando o rabo
 				}
 			const float desvios[]={0.0f,0.35f,-0.35f,0.7f,-0.7f,1.1f,-1.1f};
 			/* Pessoa (tipo 3): mesmo jeito de andar do carrinho, com corpo menor, passo curto e um
@@ -840,7 +1211,7 @@ void Extras::passo(float dt)
 				float nota=0.35f*h+0.6f*std::abs(h-h0)+0.8f*std::abs(desvios[k]);
 				if(pessoa) // passeia: de tempos em tempos prefere virar para um lado
 					nota=0.5f*std::abs(h-h0)+0.6f*std::abs(desvios[k]-0.7f*std::sin(float(tempo)*0.35f+float(i)*2.3f));
-				if(modo==MUNDO&&temAlvo[i])
+				if(temAlvo[i]) // (cidade/laboratório, ou o cachorro indo até a mão ou atrás de um pássaro)
 					{
 					/* tem destino: prefere a direção que aponta para ele (o relevo ainda pesa) */
 					float rumo=difAng(std::atan2(alvoY[i]-ay[i],alvoX[i]-ax[i])-ang[i]);
@@ -887,6 +1258,8 @@ void Extras::passo(float dt)
 			/* Desce mais rápido, sobe devagar; curva e carro à frente freiam */
 			float rampa=h0>SEM+1.0f?(hEscolha-h0):0.0f;
 			float alvoVel=vb[i]*std::max(0.45f,std::min(1.35f,1.0f-0.25f*rampa))*(1.0f-0.3f*std::min(1.0f,std::abs(escolha)));
+			if(int(tipo[i])==12&&(acao[i]==3||acao[i]==4))
+				alvoVel*=acao[i]==4?1.8f:1.5f; // corre até a mão / atrás do pássaro
 			if(frente<perto)
 				alvoVel*=std::max(0.0f,(frente-perto*0.43f)/(perto*0.57f));
 			vel[i]+=(alvoVel-vel[i])*std::min(1.0f,2.5f*dt);
@@ -928,10 +1301,291 @@ void Extras::passo(float dt)
 		}
 	}
 
+/* ------------------------------------------------- pássaros e cachorros */
+
+bool Extras::lugarDePouso(int i,int m)
+	{
+	/* um lugar no chão perto da mão, do lado de onde o pássaro vem e longe dos outros que vão pousar */
+	const Mao& h=maos[m];
+	float base=std::atan2(ay[i]-h.y,ax[i]-h.x);
+	for(int k=0;k<13;++k)
+		{
+		float a=base+((k%2)?1.0f:-1.0f)*float((k+1)/2)*0.45f;
+		float d=h.r+3.5f+1.5f*aleatorio();
+		float x=h.x+std::cos(a)*d,y=h.y+std::sin(a)*d;
+		if(!dentro(x,y,2.5f)||agua(x,y))
+			continue;
+		bool ocupado=false;
+		for(int j=0;j<quantos&&!ocupado;++j)
+			if(j!=i&&voador(tipo[j])&&(acao[j]==1||acao[j]==3))
+				ocupado=(alvoX[j]-x)*(alvoX[j]-x)+(alvoY[j]-y)*(alvoY[j]-y)<7.0f;
+		if(ocupado)
+			continue;
+		alvoX[i]=x;
+		alvoY[i]=y;
+		temAlvo[i]=true;
+		return true;
+		}
+	return false;
+	}
+
+void Extras::passaro(int i,float dt)
+	{
+	/* Pássaro: voa em curvas largas por cima de tudo. Vê uma mão: desce e pousa perto dela (cada um do seu
+	   lado) e fica bicando o chão; sai voando quando a mão some, vem para cima dele ou chega um cachorro.
+	   Vê um peixe: mergulha para pescar (às vezes consegue). voo = altura (1 alto, 0 no chão). */
+	acaoT[i]+=dt;
+	float borda;
+	int m=maoPerto(ax[i],ay[i],borda,(acao[i]==1||acao[i]==3)?2.0f:0.6f);
+	int cao=-1;
+	float dCao=1e9f;
+	for(int j=0;j<quantos;++j)
+		if(int(tipo[j])==12&&vel[j]!=0.0f)
+			{
+			float d=std::sqrt((ax[j]-ax[i])*(ax[j]-ax[i])+(ay[j]-ay[i])*(ay[j]-ay[i]));
+			if(d<dCao)
+				{
+				dCao=d;
+				cao=j;
+				}
+			}
+	float c0=std::cos(ang[i]),s0=std::sin(ang[i]);
+	if(acao[i]==1||acao[i]==3)
+		{
+		bool sai=m<0||dCao<7.0f||(acao[i]==1&&(acaoT[i]>25.0f||borda<0.8f));
+		if(!sai)
+			{
+			/* a mão andou: escolhe outro lugar perto dela */
+			const Mao& h=maos[m];
+			float dl=std::sqrt((alvoX[i]-h.x)*(alvoX[i]-h.x)+(alvoY[i]-h.y)*(alvoY[i]-h.y))-h.r;
+			if(dl<2.0f||dl>9.0f)
+				{
+				if(lugarDePouso(i,m))
+					acao[i]=3;
+				else
+					sai=true;
+				}
+			}
+		if(sai)
+			{
+			/* levanta voo para longe de quem assustou */
+			float fx=std::cos(ang[i]+2.0f),fy=std::sin(ang[i]+2.0f);
+			if(dCao<7.0f)
+				{
+				fx=ax[i]-ax[cao];
+				fy=ay[i]-ay[cao];
+				}
+			else if(m>=0)
+				{
+				fx=ax[i]-maos[m].x;
+				fy=ay[i]-maos[m].y;
+				}
+			ang[i]=std::atan2(fy,fx);
+			acao[i]=0;
+			acaoT[i]=0.0f;
+			temAlvo[i]=false;
+			acaoAte[i]=tempo+6.0;
+			}
+		else if(acao[i]==1)
+			{
+			/* pousado: olha para a mão de vez em quando e bica o chão (o desenho faz a bicada) */
+			voo[i]=std::max(0.0f,voo[i]-2.0f*dt);
+			float olha=std::atan2(maos[m].y-ay[i],maos[m].x-ax[i])+0.9f*std::sin(float(tempo)*0.5f+float(i)*1.3f);
+			ang[i]=difAng(ang[i]+std::max(-1.5f*dt,std::min(1.5f*dt,difAng(olha-ang[i]))));
+			return;
+			}
+		else
+			{
+			/* descendo para o lugar escolhido */
+			float dx=alvoX[i]-ax[i],dy=alvoY[i]-ay[i],d=std::sqrt(dx*dx+dy*dy);
+			if(d<0.6f)
+				{
+				acao[i]=1;
+				acaoT[i]=0.0f;
+				voo[i]=0.0f;
+				return;
+				}
+			float giro=difAng(std::atan2(dy,dx)-ang[i]);
+			ang[i]=difAng(ang[i]+std::max(-3.5f*dt,std::min(3.5f*dt,giro)));
+			float v=vb[i]*std::max(0.25f,std::min(1.0f,d/6.0f))*(std::abs(giro)>1.2f?0.6f:1.0f);
+			ax[i]+=std::cos(ang[i])*v*dt;
+			ay[i]+=std::sin(ang[i])*v*dt;
+			voo[i]=std::min(1.0f,d/8.0f);
+			return;
+			}
+		}
+	if(acao[i]==2)
+		{
+		/* mergulho de 1,8 s: desce até a água em cima do peixe, encosta (pega ou não) e sobe */
+		float t=acaoT[i]/1.8f;
+		int p=presa[i];
+		if(t<0.5f&&p>=0&&vel[p]!=0.0f)
+			{
+			float giro=difAng(std::atan2(ay[p]-ay[i],ax[p]-ax[i])-ang[i]);
+			ang[i]=difAng(ang[i]+std::max(-4.0f*dt,std::min(4.0f*dt,giro)));
+			}
+		if(t>=0.5f&&p>=0)
+			{
+			float dx=ax[p]-ax[i],dy=ay[p]-ay[i];
+			if(vel[p]!=0.0f&&dx*dx+dy*dy<2.5f*2.5f&&aleatorio()<0.45f)
+				{
+				nasce(p);
+				anuncia("Vida: um passaro pescou um peixe");
+				}
+			presa[i]=-1;
+			}
+		voo[i]=std::min(1.0f,std::abs(1.0f-2.0f*t));
+		float v=vb[i]*(0.25f+0.75f*voo[i]);
+		ax[i]+=std::cos(ang[i])*v*dt;
+		ay[i]+=std::sin(ang[i])*v*dt;
+		if(t>=1.0f)
+			{
+			acao[i]=0;
+			acaoT[i]=0.0f;
+			voo[i]=1.0f;
+			acaoAte[i]=tempo+10.0+10.0*aleatorio();
+			}
+		}
+	else
+		{
+		voo[i]=std::min(1.0f,voo[i]+dt);
+		if(m>=0&&acaoAte[i]<tempo&&lugarDePouso(i,m))
+			{
+			acao[i]=3;
+			acaoT[i]=0.0f;
+			return;
+			}
+		if(acaoAte[i]<tempo)
+			{
+			/* um peixe embaixo, um pouco à frente: mergulha */
+			for(int j=0;j<quantos;++j)
+				{
+				if(int(tipo[j])!=1||vel[j]==0.0f)
+					continue;
+				float dx=ax[j]-ax[i],dy=ay[j]-ay[i];
+				if(dx*dx+dy*dy<10.0f*10.0f&&dx*c0+dy*s0>0.0f&&agua(ax[j],ay[j]))
+					{
+					acao[i]=2;
+					acaoT[i]=0.0f;
+					presa[i]=j;
+					break;
+					}
+				}
+			if(acao[i]!=2)
+				acaoAte[i]=tempo+0.5; // olha de novo daqui a pouco
+			}
+		/* passeio: curvas largas; perto da beirada vira de volta para o meio */
+		float vira=0.8f*std::sin(float(tempo)*0.37f+float(i)*2.1f)+0.35f*std::sin(float(tempo)*1.13f+float(i)*0.7f);
+		if(!dentro(ax[i]+c0*7.0f,ay[i]+s0*7.0f,3.0f))
+			{
+			float cx=(bmin[0]+bmax[0])*0.5f-ax[i],cy=(bmin[1]+bmax[1])*0.5f-ay[i];
+			vira=difAng(std::atan2(cy,cx)-ang[i])>0.0f?1.6f:-1.6f;
+			}
+		ang[i]=difAng(ang[i]+vira*dt);
+		ax[i]+=std::cos(ang[i])*vb[i]*dt;
+		ay[i]+=std::sin(ang[i])*vb[i]*dt;
+		}
+	if(!dentro(ax[i],ay[i],0.5f))
+		{
+		ax[i]=std::max(bmin[0]+1.0f,std::min(bmax[0]-1.0f,ax[i]));
+		ay[i]=std::max(bmin[1]+1.0f,std::min(bmax[1]-1.0f,ay[i]));
+		}
+	}
+
+bool Extras::cachorro(int i,float dt)
+	{
+	/* Cachorro: vê uma mão, corre até ela e senta do lado, olhando para ela e abanando o rabo; sem mão, de
+	   vez em quando corre atrás de um pássaro (o pousado sai voando). true = está sentado. */
+	acaoT[i]+=dt;
+	float borda;
+	int m=maoPerto(ax[i],ay[i],borda,(acao[i]==1||acao[i]==3)?2.0f:0.6f);
+	if(m>=0)
+		{
+		const Mao& h=maos[m];
+		float dx=ax[i]-h.x,dy=ay[i]-h.y,d=std::max(0.1f,std::sqrt(dx*dx+dy*dy));
+		if(acao[i]==1&&borda>0.8f&&borda<7.0f)
+			{
+			float giro=difAng(std::atan2(-dy,-dx)-ang[i]);
+			ang[i]=difAng(ang[i]+std::max(-3.0f*dt,std::min(3.0f*dt,giro)));
+			return true;
+			}
+		if(acao[i]!=3)
+			{
+			acao[i]=3;
+			acaoT[i]=0.0f;
+			presa[i]=-1;
+			}
+		if(borda<4.0f&&borda>0.8f)
+			{
+			acao[i]=1;
+			acaoT[i]=0.0f;
+			temAlvo[i]=false;
+			return true;
+			}
+		temAlvo[i]=true;
+		alvoX[i]=h.x+dx/d*(h.r+3.0f);
+		alvoY[i]=h.y+dy/d*(h.r+3.0f);
+		return false;
+		}
+	if(acao[i]==1||acao[i]==3)
+		{
+		acao[i]=0;
+		temAlvo[i]=false;
+		acaoAte[i]=tempo+3.0;
+		}
+	if(acao[i]==4)
+		{
+		int p=presa[i];
+		bool segue=p>=0&&p<quantos&&voador(tipo[p])&&vel[p]!=0.0f&&acaoT[i]<8.0f;
+		if(segue)
+			segue=(ax[p]-ax[i])*(ax[p]-ax[i])+(ay[p]-ay[i])*(ay[p]-ay[i])<35.0f*35.0f;
+		if(!segue)
+			{
+			acao[i]=0;
+			presa[i]=-1;
+			temAlvo[i]=false;
+			acaoAte[i]=tempo+8.0+8.0*aleatorio(); // cansou: passeia um pouco
+			return false;
+			}
+		temAlvo[i]=true;
+		alvoX[i]=ax[p];
+		alvoY[i]=ay[p];
+		return false;
+		}
+	if(acaoAte[i]<tempo)
+		{
+		int p=-1;
+		float melhor=28.0f*28.0f;
+		for(int j=0;j<quantos;++j)
+			if(voador(tipo[j])&&vel[j]!=0.0f)
+				{
+				float d2=(ax[j]-ax[i])*(ax[j]-ax[i])+(ay[j]-ay[i])*(ay[j]-ay[i]);
+				if(d2<melhor)
+					{
+					melhor=d2;
+					p=j;
+					}
+				}
+		if(p>=0)
+			{
+			acao[i]=4;
+			acaoT[i]=0.0f;
+			presa[i]=p;
+			temAlvo[i]=true;
+			alvoX[i]=ax[p];
+			alvoY[i]=ay[p];
+			}
+		else
+			acaoAte[i]=tempo+1.0;
+		}
+	return false;
+	}
+
 /* ----------------------------------------------------------------- shader */
 
 const char* Extras::nomesUniforms[NUM_UNIFORMS]={"extrasCaixa","extrasAg","extrasTesouro","extrasInfo","extrasEfeito",
-	"extrasLab","extrasLab2","extrasJogo","extrasJogoInfo","extrasNomes","extrasNomesCfg","extrasRostos","extrasMundo","extrasMundo2","extrasChuva","extrasCopia","extrasCopiaInfo"};
+	"extrasLab","extrasLab2","extrasJogo","extrasJogoInfo","extrasNomes","extrasNomesCfg","extrasRostos","extrasMundo","extrasMundo2","extrasChuva","extrasCopia","extrasCopiaInfo",
+	"extrasAg2","extrasMaos"};
 
 const char* Extras::glslVertexUniforms=R"GLSL(
 uniform mat4 extrasCaixa; // espaço da câmera -> caixa (cm)
@@ -956,6 +1610,8 @@ uniform vec4 extrasNomesCfg;  // quantos nomes, giro do texto (quartos de volta)
 uniform vec4 extrasCopia[4];    // copie o relevo: morros/buracos do alvo (x, y, altura cm, largura cm)
 uniform vec4 extrasCopiaInfo;   // ligado, folga (cm), altura de referência (cm), nota (+1000 = conseguiu)
 uniform vec4 extrasChuva[4]; // nuvens de chuva do painel: x, y (cm), ligada (1)
+uniform vec4 extrasAg2[32];  // por bicho: estado (0 normal, 1 pousado/sentado, 2 mergulho, 3 indo, 4 caçando), altura do voo (0-1), tamanho, andamento do mergulho (0-1)
+uniform vec4 extrasMaos[4];  // mãos sobre a areia: x, y, raio (cm), vista agora (1)
 float extrasMarca;          // 1 onde há um animal marinho (o shader da água o deixa à vista)
 uniform vec4 extrasMundo;   // cidade LAOB: deslocamento da imagem (cm), largura e altura da caixa, ligada (1)
 uniform vec4 extrasMundo2;  // canto da caixa (x, y) e a hora local (0-24)
@@ -1699,6 +2355,22 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			baseColor.rgb=c;
 			}
 		}
+	/* Mão sobre a areia: ondas de luz saindo dela (os bichos estão sentindo a mão) */
+	for(int k=0;k<4;++k)
+		{
+		vec4 mh=extrasMaos[k];
+		if(mh.w<0.5)
+			continue;
+		float dm=distance(ep.xy,mh.xy)-mh.z;
+		if(dm<0.0||dm>8.0)
+			continue;
+		float o=fract(et*0.6+float(k)*0.3);
+		float o2=fract(o+0.5);
+		float anel=smoothstep(0.5,0.0,abs(dm-(0.5+o*7.0)))*(1.0-o)*0.85
+		          +smoothstep(0.5,0.0,abs(dm-(0.5+o2*7.0)))*(1.0-o2)*0.85
+		          +smoothstep(1.8,0.0,dm)*0.45;                                                  // brilho colado na mão
+		baseColor.rgb=mix(baseColor.rgb,vec3(1.0,0.97,0.75),clamp(anel,0.0,0.9));
+		}
 	/* Peixes e carrinhos (vistos de cima, com sombra): */
 	for(int i=0;i<32;++i)
 		{
@@ -1776,7 +2448,8 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			if(a.w<10.0)
 				{
 				/* pato: corpo, cabeça, bico laranja, asas dobradas e a esteira em V atrás; branco ou marreco */
-				vec2 p=l+vec2(0.0,0.06*sin(et*3.0+fase));
+				float esc=max(0.3,extrasAg2[i].z);
+				vec2 p=l/esc+vec2(0.0,0.06*sin(et*3.0+fase));
 				float corpoP=length(p/vec2(1.35,0.82));
 				float cabP=length((p-vec2(1.15,0.0))/vec2(0.5,0.46));
 				float bico=length((p-vec2(1.66,0.0))/vec2(0.3,0.17));
@@ -1784,6 +2457,12 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				bool branco=hue<0.45;
 				vec3 corC=branco?vec3(0.97,0.96,0.92):vec3(0.56,0.46,0.37);
 				vec3 corH=branco?vec3(0.99):vec3(0.08,0.45,0.22);
+				if(esc<0.9)
+					{
+					corC=vec3(1.0,0.86,0.3);                                                               // patinho amarelo
+					corH=vec3(1.0,0.9,0.4);
+					branco=true;
+					}
 				if(bico<1.0)
 					cb=vec3(1.0,0.6,0.1);
 				else if(cabP<1.0)
@@ -1844,42 +2523,85 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			else if(a.w<12.0)
 				{
 				/* pássaro: a sombra no chão (longe, porque ele está alto) e a ave batendo as asas; gaivota ou andorinha */
-				float abre=0.5+0.5*sin(et*7.0+fase);
-				vec2 rsb=r-vec2(1.5,-1.5);
+				vec4 e2=extrasAg2[i];
+				float h=e2.y;                                                                            // altura: 1 alto, 0 no chão
+				bool mergulho=e2.x>1.5&&e2.x<2.5;
+				float abre=mergulho?0.08:0.5+0.5*sin(et*(e2.x>2.5?11.0:7.0)+fase);
+				vec2 rsb=r-vec2(0.25+1.25*h,-0.25-1.25*h);                                              // a sombra chega perto ao descer
 				vec2 lsb=vec2(c*rsb.x+s*rsb.y,-s*rsb.x+c*rsb.y);
-				float ave=exPassaro(l,abre);
+				float tam=0.8+0.2*h;                                                                     // lá embaixo parece menor
+				float ave=exPassaro(l/tam,abre);
 				bool gaivota=hue<0.55;
-				if(ave>0.5)
+				vec3 corpoA=gaivota?vec3(0.97):vec3(0.12,0.16,0.3);
+				vec3 asaA=gaivota?vec3(0.72,0.75,0.8):vec3(0.1,0.12,0.22);
+				if(e2.x>0.5&&e2.x<1.5)
 					{
-					vec3 corpoA=gaivota?vec3(0.97):vec3(0.12,0.16,0.3);
-					vec3 asaA=gaivota?vec3(0.72,0.75,0.8):vec3(0.1,0.12,0.22);
+					/* pousado: asas fechadas, bicando o chão de vez em quando */
+					float bica=pow(max(0.0,sin(et*2.3+fase)),10.0)*0.28;
+					vec2 l0=l;
+					l=l/1.45;                                                                        // no chão ele parece maior (está mais perto)
+					float corpoP=length(l/vec2(0.8,0.36));
+					float cab=length(l-vec2(0.62+bica,0.0));
+					bool bicoP=l.x>0.8+bica&&l.x<1.08+bica&&abs(l.y)<0.07;
+					bool caudaP=l.x<-0.6&&l.x>-1.15&&abs(l.y)<0.17-0.1*(l.x+0.6);
+					if(bicoP)
+						cb=gaivota?vec3(1.0,0.75,0.1):vec3(0.05);
+					else if(cab<0.25)
+						cb=distance(l,vec2(0.7+bica,0.12*sign(l.y)))<0.06?vec3(0.02):corpoA;
+					else if(corpoP<1.0)
+						cb=(abs(l.y)>0.14&&l.x<0.45)?asaA:(gaivota?corpoA:vec3(0.9,0.5,0.35));
+					else if(caudaP)
+						cb=asaA*0.9;
+					else if(length(ls/vec2(1.3,0.6))<1.0)
+						cb*=0.72;
+					else
+						desenhou=false;
+					if(desenhou&&(corpoP<1.0||cab<0.25)&&(corpoP>0.82&&cab>0.19))
+						cb=gaivota?cb*0.6:vec3(0.85,0.88,0.95);                                         // contorno: a andorinha escura aparece na areia
+					l=l0;
+					}
+				else if(ave>0.5)
+					{
 					cb=ave<1.5?corpoA:(ave<2.5?asaA:corpoA*0.85);
-					if(ave>1.5&&ave<2.5&&abs(l.y)>2.3*(0.45+0.55*abre)*0.78)
+					if(ave>1.5&&ave<2.5&&abs(l.y/tam)>2.3*(0.45+0.55*abre)*0.78)
 						cb=gaivota?vec3(0.1):vec3(0.05);                                                 // pontas das asas
-					if(ave<1.5&&l.x>0.95&&abs(l.y)<0.08)
+					if(ave<1.5&&l.x/tam>0.95&&abs(l.y/tam)<0.08)
 						cb=gaivota?vec3(1.0,0.75,0.1):vec3(0.05);                                        // bico
-					if(!gaivota&&ave<1.5&&l.x<0.5&&l.x>-0.4&&abs(l.y)<0.14)
+					if(!gaivota&&ave<1.5&&l.x/tam<0.5&&l.x/tam>-0.4&&abs(l.y/tam)<0.14)
 						cb=vec3(0.9,0.5,0.35);                                                           // peito
 					}
-				else if(exPassaro(lsb,abre)>0.5)
+				else if(exPassaro(lsb/tam,abre)>0.5)
 					cb*=0.75;
+				else if(mergulho&&e2.w>0.45)
+					{
+					/* tocou a água: respingo e ondinhas */
+					float t2=(e2.w-0.45)/0.55;
+					float onda=smoothstep(0.18,0.0,abs(length(r)-(0.4+t2*2.6)))*(1.0-t2)
+					          +smoothstep(0.15,0.0,abs(length(r)-(0.2+t2*1.5)))*(1.0-t2)*0.7;
+					if(onda>0.05)
+						cb=mix(cb,vec3(0.92,0.97,1.0),clamp(onda,0.0,1.0));
+					else
+						desenhou=false;
+					}
 				else
 					desenhou=false;
 				}
 			else
 				{
 				/* cachorro andando: corpo, cabeça com orelhas e focinho, rabo abanando, patas que alternam */
-				float passo=sin(et*9.0+fase);
+				bool senta=extrasAg2[i].x>0.5&&extrasAg2[i].x<1.5;
+				float passo=senta?0.0:sin(et*(extrasAg2[i].x>2.5?14.0:9.0)+fase);                         // correndo: passo rápido
 				vec2 p=l;
-				float corpoD=length(p/vec2(1.1,0.5));
+				float corpoD=senta?length((p-vec2(0.15,0.0))/vec2(0.85,0.58)):length(p/vec2(1.1,0.5));     // sentado: mais curto
 				float cabD=length(p-vec2(1.05,0.0));
 				float foc=length((p-vec2(1.45,0.0))/vec2(0.25,0.18));
 				float orelha=min(length((p-vec2(0.9,0.36))/vec2(0.24,0.13)),length((p-vec2(0.9,-0.36))/vec2(0.24,0.13)));
-				vec2 rr=p-vec2(-1.05,0.0);
-				float abana=0.35*sin(et*12.0+fase);
+				vec2 rr=p-vec2(senta?-0.68:-1.05,0.0);
+				float abana=senta?0.55*sin(et*24.0+fase):0.35*sin(et*12.0+fase);                         // sentado do lado da mão: abana muito
 				bool rabo=rr.x<0.0&&rr.x>-0.7&&abs(rr.y-abana*(-rr.x))<0.09;
-				float pata=min(min(length(p-vec2(0.55+0.18*passo,0.42)),length(p-vec2(0.55-0.18*passo,-0.42))),
-				               min(length(p-vec2(-0.6-0.18*passo,0.42)),length(p-vec2(-0.6+0.18*passo,-0.42))));
+				float pata=senta?min(length(p-vec2(0.78,0.24)),length(p-vec2(0.78,-0.24)))
+				               :min(min(length(p-vec2(0.55+0.18*passo,0.42)),length(p-vec2(0.55-0.18*passo,-0.42))),
+				                    min(length(p-vec2(-0.6-0.18*passo,0.42)),length(p-vec2(-0.6+0.18*passo,-0.42))));
 				float tom=fract(hue*5.3);
 				vec3 pelo=tom<0.35?vec3(0.78,0.52,0.25):(tom<0.6?vec3(0.15,0.12,0.1):(tom<0.8?vec3(0.95,0.93,0.88):vec3(0.55,0.55,0.57)));
 				vec2 sl=ls;
@@ -2391,6 +3113,24 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 			cg[k*4+j]=copia?copiaG[k][j]:0.0f;
 	glUniform4fvARB(locations[15],COPIA_MAX,cg);
 	glUniform4fARB(locations[16],copia?1.0f:0.0f,copiaTol,copiaRef,copiaNota+(copiaConseguiu>0.0?1000.0f:0.0f));
+	GLfloat a2[MAX_AGENTES*4];
+	for(int i=0;i<MAX_AGENTES;++i)
+		{
+		a2[i*4+0]=GLfloat(acao[i]);
+		a2[i*4+1]=voo[i];
+		a2[i*4+2]=escala[i];
+		a2[i*4+3]=acao[i]==2?std::min(1.0f,acaoT[i]/1.8f):0.0f;
+		}
+	glUniform4fvARB(locations[17],MAX_AGENTES,a2);
+	GLfloat mh[MAX_MAOS*4];
+	for(int k=0;k<MAX_MAOS;++k)
+		{
+		mh[k*4+0]=maos[k].x;
+		mh[k*4+1]=maos[k].y;
+		mh[k*4+2]=maos[k].r;
+		mh[k*4+3]=(querMaos()&&tempo-maos[k].visto<0.6)?1.0f:0.0f;
+		}
+	glUniform4fvARB(locations[18],MAX_MAOS,mh);
 	/* painel de rostos na unidade de textura 6 (a 5 é a foto do modo Foto). O número da unidade vai
 	   sempre: um sampler2D deixado na unidade 0 (das texturas retangulares) invalidaria o desenho. */
 	glUniform1iARB(locations[11],6);
