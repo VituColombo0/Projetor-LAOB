@@ -31,11 +31,11 @@ uniform vec4 extrasEfeito; // Projetor-LAOB: efeito do tema (0 = água normal)
 				rasoA=vec3(1.0,0.8,0.3);                                             // jogo do vulcão: bem clara
 			}
 		else if(efA>1.5&&efA<2.5)
-			{ rasoA=vec3(0.84,0.95,1.0); profA=vec3(0.42,0.68,0.9); brilhoA=0.8; }   // inverno: água gelada
+			{ rasoA=vec3(0.20,0.65,0.96); profA=vec3(0.05,0.28,0.65); brilhoA=0.85; } // inverno: azul glacial (destaca da neve)
 		else if(efA>2.5&&efA<3.5)
-			{ rasoA=vec3(0.80,0.48,0.30); profA=vec3(0.40,0.15,0.09); brilhoA=0.3; } // marte: lama vermelha
+			{ rasoA=vec3(0.18,0.72,0.82); profA=vec3(0.05,0.35,0.48); brilhoA=0.65; } // marte: água mineral ciano (destaca do vermelho)
 		else if(efA>3.5&&efA<4.5)
-			{ rasoA=vec3(0.36,0.86,0.80); profA=vec3(0.04,0.46,0.50); }              // deserto: oásis
+			{ rasoA=vec3(0.16,0.78,0.90); profA=vec3(0.02,0.40,0.52); brilhoA=0.70; } // deserto: oásis nítido (destaca da areia)
 		else if(efA>5.5&&efA<6.5)
 			{
 			rasoA=vec3(0.6)+0.4*cos(6.2832*(vec3(fragCoord.x*0.004+waterAnimationTime*0.15)+vec3(0.0,0.33,0.67)));

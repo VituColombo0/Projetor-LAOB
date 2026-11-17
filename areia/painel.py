@@ -15,6 +15,9 @@ import time
 from flask import Flask, abort, jsonify, request, send_file
 
 import areia
+import som
+
+som.iniciar_vigia()
 
 PORTA = int(os.environ.get("AREIA_PORTA", "8090"))
 PERMITIDAS = [ipaddress.ip_network(n) for n in
@@ -86,6 +89,7 @@ def ver_estado():
         e["fotos_willbert"] = w_fotos[:6]
     else:
         e["fotos_willbert"] = []
+    e["som"] = som.estado()
     return jsonify(e)
 
 
@@ -238,6 +242,23 @@ def mar():
     return resposta(faz)
 
 
+@app.post("/som")
+def ajustar_som():
+    dados = request.get_json(silent=True) or {}
+    if "volume" in dados:
+        som.definir_volume(dados["volume"])
+    if "mudo" in dados:
+        som.definir_mudo(dados["mudo"])
+    return jsonify(ok=True, som=som.estado())
+
+
+@app.post("/som/testar")
+def testar_som():
+    nome = (request.get_json(silent=True) or {}).get("nome", "inicio")
+    som.tocar(nome)
+    return jsonify(ok=True, msg="Som testado")
+
+
 @app.post("/chuva")
 def chuva():
     def faz():
@@ -246,6 +267,7 @@ def chuva():
             areia.secar()
             return "Água seca"
         areia.chuva(d.get("x"), d.get("y"), d.get("segundos") or 8)
+        som.tocar("splash")
         return "Chovendo nesse ponto por uns segundos"
     return resposta(faz)
 
@@ -720,6 +742,7 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
         <h1>Caixa de Areia</h1>
         <div class="sub">Laboratório LAOB · painel do projetor</div>
       </div>
+      <button class="btn-som" id="som-top" title="Ativar ou silenciar som" style="margin-left:auto; width:44px; min-height:44px; font-size:1.2rem; padding:0; border-radius:10px">🔊</button>
       <button class="mini-vivo" id="mini-vivo" hidden title="O que o projetor mostra agora (toque para a chuva)">
         <img id="mini-img" alt="Imagem do projetor agora"><span>● ao vivo</span>
       </button>
@@ -827,6 +850,20 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
     <div class="grid">
       <button data-w="ligar">Ligar</button>
       <button data-w="desligar">Desligar</button>
+    </div>
+  </section>
+
+  <section class="card" data-aba="projetor">
+    <h2>Efeitos sonoros</h2>
+    <p class="hint">Sons da água, seres vivos e comemorações nas caixas de som e no projetor.</p>
+    <div class="grid">
+      <button id="som-mudo-btn">🔊 Som ligado</button>
+      <button id="som-testar-btn">▶ Testar som</button>
+    </div>
+    <div style="display:flex; align-items:center; gap:12px; margin-top:12px">
+      <span style="font-size:0.85rem; color:var(--muted)">Volume</span>
+      <input type="range" id="som-vol-range" min="0" max="100" value="80" style="flex:1">
+      <span id="som-vol-val" style="font-size:0.85rem; font-weight:700; min-width:36px">80%</span>
     </div>
   </section>
 
@@ -1011,6 +1048,16 @@ async function carrega() {
     }
     pl.style.display = txt ? 'block' : 'none';
 
+    if (E.som) {
+      $('#som-mudo-btn').textContent = E.som.mudo ? '🔇 Som mutado' : '🔊 Som ligado';
+      $('#som-mudo-btn').classList.toggle('active', !E.som.mudo);
+      $('#som-vol-range').value = E.som.volume;
+      $('#som-vol-val').textContent = E.som.volume + '%';
+      if ($('#som-top')) {
+        $('#som-top').textContent = E.som.mudo ? '🔇' : '🔊';
+        $('#som-top').title = E.som.mudo ? 'Som silenciado (toque para ativar)' : 'Som ativo (toque para silenciar)';
+      }
+    }
     montaMar();
     const M = $('#moradores');
     const mundo = E.mundo || [];
@@ -1237,6 +1284,10 @@ $$('[data-b]').forEach(b => b.onclick = () => post('/brincar', {acao: b.dataset.
 $$('[data-w]').forEach(b => b.onclick = () => post('/willbert', {acao: b.dataset.w}));
 $$('[data-m]').forEach(b => b.onclick = () => post('/modo', {modo: b.dataset.m}));
 $('#reabrir').onclick = () => post('/reabrir', {});
+$('#som-mudo-btn').onclick = () => post('/som', {mudo: !E.som?.mudo});
+if ($('#som-top')) $('#som-top').onclick = () => post('/som', {mudo: !E.som?.mudo});
+$('#som-vol-range').onchange = () => post('/som', {volume: $('#som-vol-range').value});
+$('#som-testar-btn').onclick = () => post('/som/testar', {nome: 'inicio'});
 $('#laob-ligar').onclick = () => post('/brincar', {acao: 'mundo'});
 $('#mar-soltar').onclick = () => post('/mar', MAR || {});
 $('#quadro-chuva').onclick = chove;

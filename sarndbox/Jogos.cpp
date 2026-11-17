@@ -62,6 +62,10 @@ void Extras::pedeJogo(int qual,int nivel)
 	jogoPedido=true;
 	jogoFase=0;
 	nPecas=nFontes=0;
+	labZerarAgua=true; // rodada nova começa sem água anterior
+	for(int k=0;k<MAX_CHUVAS;++k)
+		chuvas[k].ate=-1.0;
+	temChuva=false;
 	if(mapaOk)
 		novoJogo();
 	}
@@ -136,6 +140,9 @@ void Extras::novoJogo(void)
 	proximoPortao=1;
 	vbx=vby=0.0f;
 	labZerarAgua=true; // rodada nova começa sem água
+	for(int k=0;k<MAX_CHUVAS;++k)
+		chuvas[k].ate=-1.0;
+	temChuva=false;
 	const float w=bmax[0]-bmin[0],h=bmax[1]-bmin[1],m=5.0f;
 	const int n=jogoNivel;
 	const float r=referencia;

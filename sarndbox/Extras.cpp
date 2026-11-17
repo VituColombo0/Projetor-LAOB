@@ -870,6 +870,9 @@ void Extras::novoLabirinto(int dificuldade)
 	labEstado=1;
 	labInicio=tempo;
 	labZerarAgua=true;
+	for(int k=0;k<MAX_CHUVAS;++k)
+		chuvas[k].ate=-1.0;
+	temChuva=false;
 	armadilhasDoLabirinto();
 	}
 
@@ -1171,8 +1174,8 @@ void Extras::passo(float dt)
 				vx+=0.45f*aliX/n+0.012f*cx/n;  // atração fraca: nadam juntos, sem amontoar
 				vy+=0.45f*aliY/n+0.012f*cy/n;
 				}
-			vx+=2.0f*sepX;
-			vy+=2.0f*sepY;
+			vx+=0.85f*sepX;
+			vy+=0.85f*sepY;
 			/* Vida mais viva: patinhos em fila, o tubarão caça, fogem do perigo (da mão não) */
 			const int esp=int(tipo[i]);
 			float susto=0.0f,fila=-1.0f;
@@ -1282,6 +1285,27 @@ void Extras::passo(float dt)
 				}
 			else
 				parado[i]+=dt;
+			/* Separação suave entre seres aquáticos ao encostarem (sem tremedeira) */
+			for(int j=0;j<quantos;++j)
+				{
+				if(j==i||!aquatico(tipo[j])||vel[j]==0.0f)
+					continue;
+				float dx=ax[i]-ax[j],dy=ay[i]-ay[j],d2=dx*dx+dy*dy;
+				float raioI=(esp==4)?3.4f:(esp==9||esp==5?2.6f:2.0f);
+				float raioJ=(int(tipo[j])==4)?3.4f:(int(tipo[j])==9||int(tipo[j])==5?2.6f:2.0f);
+				float junto=raioI+raioJ;
+				if(d2<junto*junto&&d2>1e-4f)
+					{
+					float d=std::sqrt(d2);
+					float emp=(junto-d)*std::min(1.0f,3.0f*dt);
+					float px=ax[i]+dx/d*emp,py=ay[i]+dy/d*emp;
+					if(agua(px,py))
+						{
+						ax[i]=px;
+						ay[i]=py;
+						}
+					}
+				}
 			if(parado[i]>4.0f) // preso numa poça ou espremido na margem: aparece num lago de verdade
 				nasce(i);
 			}
@@ -1391,11 +1415,16 @@ void Extras::passo(float dt)
 					continue;
 				float dx=ax[j]-ax[i],dy=ay[j]-ay[i];
 				float adiante=dx*c0+dy*s0,lado=-dx*s0+dy*c0;
-				if(adiante>0.0f&&adiante<perto&&std::abs(lado)<(pessoa?1.8f:3.0f))
+				float larguraFaixa=pessoa?1.8f:3.0f;
+				if(adiante>0.0f&&adiante<perto&&std::abs(lado)<larguraFaixa)
 					{
 					frente=std::min(frente,adiante);
 					if(escolha!=PI)
-						escolha+=(lado>0.0f?-0.4f:0.4f);
+						{
+						float sinal=(lado>=0.0f)?-1.0f:1.0f;
+						float pesoDist=std::max(0.1f,(perto-adiante)/perto);
+						escolha+=sinal*0.35f*pesoDist;
+						}
 					}
 				}
 			if(escolha==PI) // sem saída: vira no lugar até achar caminho
@@ -1421,16 +1450,17 @@ void Extras::passo(float dt)
 				ax[i]=nx;
 				ay[i]=ny;
 				}
-			/* Carrinhos lado a lado (o freio só vale para o da frente): empurra para se separarem */
+			/* Carrinhos e seres terrestres encostando: afastamento elástico e suave, proporcional a dt (sem tremedeira) */
 			for(int j=0;j<quantos;++j)
 				{
 				if(j==i||!terrestre(tipo[j])||vel[j]==0.0f)
 					continue;
 				float dx=ax[i]-ax[j],dy=ay[i]-ay[j],d2=dx*dx+dy*dy;
-				float junto=(pessoa&&ehPessoa(tipo[j]))?3.8f:4.5f; // duas pessoas chegam mais perto que dois carros
-				if(d2<junto*junto&&d2>1e-4f) // ~4,5 cm (um carrinho tem ~4,3 x 2,1 cm)
+				float junto=(pessoa&&ehPessoa(tipo[j]))?3.2f:4.2f;
+				if(d2<junto*junto&&d2>1e-4f)
 					{
-					float d=std::sqrt(d2),empurra=std::min(0.5f,(junto-d)*0.25f);
+					float d=std::sqrt(d2);
+					float empurra=(junto-d)*std::min(1.0f,4.0f*dt);
 					float px=ax[i]+dx/d*empurra,py=ay[i]+dy/d*empurra;
 					if(chaoLivre(px,py,rc))
 						{
@@ -1859,6 +1889,17 @@ const char* Extras::glslFragmentMain=R"GLSL(
 		   verdade); o relevo fica escuro, como rocha à noite, e só a lava do jogo brilha */
 		float cinza=dot(baseColor.rgb,vec3(0.3,0.5,0.2));
 		baseColor=vec4(mix(vec3(cinza),baseColor.rgb,0.45)*0.5,1.0);
+		}
+	else if(extrasJogoInfo.x>0.5&&extrasJogoInfo.x!=98.0)
+		{
+		/* Jogos de água (corrida, vila, rota, labirinto): tira a água do mapa para não
+		   confundir os jogadores. As valas e cotas baixas viram leito seco de terra/areia,
+		   deixando apenas a água que sai das nascentes visível como água */
+		if(baseColor.b>baseColor.r+0.08&&baseColor.b>baseColor.g*0.85)
+			{
+			vec3 leito=mix(vec3(0.22,0.48,0.25),vec3(0.52,0.48,0.34),clamp(baseColor.b*1.2-0.2,0.0,1.0));
+			baseColor=vec4(leito,1.0);
+			}
 		}
 	else if(ef>0.5&&ef<1.5)
 		{
@@ -2527,6 +2568,13 @@ const char* Extras::glslFragmentMain=R"GLSL(
 		vec2 l=vec2(c*r.x+s*r.y,-s*r.x+c*r.y);
 		float hue=fract(a.w);
 		vec3 cor=vec3(0.55)+0.45*cos(6.2832*(vec3(hue)+vec3(0.0,0.33,0.67)));
+		/* Realce adaptativo de contraste dos seres vivos contra os temas */
+		float temaClaro=(ef>1.5&&ef<2.5)?1.0:((ef>3.5&&ef<4.5)?0.6:0.0);
+		float temaEscuro=(extrasEfeito.w>0.5||(ef>0.5&&ef<1.5))?1.0:0.0;
+		if(ef>2.5&&ef<3.5)
+			cor=mix(cor,vec3(cor.b,cor.g*1.15,cor.r*0.65+0.35),0.45); // Marte: destaca da poeira vermelha
+		if(ef>1.5&&ef<2.5)
+			cor=mix(cor,cor*0.82+vec3(0.06,0.12,0.22),0.35);          // Inverno: saturação e contraste na neve
 		vec2 rs=r-vec2(0.35,-0.35);                                   // sombra: luz vinda do canto, igual para todos
 		vec2 ls=vec2(c*rs.x+s*rs.y,-s*rs.x+c*rs.y);
 		if(a.w<2.0)
@@ -2553,7 +2601,8 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					pc+=vec3(0.35)*smoothstep(0.35,0.0,distance(f,vec2(0.9,0.25))); // brilho
 					pc*=0.9+0.16*smoothstep(0.25,0.5,abs(fract(f.x*2.6+0.5*step(0.5,fract(f.y*2.2)))-0.5))*step(f.x,0.9); // escamas
 					pc=mix(pc,vec3(1.0),0.25*smoothstep(0.55,0.95,abs(f.y))*step(-1.2,f.x));                          // barriga clara
-					pc*=mix(1.0,0.55,smoothstep(0.8,1.0,corpo));               // contorno
+					pc*=mix(1.0,temaClaro>0.5?0.35:0.55,smoothstep(0.8,1.0,corpo));               // contorno
+					pc+=vec3(0.22)*temaEscuro*smoothstep(0.75,0.98,corpo);
 					vec2 olho=vec2(1.45,0.42*sign(f.y));
 					float dOlho=distance(f,olho);
 					if(dOlho<0.24)

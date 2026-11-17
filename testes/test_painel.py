@@ -15,6 +15,8 @@ TAILSCALE = {"REMOTE_ADDR": "100.101.102.103"}
 class Painel(Ambiente):
     def setUp(self):
         super().setUp()
+        import som
+        importlib.reload(som)
         import painel
         self.painel = importlib.reload(painel)
         self.c = self.painel.app.test_client()
@@ -74,6 +76,23 @@ class Painel(Ambiente):
         r = self.post("/modo", json={"modo": "original"})
         self.assertEqual(r.status_code, 200)
         self.assertIn("topografia", self.comandos())
+
+    def test_som_pelo_painel(self):
+        r = self.get("/estado")
+        self.assertEqual(r.status_code, 200)
+        e = r.get_json()
+        self.assertIn("som", e)
+        self.assertIn("volume", e["som"])
+        self.assertIn("mudo", e["som"])
+
+        r = self.post("/som", json={"volume": 50, "mudo": True})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["som"]["volume"], 50)
+        self.assertTrue(r.get_json()["som"]["mudo"])
+
+        r = self.post("/som/testar", json={"nome": "inicio"})
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.get_json()["ok"])
 
     def test_temas(self):
         j = self.get("/estado").get_json()
