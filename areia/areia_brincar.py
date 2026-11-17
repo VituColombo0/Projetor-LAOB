@@ -79,7 +79,7 @@ def animais(args):
                     raise areia.Erro("use: areia-animais mar peixe=8 tubarao=1 (espécies: " + ", ".join(areia.ESPECIES) + ")")
                 sel[nome] = int(n)
         sel = areia.mar(sel)
-        print("Na areia: " + ", ".join(f"{n} {areia.ESPECIES[k][0].lower()}" for k, n in sel.items() if n)
+        print("Na areia: " + areia.conta_bichos(sel)
               + ". Os marinhos nadam no lago e na água da chuva.")
     else:
         print("Soltando os animais...")

@@ -188,7 +188,8 @@ def brincar():
                                              " (sem fotos de membros: a sala fica vazia)")
         if acao in areia.ANIMAIS:
             t, n = areia.animais(acao)
-            return f"{n} {t} na areia"
+            nome = {"peixes": "bichos da água", "carros": "carrinhos", "pessoas": "pessoas", "todos": "bichos"}.get(t, t)
+            return f"{n} {nome} na areia"
         if acao == "parar":
             areia.para_tudo()
             return "Brincadeiras paradas"
@@ -238,7 +239,7 @@ def willbert():
 def mar():
     def faz():
         sel = areia.mar(request.get_json(silent=True) or {})
-        return "Na areia: " + ", ".join(f"{n} {areia.ESPECIES[k][0].lower()}" for k, n in sel.items() if n)
+        return "Na areia: " + areia.conta_bichos(sel)
     return resposta(faz)
 
 
@@ -629,6 +630,7 @@ h2 { margin-bottom: 10px; }
   font-size: .88rem;
 }
 .placar b { font-weight: 700; }
+input[type=range] { accent-color: var(--accent); }
 .alvo-copia { display: flex; gap: 12px; align-items: center; margin-top: 8px; font-size: .86rem; line-height: 1.35; }
 .alvo-copia canvas { width: 118px; height: 84px; border-radius: 8px; flex: none; border: 1px solid var(--border-strong); }
 .placar .nota { height: 10px; border-radius: 999px; background: color-mix(in srgb, var(--fg) 12%, transparent); margin: 8px 0 4px; overflow: hidden; }

@@ -606,6 +606,16 @@ ESPECIES = {"peixe": ("Peixes", "🐟"), "tubarao": ("Tubarões", "🦈"), "tart
 GRUPOS = {"peixe": "Na água", "tubarao": "Na água", "tartaruga": "Na água", "aguaviva": "Na água", "polvo": "Na água",
           "arraia": "Na água", "pato": "Na água", "barco": "Na água", "carro": "Em terra", "pessoa": "Em terra",
           "cachorro": "Em terra", "passaro": "No ar"}
+SINGULAR = {"peixe": "peixe", "tubarao": "tubarão", "tartaruga": "tartaruga", "aguaviva": "água-viva", "polvo": "polvo",
+            "arraia": "arraia", "pato": "pato", "barco": "barquinho", "carro": "carrinho", "pessoa": "pessoa",
+            "cachorro": "cachorro", "passaro": "pássaro"}
+
+
+def conta_bichos(sel):
+    """{"peixe": 8, "tubarao": 1} -> "8 peixes, 1 tubarão" (singular quando é um só)."""
+    return ", ".join(f"{n} {SINGULAR[k] if n == 1 else ESPECIES[k][0].lower()}" for k, n in sel.items() if n)
+
+
 MARINHOS = ("peixe", "tubarao", "tartaruga", "aguaviva", "polvo", "arraia", "pato", "barco")
 MAR_PADRAO = {"peixe": 6, "tubarao": 1, "tartaruga": 2, "aguaviva": 2, "polvo": 1, "arraia": 1, "pato": 2, "barco": 1,
               "carro": 4, "pessoa": 4, "cachorro": 2, "passaro": 3}
