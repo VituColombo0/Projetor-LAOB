@@ -91,8 +91,8 @@ class Painel(Ambiente):
         self.assertEqual(self.comandos()[-1], "cmd tesouro 5.5")
         self.assertEqual(self.post("/brincar", json={"acao": "peixes"}).status_code, 200)
         self.assertEqual(self.post("/brincar", json={"acao": "parar"}).status_code, 200)
-        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-5:],
-                         ["cmd tesouroFim", "cmd fossilFim", "cmd animais nada", "cmd labirintoFim", "cmd jogoFim"])
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-6:],
+                         ["cmd tesouroFim", "cmd fossilFim", "cmd animais nada", "cmd labirintoFim", "cmd jogoFim", "cmd copiaFim"])
         self.assertIn(self.get("/estado").get_json()["tesouro"], ("nenhum", "escondido"))
 
     def test_niveis_willbert_e_reabrir(self):
@@ -169,6 +169,14 @@ class Painel(Ambiente):
         self.assertEqual(pagina.count('data-m="rosto"'), 1)                # a foto só na aba Fotos
         self.assertIn("Vida na areia", pagina)
         self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd secar")
+
+    def test_copie_o_relevo_pelo_painel(self):
+        self.assertIn("Copie o relevo", self.get("/").get_data(as_text=True))
+        r = self.post("/brincar", json={"acao": "copia", "nivel": "facil"})
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertIn("Copie o relevo (fácil)", r.get_json()["msg"])
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd copia sorteio 1")
+        self.assertIn("copia", self.get("/estado").get_json())
 
     def test_fossil_pelo_painel(self):
         r = self.post("/brincar", json={"acao": "triceratops"})

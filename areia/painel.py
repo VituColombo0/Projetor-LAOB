@@ -71,6 +71,7 @@ def ver_estado():
     e["willbert"] = willbert_estado()
     e["labirinto"], e["labirinto_rodadas"] = areia.labirinto_situacao()
     e["jogo"] = areia.jogo_situacao()
+    e["copia"] = areia.copia_situacao()
     e["animais"] = areia.animais_situacao()
     e["mundo"] = areia.mundo_situacao()
     e["mar"] = areia.mar_escolhido()
@@ -165,6 +166,12 @@ def brincar():
         if acao == "labirintoNovo":
             areia.labirinto_novo()
             return "Nova rodada iniciada"
+        if acao == "copia":
+            f, lv = areia.copia("sorteio", nivel)
+            return f"Copie o relevo ({('fácil', 'normal', 'difícil')[lv - 1]}): {areia.FORMAS.get(f, 'sorteado')}"
+        if acao == "copiaNova":
+            areia.copia_nova()
+            return "Outro relevo sorteado"
         if acao in areia.JOGOS:
             n, lv = areia.jogo(acao, nivel)
             return f"{areia.JOGOS[n][0]} ({('fácil', 'normal', 'difícil')[lv - 1]})"
@@ -481,13 +488,36 @@ button.active { background: var(--accent); border-color: var(--accent); color: v
 .primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 .danger { background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger-fg); }
 button:disabled { opacity: .55; cursor: progress; }
-body.ocupado button, body.ocupado label.btn, body.ocupado .chip { opacity: .6; cursor: progress; }
+body.ocupado button, body.ocupado label.btn, body.ocupado .chip { cursor: progress; }
+/* retorno no próprio botão: girando enquanto envia, ✓ quando a areia aceitou, tremida se falhou */
+.carregando, .feito, .falhou { position: relative; }
+.carregando::after {
+  content: ""; position: absolute; right: 8px; top: 50%; width: 14px; height: 14px; margin-top: -7px;
+  border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: gira .7s linear infinite;
+}
+.feito::after {
+  content: "✓"; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-weight: 800;
+  color: var(--ok); animation: aparece .2s ease-out;
+}
+.falhou { animation: treme .35s; }
+@keyframes gira { to { transform: rotate(360deg); } }
+@keyframes aparece { from { opacity: 0; transform: translateY(-50%) scale(.5); } to { opacity: 1; } }
+@keyframes treme { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+@media (prefers-reduced-motion: reduce) { .carregando::after { animation-duration: 2s; } .falhou { animation: none; } }
 input[type=file] { display: none; }
 [hidden] { display: none !important; }
 
 .seg { display: inline-flex; background: var(--surface2); border: 1px solid var(--border); border-radius: 11px; padding: 3px; gap: 2px; }
 .seg button { min-height: 34px; padding: 6px 12px; border: 0; background: transparent; font-size: .84rem; border-radius: 8px; }
 .seg button.active { background: var(--accent); color: var(--accent-fg); }
+
+/* miniatura ao vivo do projetor no cabeçalho (só em tela larga) */
+.mini-vivo { position: absolute; right: 16px; top: 10px; padding: 0; min-height: 0; border-radius: 10px; overflow: hidden;
+  width: 156px; aspect-ratio: 4 / 3; background: #000; border: 1px solid var(--border-strong); z-index: 1; }
+.mini-vivo img { width: 100%; height: 100%; object-fit: fill; display: block; }
+.mini-vivo span { position: absolute; left: 6px; top: 5px; font-size: .62rem; font-weight: 700; color: #ff6b6b;
+  background: rgba(0,0,0,.55); padding: 1px 6px; border-radius: 999px; }
+@media (max-width: 899px) { .mini-vivo { display: none; } }
 
 /* abas: uma parte do painel por vez (antes era uma página só, comprida) */
 .abas { display: flex; gap: 6px; margin-top: 10px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
@@ -574,6 +604,11 @@ h2 { margin-bottom: 10px; }
   font-size: .88rem;
 }
 .placar b { font-weight: 700; }
+.placar .nota { height: 10px; border-radius: 999px; background: color-mix(in srgb, var(--fg) 12%, transparent); margin: 8px 0 4px; overflow: hidden; }
+.placar .nota-barra { height: 100%; width: 0; border-radius: 999px; transition: width .6s ease;
+  background: linear-gradient(90deg, #e2463a, #e8b72c 45%, #3cb35b 85%); background-size: 600px 100%; }
+.placar .nota-barra.feito { background: linear-gradient(90deg, #f4c94a, #fff2b0, #f4c94a); }
+.placar .nota-txt { font-size: .82rem; color: var(--muted); }
 .barra { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .barra .lbl { font-size: .82rem; color: var(--muted); }
 .barra .sp { flex: 1; }
@@ -675,6 +710,9 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
         <h1>Caixa de Areia</h1>
         <div class="sub">Laboratório LAOB · painel do projetor</div>
       </div>
+      <button class="mini-vivo" id="mini-vivo" hidden title="O que o projetor mostra agora (toque para a chuva)">
+        <img id="mini-img" alt="Imagem do projetor agora"><span>● ao vivo</span>
+      </button>
     </div>
     <div class="pills">
       <span class="pill" id="p-sb"><i></i><span id="sb">…</span></span>
@@ -796,6 +834,8 @@ const $$ = s => document.querySelectorAll(s);
 let E = {}, NIVEL = 'normal';
 const AGUA = __JOGOS__;
 const OUTROS = [
+  {id: 'copia', ic: '⛰️', t: 'Copie o relevo', c: 'Esculpa a areia igual ao relevo-alvo.', tag: 'Areia',
+   d: 'O projetor mostra um relevo sorteado (montanha, vulcão, cratera, serra...), com as curvas de nível do alvo em branco. Azul: falta areia, ponha mais. Vermelho: sobra, tire. Verde: já está certo. A barra no canto da areia dá a nota; passando de 85% comemora e sorteia outro. O nível muda a altura e a folga.'},
   {id: 'labirinto', ic: '🌊', t: 'Labirinto de água', c: 'Leve a água até a bandeira sem tocar nas armadilhas.', tag: 'Água',
    d: 'No caminho reto entre a nascente e a bandeira há armadilhas vermelhas. Cavem um canal que dê a volta nelas: se a água encostar em uma, some tudo e recomeça. Quando chega à bandeira, o alvo fica dourado e outra rodada começa em 20 s.'},
   {id: 'tesouro', ic: '💰', t: 'Caça ao tesouro', c: 'Um baú escondido embaixo da areia.', tag: 'Escavar',
@@ -815,20 +855,33 @@ function msg(t, tipo) {
 }
 
 let OCUPADO = false;
+let TOCADO = null;   // o botão que o usuário acabou de tocar (recebe o "carregando" e o ✓)
+document.addEventListener('pointerdown', ev => { TOCADO = ev.target.closest('button, label.btn, .chip, .jogo'); }, true);
 async function post(u, b, isForm) {
   if (OCUPADO) return;   // um pedido por vez: toques repetidos não empilham trocas no projetor
   OCUPADO = true;
   document.body.classList.add('ocupado');
+  const bt = TOCADO;
+  if (bt) { bt.classList.remove('feito', 'falhou'); bt.classList.add('carregando'); }
   msg('Enviando…');
   try {
     const r = await fetch(u, {method: 'POST', body: isForm ? b : JSON.stringify(b),
                               headers: isForm ? {} : {'Content-Type': 'application/json'}});
     let j = {};
     try { j = await r.json(); } catch (e) {}
-    if (!r.ok || j.ok === false) msg(j.msg || 'Erro', 'err'); else msg(j.msg || 'Pronto', 'okm');
+    const deu = r.ok && j.ok !== false;
+    if (!deu) msg(j.msg || 'Erro', 'err'); else msg(j.msg || 'Pronto', 'okm');
+    if (bt) {
+      bt.classList.remove('carregando');
+      bt.classList.add(deu ? 'feito' : 'falhou');
+      setTimeout(() => bt.classList.remove('feito', 'falhou'), deu ? 1200 : 900);
+    }
     await carrega();
     return j;
-  } catch (e) { msg('Sem conexão com a areia', 'err'); }
+  } catch (e) {
+    msg('Sem conexão com a areia', 'err');
+    if (bt) { bt.classList.remove('carregando'); bt.classList.add('falhou'); setTimeout(() => bt.classList.remove('falhou'), 900); }
+  }
   finally { OCUPADO = false; document.body.classList.remove('ocupado'); }
 }
 
@@ -848,13 +901,13 @@ function monta() {
     el.querySelector('.t').textContent = j.t;
     el.querySelector('.c').textContent = j.c;
     el.querySelector('.desc').textContent = j.d;
-    if (j.id === 'labirinto' || AGUA.some(a => a[0] === j.id)) {
+    if (j.id === 'labirinto' || j.id === 'copia' || AGUA.some(a => a[0] === j.id)) {
       const nova = document.createElement('button');
       nova.className = 'nova';
       nova.textContent = '↻ Nova rodada';
       nova.hidden = true;
       el.querySelector('.acoes').appendChild(nova);
-      nova.onclick = ev => { ev.stopPropagation(); post('/brincar', {acao: j.id === 'labirinto' ? 'labirintoNovo' : 'jogoNovo'}); };
+      nova.onclick = ev => { ev.stopPropagation(); post('/brincar', {acao: j.id === 'labirinto' ? 'labirintoNovo' : j.id === 'copia' ? 'copiaNova' : 'jogoNovo'}); };
     }
     el.querySelector('.jogar').onclick = ev => { ev.stopPropagation(); post('/brincar', {acao: j.id, nivel: NIVEL}); };
     const abre = () => {
@@ -871,6 +924,7 @@ function monta() {
 
 function ativo() {
   if (E.jogo && E.jogo.jogo) return E.jogo.jogo;
+  if (E.copia && E.copia.forma) return 'copia';
   if (E.labirinto && E.labirinto !== 'nenhum') return 'labirinto';
   if (E.tesouro && E.tesouro !== 'nenhum') return 'tesouro';
   if (E.fossil && E.fossil !== 'nenhum') return 'trex';
@@ -884,6 +938,7 @@ function situacao(a) {
     const n = (AGUA.find(x => x[0] === E.jogo.jogo) || [0, E.jogo.jogo])[1];
     return n + (E.jogo.fase === 'fim' ? ' · fim da rodada' : ' · valendo');
   }
+  if (a === 'copia') return 'Copie o relevo · ' + (E.copia.conseguiu ? 'conseguiu!' : E.copia.nota + '%');
   if (a === 'labirinto') return E.labirinto === 'chegou' ? 'A água chegou!' : 'Labirinto · água correndo';
   if (a === 'tesouro') return E.tesouro === 'achado' ? 'Tesouro achado!' : 'Tesouro enterrado';
   if (a === 'trex') return E.fossil === 'achado' ? 'Fóssil escavado!' : 'Fóssil enterrado';
@@ -927,6 +982,17 @@ async function carrega() {
       pl.querySelector('span').textContent = (casas && E.jogo.fase !== 'fim') ? casas : E.jogo.aviso ? (E.jogo.fase === 'fim' ? '🏆 ' : '') + E.jogo.aviso + (E.jogo.fase === 'fim' ? ' — nova rodada em 20 s' : '') : '';
     } else if (a === 'labirinto') {
       pl.innerHTML = '<b>Labirinto de água</b> · rodadas vencidas: ' + (E.labirinto_rodadas || 0);
+      txt = 'x';
+    } else if (a === 'copia') {
+      const c = E.copia;
+      pl.innerHTML = '<b>Copie o relevo</b> · <span class="forma"></span>'
+        + '<div class="nota"><div class="nota-barra"></div></div><span class="nota-txt"></span>';
+      pl.querySelector('.forma').textContent = ({vulcao: 'Vulcão', montanha: 'Montanha', 'duas montanhas': 'Duas montanhas',
+        cratera: 'Cratera', 'ilha e lago': 'Ilha e lago', serra: 'Serra'})[c.forma] || c.forma;
+      pl.querySelector('.nota-barra').style.width = Math.min(100, c.nota) + '%';
+      pl.querySelector('.nota-barra').classList.toggle('feito', c.conseguiu);
+      pl.querySelector('.nota-txt').textContent = c.conseguiu ? '🏆 conseguiu! ' + c.nota + '% — outro relevo em 20 s'
+        : 'nota ' + c.nota + '% (passe de 85%)' + (c.rodadas ? ' · ' + c.rodadas + ' feito' + (c.rodadas > 1 ? 's' : '') : '');
       txt = 'x';
     }
     pl.style.display = txt ? 'block' : 'none';
@@ -1047,29 +1113,37 @@ function pintaMar() {
   $('#mar-total').textContent = totalMar() + ' de 32';
 }
 let VIVO = false;
+function querVivo() {
+  /* aba Chuva aberta: rápido (3 por segundo); tela larga: a miniatura do cabeçalho, 1 por segundo */
+  if (document.hidden) return 0;
+  if (!$('section.card[data-aba="chuva"]').hidden) return 300;
+  if (window.matchMedia('(min-width: 900px)').matches) return 1000;
+  return 0;
+}
 function aoVivo() {
-  /* enquanto a aba Chuva está aberta e a página à vista, uma imagem nova logo depois da anterior chegar */
-  const img = $('#ao-vivo');
-  const aberta = !$('section.card[data-aba="chuva"]').hidden && !document.hidden;
-  if (!aberta) { VIVO = false; return; }
+  if (!querVivo()) { VIVO = false; return; }
   if (VIVO) return;
   VIVO = true;
+  const img = $('#ao-vivo');
   const proxima = () => {
-    if ($('section.card[data-aba="chuva"]').hidden || document.hidden) { VIVO = false; return; }
+    const passo = querVivo();
+    if (!passo) { VIVO = false; return; }
     const n = new Image();
     n.onload = () => {
       img.src = n.src; img.hidden = false;
+      $('#mini-img').src = n.src; $('#mini-vivo').hidden = false;
       $('#selo-vivo').hidden = false; $('#aviso-vivo').hidden = true;
-      setTimeout(proxima, 300);
+      setTimeout(proxima, querVivo() || 1000);
     };
     n.onerror = () => {
-      img.hidden = true; $('#selo-vivo').hidden = true; $('#aviso-vivo').hidden = false;
+      img.hidden = true; $('#mini-vivo').hidden = true; $('#selo-vivo').hidden = true; $('#aviso-vivo').hidden = false;
       setTimeout(proxima, 4000);   // projetor desligado ou areia fechada: tenta de novo devagar
     };
     n.src = '/projetor.jpg?' + Date.now();
   };
   proxima();
 }
+window.addEventListener('resize', aoVivo);
 document.addEventListener('visibilitychange', aoVivo);
 
 function chove(ev) {
@@ -1126,6 +1200,7 @@ $('#reabrir').onclick = () => post('/reabrir', {});
 $('#laob-ligar').onclick = () => post('/brincar', {acao: 'mundo'});
 $('#mar-soltar').onclick = () => post('/mar', MAR || {});
 $('#quadro-chuva').onclick = chove;
+$('#mini-vivo').onclick = () => abre('chuva');
 $('#chuva-secar').onclick = () => post('/chuva', {secar: true});
 $('#chuva-geral').onclick = async () => {
   for (const [x, y] of [[0.25, 0.3], [0.75, 0.3], [0.25, 0.7], [0.75, 0.7]]) await post('/chuva', {x: x, y: y, segundos: 10});

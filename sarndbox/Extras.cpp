@@ -46,7 +46,17 @@ Extras::Extras(void)
 	camX=camAlvo=0.0f;
 	camTroca=0.0;
 	horaFixa=-1.0f;
-	fatorVazao=0.66f; // calibrado em 16/11/2026: com a água a 100% do tempo real, 0,66 devolve o ritmo dos jogos de quando ela andava a 66%
+	fatorVazao=0.66f;
+	copia=false;
+	copiaForma=copiaNivel=copiaRodadas=0;
+	copiaRef=0.0f;
+	copiaTol=1.1f;
+	copiaNota=copiaAnunciada=0.0f;
+	copiaInicio=copiaConseguiu=copiaAnuncio=0.0;
+	for(int k=0;k<COPIA_MAX;++k)
+		copiaG[k][0]=copiaG[k][1]=copiaG[k][2]=copiaG[k][3]=0.0f;
+	assinaturaAntes=-1;
+	trocaTempo=-100.0; // calibrado em 16/11/2026: com a água a 100% do tempo real, 0,66 devolve o ritmo dos jogos de quando ela andava a 66%
 	for(int i=0;i<MAX_AGENTES;++i)
 		{
 		noLab[i]=false;
@@ -203,6 +213,121 @@ void Extras::chove(float fx,float fy,float segundos)
 	chuvas[livre].y=bmin[1]+std::max(0.05f,std::min(0.95f,fy))*(bmax[1]-bmin[1]);
 	chuvas[livre].ate=tempo+std::max(1.0f,std::min(60.0f,segundos));
 	temChuva=true;
+	}
+
+/* ---------------------------------------------------------- copie o relevo */
+
+const char* Extras::nomeForma(int f)
+	{
+	static const char* nomes[NUM_FORMAS]={"montanha","duas montanhas","vulcao","cratera","ilha e lago","serra"};
+	return f>=0&&f<NUM_FORMAS?nomes[f]:"?";
+	}
+
+int Extras::formaDoNome(const char* nome)
+	{
+	static const char* curtos[NUM_FORMAS]={"montanha","duas","vulcao","cratera","ilha","serra"};
+	for(int f=0;f<NUM_FORMAS;++f)
+		if(std::string(nome)==curtos[f]||std::string(nome)==nomeForma(f))
+			return f;
+	return -1;
+	}
+
+void Extras::copiaNova(int forma,int nivel)
+	{
+	/* Sorteia o relevo-alvo em volta do meio da área iluminada. Fácil: mais baixo e com mais folga. */
+	copia=true;
+	copiaNivel=std::max(1,std::min(3,nivel));
+	int f=forma>=0&&forma<NUM_FORMAS?forma:int(aleatorio()*NUM_FORMAS)%NUM_FORMAS;
+	if(forma<0&&f==copiaForma&&copiaRodadas>0)
+		f=(f+1+int(aleatorio()*(NUM_FORMAS-1)))%NUM_FORMAS; // não repete a mesma em seguida
+	copiaForma=f;
+	const float w=bmax[0]-bmin[0],h=bmax[1]-bmin[1];
+	const float cx=(bmin[0]+bmax[0])*0.5f+(aleatorio()-0.5f)*0.25f*w,cy=(bmin[1]+bmax[1])*0.5f+(aleatorio()-0.5f)*0.2f*h;
+	const float alto=copiaNivel==1?4.0f:copiaNivel==2?5.5f:7.0f; // cm acima da areia
+	const float L=0.11f*w;                                     // largura típica de um morro
+	for(int k=0;k<COPIA_MAX;++k)
+		copiaG[k][0]=copiaG[k][1]=copiaG[k][2]=copiaG[k][3]=0.0f;
+	auto poe=[&](int k,float x,float y,float a,float l){copiaG[k][0]=x; copiaG[k][1]=y; copiaG[k][2]=a; copiaG[k][3]=l;};
+	float ang=aleatorio()*6.2831853f,dx=std::cos(ang),dy=std::sin(ang);
+	switch(f)
+		{
+		case 0: poe(0,cx,cy,alto,L*1.2f); break;                                       // montanha
+		case 1: poe(0,cx-dx*L*1.4f,cy-dy*L*1.0f,alto,L); poe(1,cx+dx*L*1.4f,cy+dy*L*1.0f,alto*0.75f,L*0.85f); break;
+		case 2: poe(0,cx,cy,alto*1.15f,L*1.3f); poe(1,cx,cy,-alto*0.75f,L*0.42f); break;   // vulcão: morro com cratera
+		case 3: poe(0,cx,cy,-alto*0.6f,L*1.1f); poe(1,cx,cy,alto*0.35f,L*1.9f); poe(2,cx,cy,-alto*0.2f,L*0.6f); break;
+		case 4: poe(0,cx-dx*L*1.2f,cy-dy*L*0.9f,alto,L); poe(1,cx+dx*L*1.4f,cy+dy*L*1.0f,-alto*0.55f,L*0.9f); break;
+		default: for(int k=0;k<3;++k) poe(k,cx+dx*L*1.3f*(k-1),cy+dy*L*0.9f*(k-1),alto*(k==1?1.0f:0.7f),L*0.8f); break;
+		}
+	copiaTol=copiaNivel==1?1.5f:copiaNivel==2?1.1f:0.8f;
+	copiaRef=referencia;
+	copiaNota=copiaAnunciada=0.0f;
+	copiaInicio=tempo;
+	copiaConseguiu=0.0;
+	copiaAnuncio=tempo;
+	char m[120];
+	std::snprintf(m,sizeof(m),"Copia: forma %s (nível %d)",nomeForma(f),copiaNivel);
+	anuncia(m);
+	}
+
+float Extras::copiaAlvo(float x,float y) const
+	{
+	float t=0.0f;
+	for(int k=0;k<COPIA_MAX;++k)
+		if(copiaG[k][3]>0.0f)
+			{
+			float dx=x-copiaG[k][0],dy=y-copiaG[k][1],l=copiaG[k][3];
+			t+=copiaG[k][2]*std::exp(-(dx*dx+dy*dy)/(2.0f*l*l));
+			}
+	return t;
+	}
+
+void Extras::copiaMede(void)
+	{
+	/* nota: quanto do relevo-alvo já está feito. Só conta o erro que passa da folga (tol), dividido pelo
+	   tamanho do alvo: areia lisa no começo = 0%, cópia perfeita = 100%; mexer onde não devia desconta. */
+	if(!copia||!mapaOk)
+		return;
+	double erro=0.0,alvoTotal=0.0;
+	for(int cy=0;cy<gh;++cy)
+		for(int cx=0;cx<gw;++cx)
+			{
+			float hh=alt[cy*gw+cx];
+			if(hh<SEM+1.0f)
+				continue;
+			float x=bmin[0]+(cx+0.5f)*celula,y=bmin[1]+(cy+0.5f)*celula;
+			if(!dentro(x,y,3.0f))
+				continue;
+			float t=copiaAlvo(x,y);
+			erro+=std::max(0.0f,std::abs(hh-(copiaRef+t))-copiaTol);
+			alvoTotal+=std::max(0.0f,std::abs(t)-copiaTol);
+			}
+	if(alvoTotal<1.0)
+		return;
+	float nova=100.0f*float(std::max(0.0,std::min(1.0,1.0-erro/alvoTotal)));
+	copiaNota=copiaNota*0.6f+nova*0.4f; // suaviza (mãos na areia e ruído do sensor)
+	}
+
+void Extras::copiaPasso(void)
+	{
+	if(!copia)
+		return;
+	char m[120];
+	if(copiaConseguiu==0.0&&copiaNota>=85.0f&&tempo-copiaInicio>5.0)
+		{
+		copiaConseguiu=tempo;
+		++copiaRodadas;
+		std::snprintf(m,sizeof(m),"Copia: conseguiu! %d%% em %d s",int(copiaNota+0.5f),int(tempo-copiaInicio));
+		anuncia(m);
+		}
+	else if(copiaConseguiu==0.0&&(std::abs(copiaNota-copiaAnunciada)>=5.0f||(tempo-copiaAnuncio>10.0&&std::abs(copiaNota-copiaAnunciada)>=1.0f)))
+		{
+		copiaAnunciada=copiaNota;
+		copiaAnuncio=tempo;
+		std::snprintf(m,sizeof(m),"Copia: %d%%",int(copiaNota+0.5f));
+		anuncia(m);
+		}
+	if(copiaConseguiu>0.0&&tempo-copiaConseguiu>20.0)
+		copiaNova(-1,copiaNivel); // outro relevo, sorteado
 	}
 
 bool Extras::agua(float x,float y) const
@@ -549,6 +674,16 @@ static float difAng(float a) // ângulo em -pi..pi
 void Extras::passo(float dt)
 	{
 	tempo+=dt;
+	/* troca de brincadeira: o desenho novo aparece aos poucos */
+	long long sig=(long long)modo+10LL*jogo+1000LL*(labirinto?1:0)+10000LL*(tesouro?tipoTesouro:0)
+	             +100000LL*(copia?1+copiaForma:0)+10000000LL*efeito;
+	if(sig!=assinaturaAntes)
+		{
+		if(assinaturaAntes>=0)
+			trocaTempo=tempo;
+		assinaturaAntes=sig;
+		}
+	copiaPasso();
 	if(temChuva)
 		{
 		temChuva=false;
@@ -796,7 +931,7 @@ void Extras::passo(float dt)
 /* ----------------------------------------------------------------- shader */
 
 const char* Extras::nomesUniforms[NUM_UNIFORMS]={"extrasCaixa","extrasAg","extrasTesouro","extrasInfo","extrasEfeito",
-	"extrasLab","extrasLab2","extrasJogo","extrasJogoInfo","extrasNomes","extrasNomesCfg","extrasRostos","extrasMundo","extrasMundo2","extrasChuva"};
+	"extrasLab","extrasLab2","extrasJogo","extrasJogoInfo","extrasNomes","extrasNomesCfg","extrasRostos","extrasMundo","extrasMundo2","extrasChuva","extrasCopia","extrasCopiaInfo"};
 
 const char* Extras::glslVertexUniforms=R"GLSL(
 uniform mat4 extrasCaixa; // espaço da câmera -> caixa (cm)
@@ -818,6 +953,8 @@ uniform vec4 extrasJogo[32]; // jogos de água: por peça (x, y, raio, tipo) e (
 uniform vec4 extrasJogoInfo; // jogo (0 nenhum), fase, segundos na fase, vencedor ou próximo portão
 uniform float extrasNomes[72]; // membros: por pessoa, nº de letras e 8 letras (desenho 3x5 em bits)
 uniform vec4 extrasNomesCfg;  // quantos nomes, giro do texto (quartos de volta), quantos têm rosto no painel
+uniform vec4 extrasCopia[4];    // copie o relevo: morros/buracos do alvo (x, y, altura cm, largura cm)
+uniform vec4 extrasCopiaInfo;   // ligado, folga (cm), altura de referência (cm), nota (+1000 = conseguiu)
 uniform vec4 extrasChuva[4]; // nuvens de chuva do painel: x, y (cm), ligada (1)
 float extrasMarca;          // 1 onde há um animal marinho (o shader da água o deixa à vista)
 uniform vec4 extrasMundo;   // cidade LAOB: deslocamento da imagem (cm), largura e altura da caixa, ligada (1)
@@ -886,6 +1023,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 	vec3 ep=extrasPos;
 	float et=extrasInfo.x;
 	extrasMarca=0.0;
+	vec4 exAntes=baseColor;     // para a transição suave quando a brincadeira muda
 	float exNoite=0.0;          // 0 de dia .. 1 de noite (só na cidade LAOB)
 	float ef=extrasEfeito.x;
 	float ref=extrasEfeito.y;
@@ -962,6 +1100,50 @@ const char* Extras::glslFragmentMain=R"GLSL(
 		float prof=clamp((extrasInfo.w-ep.z)/4.0,0.0,1.0);
 		float onda=0.05*sin(et*2.0+ep.x*0.9+ep.y*0.6);
 		baseColor=vec4(mix(vec3(0.30,0.72,0.90),vec3(0.03,0.20,0.50),prof)+vec3(onda),1.0);
+		}
+	if(extrasCopiaInfo.x>0.5)
+		{
+		/* Copie o relevo: o relevo fica desbotado; vermelho = sobra areia (tirar), azul = falta (pôr),
+		   verde = já está certo; linhas brancas tracejadas = curvas de nível do alvo (a cada 1,5 cm) */
+		float T=0.0;
+		for(int k=0;k<4;++k)
+			{
+			vec4 g=extrasCopia[k];
+			if(g.w>0.0)
+				{
+				vec2 dg=ep.xy-g.xy;
+				T+=g.z*exp(-dot(dg,dg)/(2.0*g.w*g.w));
+				}
+			}
+		float tol=extrasCopiaInfo.y;
+		float err=ep.z-(extrasCopiaInfo.z+T);
+		float nota=mod(extrasCopiaInfo.w,1000.0);
+		bool feito=extrasCopiaInfo.w>=1000.0;
+		vec3 c=mix(vec3(dot(exAntes.rgb,vec3(0.3,0.5,0.2))),exAntes.rgb,0.35)*0.7+vec3(0.12); // relevo sem a animação do tema (lê melhor as cores)
+		float sobra=smoothstep(tol,tol+2.5,err);
+		float falta=smoothstep(tol,tol+2.5,-err);
+		c=mix(c,vec3(0.95,0.25,0.15),sobra*0.85);
+		c=mix(c,vec3(0.15,0.45,0.98),falta*0.85);
+		if(abs(err)<tol&&abs(T)>0.6)
+			c=mix(c,vec3(0.25,0.88,0.4),0.5);
+		float nivelT=T/1.5;
+		float iso=smoothstep(0.1,0.0,abs(fract(nivelT+0.5)-0.5))*step(0.5,abs(T))*step(0.5,fract((ep.x+ep.y)*0.55));
+		c=mix(c,vec3(1.0),iso*0.7);
+		if(feito)
+			c+=vec3(1.0,0.85,0.3)*smoothstep(0.6,0.0,abs(fract(length(ep.xy-extrasCopia[0].xy)*0.25-et*0.8)-0.5))*0.35*step(0.6,abs(T));
+		baseColor=vec4(c,1.0);
+		/* barra da nota no canto de baixo, à esquerda (de quem olha a imagem do projetor) */
+		vec2 pb=ep.xy-(extrasMundo2.xy+vec2(3.0,2.5));
+		if(pb.x>-0.35&&pb.x<20.35&&pb.y>-0.35&&pb.y<1.85)
+			{
+			vec3 corB=vec3(0.06,0.07,0.1);
+			if(pb.x>0.0&&pb.x<20.0&&pb.y>0.0&&pb.y<1.5&&pb.x<nota*0.2)
+				corB=feito?mix(vec3(1.0,0.8,0.2),vec3(1.0,0.97,0.7),0.5+0.5*sin(et*6.0)):
+				     mix(mix(vec3(0.9,0.2,0.15),vec3(0.95,0.8,0.15),smoothstep(20.0,55.0,nota)),vec3(0.25,0.85,0.35),smoothstep(55.0,85.0,nota));
+			if(abs(pb.x-17.0)<0.08&&pb.y>-0.2&&pb.y<1.7)
+				corB=vec3(1.0);                                     // marca dos 85%
+			baseColor=vec4(corB,1.0);
+			}
 		}
 	if(extrasInfo.z>0.5)
 		{
@@ -2132,6 +2314,8 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			baseColor.rgb+=vec3(1.0,0.9,0.5)*faisca;
 			}
 		}
+	/* troca de brincadeira: o desenho novo aparece aos poucos sobre o relevo */
+	baseColor=mix(exAntes,baseColor,extrasMundo2.w);
 	}
 )GLSL";
 
@@ -2199,7 +2383,14 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 		std::tm* lt=std::localtime(&agora);
 		hora=lt!=0?float(lt->tm_hour)+float(lt->tm_min)/60.0f:12.0f;
 		}
-	glUniform4fARB(locations[13],bmin[0],bmin[1],hora,0.0f);
+	glUniform4fARB(locations[13],bmin[0],bmin[1],hora,
+	               GLfloat(std::max(0.0,std::min(1.0,(tempo-trocaTempo)/0.6)))); // .w: transição (0 começando .. 1 pronta)
+	GLfloat cg[COPIA_MAX*4];
+	for(int k=0;k<COPIA_MAX;++k)
+		for(int j=0;j<4;++j)
+			cg[k*4+j]=copia?copiaG[k][j]:0.0f;
+	glUniform4fvARB(locations[15],COPIA_MAX,cg);
+	glUniform4fARB(locations[16],copia?1.0f:0.0f,copiaTol,copiaRef,copiaNota+(copiaConseguiu>0.0?1000.0f:0.0f));
 	/* painel de rostos na unidade de textura 6 (a 5 é a foto do modo Foto). O número da unidade vai
 	   sempre: um sampler2D deixado na unidade 0 (das texturas retangulares) invalidaria o desenho. */
 	glUniform1iARB(locations[11],6);

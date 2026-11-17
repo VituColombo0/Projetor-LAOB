@@ -52,13 +52,13 @@ class UmaBrincadeiraPorVez(Ambiente):
     def test_trocar_encerra_a_anterior(self):
         self.areia.animais("todos")
         self.areia.labirinto("facil")
-        self.assertEqual(self.cmds()[-3:], ["cmd jogoFim", "cmd animais nada", "cmd labirinto facil"])
+        self.assertEqual(self.cmds()[-3:], ["cmd animais nada", "cmd copiaFim", "cmd labirinto facil"])
         self.areia.tesouro()
-        self.assertEqual(self.cmds()[-3:], ["cmd jogoFim", "cmd animais nada", "cmd tesouro 5.5"])
+        self.assertEqual(self.cmds()[-3:], ["cmd animais nada", "cmd copiaFim", "cmd tesouro 5.5"])
         self.areia.fossil("pegada")
-        self.assertEqual(self.cmds()[-3:], ["cmd jogoFim", "cmd animais nada", "cmd fossil 5 5.5"])
+        self.assertEqual(self.cmds()[-3:], ["cmd animais nada", "cmd copiaFim", "cmd fossil 5 5.5"])
         self.areia.animais("peixes")
-        self.assertEqual(self.cmds()[-3:], ["cmd labirintoFim", "cmd jogoFim", "cmd mar peixe=6 tubarao=1 tartaruga=2 aguaviva=2 polvo=1 arraia=1 pato=2 barco=1"])
+        self.assertEqual(self.cmds()[-3:], ["cmd jogoFim", "cmd copiaFim", "cmd mar peixe=6 tubarao=1 tartaruga=2 aguaviva=2 polvo=1 arraia=1 pato=2 barco=1"])
 
     def test_foto_encerra_as_brincadeiras(self):
         self.areia.animais("todos")
@@ -420,9 +420,9 @@ class JogosDeAgua(Ambiente):
     def test_um_por_vez(self):
         self.areia.labirinto()
         self.areia.jogo("rota")
-        self.assertEqual(self.cmds()[-5:], ["cmd tesouroFim", "cmd fossilFim", "cmd labirintoFim", "cmd animais nada", "cmd jogo rota 2"])
+        self.assertEqual(self.cmds()[-6:], ["cmd tesouroFim", "cmd fossilFim", "cmd labirintoFim", "cmd animais nada", "cmd copiaFim", "cmd jogo rota 2"])
         self.areia.para_tudo()
-        self.assertEqual(self.cmds()[-1], "cmd jogoFim")
+        self.assertIn("cmd jogoFim", self.cmds()[-2:])
 
     def test_situacao_pelo_registro(self):
         self.assertIsNone(self.areia.jogo_situacao()["jogo"])
@@ -603,6 +603,35 @@ class MarEChuva(Ambiente):
                 self.areia.chuva(*ruim)
         self.areia.secar()
         self.assertEqual(self.cmds()[-1], "cmd secar")
+
+
+class CopieORelevo(Ambiente):
+    def cmds(self):
+        return [c for c in self.comandos() if c.startswith("cmd")]
+
+    def test_comecar_situacao_e_nova(self):
+        self.assertIsNone(self.areia.copia_situacao()["forma"])
+        with self.assertRaisesRegex(self.areia.Erro, "não está ligado"):
+            self.areia.copia_nova()
+        self.assertEqual(self.areia.copia(), ("sorteio", 2))
+        self.assertEqual(self.cmds()[-1], "cmd copia sorteio 2")
+        self.assertIn("cmd jogoFim", self.cmds()[-6:])                      # uma brincadeira por vez
+        self.assertEqual(self.areia.copia("Vulcão", "difícil"), ("vulcao", 3))
+        self.assertEqual(self.areia.copia("duas montanhas", "1"), ("duas", 1))
+        with self.assertRaisesRegex(self.areia.Erro, "forma"):
+            self.areia.copia("pirâmide")
+        log = os.path.join(self.D, "sandbox.log")
+        escreve(log, "Copia: forma vulcao (nível 2)\nCopia: 12%\nCopia: 47%\n")
+        self.assertEqual(self.areia.copia_situacao(), {"forma": "vulcao", "nota": 47, "conseguiu": False, "rodadas": 0})
+        escreve(log, "Copia: forma vulcao (nível 2)\nCopia: 80%\nCopia: conseguiu! 87% em 95 s\n")
+        self.assertEqual(self.areia.copia_situacao(), {"forma": "vulcao", "nota": 87, "conseguiu": True, "rodadas": 1})
+        self.areia.copia_nova()
+        self.assertEqual(self.cmds()[-1], "cmd copiaNova")
+        for fim in ("Copia desligada\n", "Animais: mar (10)\n", "Modo Rosto: foto.png\n"):
+            escreve(log, "Copia: forma serra (nível 1)\nCopia: 30%\n" + fim)
+            self.assertIsNone(self.areia.copia_situacao()["forma"])
+        self.areia.para_tudo()
+        self.assertEqual(self.cmds()[-1], "cmd copiaFim")
 
 
 class Labirinto(Ambiente):

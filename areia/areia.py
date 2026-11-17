@@ -387,15 +387,16 @@ def escolhe_tema(nome):
 
 # Uma brincadeira por vez: começar uma encerra as outras (antes elas se acumulavam: peixes,
 # carrinhos, labirinto e fóssil juntos; e os animais "voltavam" depois da foto). O tema fica.
-PARAR_BRINCADEIRAS = {"tesouro": ("fossilFim", "labirintoFim", "jogoFim", "animais nada"),
-                      "fossil": ("tesouroFim", "labirintoFim", "jogoFim", "animais nada"),
-                      "labirinto": ("tesouroFim", "fossilFim", "jogoFim", "animais nada"),
-                      "jogo": ("tesouroFim", "fossilFim", "labirintoFim", "animais nada"),
-                      "animais": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim"),
-                      "membros": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim"),
-                      "mar": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim"),
-                      "mundo": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim"),
-                      "foto": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim", "animais nada")}
+PARAR_BRINCADEIRAS = {"tesouro": ("fossilFim", "labirintoFim", "jogoFim", "animais nada", "copiaFim"),
+                      "fossil": ("tesouroFim", "labirintoFim", "jogoFim", "animais nada", "copiaFim"),
+                      "labirinto": ("tesouroFim", "fossilFim", "jogoFim", "animais nada", "copiaFim"),
+                      "jogo": ("tesouroFim", "fossilFim", "labirintoFim", "animais nada", "copiaFim"),
+                      "animais": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim", "copiaFim"),
+                      "membros": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim", "copiaFim"),
+                      "mar": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim", "copiaFim"),
+                      "mundo": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim", "copiaFim"),
+                      "copia": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim", "animais nada"),
+                      "foto": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim", "animais nada", "copiaFim")}
 
 
 def _encerra_outras(qual_brincadeira):
@@ -437,7 +438,7 @@ def tesouro(dificuldade="normal"):
     return prof
 
 
-_PREFIXOS_REGISTRO = ("Tesouro", "Fossil", "Labirinto", "Animais", "Jogo", "Mundo", "Modo Rosto:", "Modo Esculpir:")
+_PREFIXOS_REGISTRO = ("Tesouro", "Fossil", "Labirinto", "Animais", "Jogo", "Mundo", "Copia", "Modo Rosto:", "Modo Esculpir:")
 _registro_cache = {"pos": 0, "linhas": [], "resto": b"", "rabo": b""}
 _registro_trava = threading.Lock()  # o painel atende várias consultas ao mesmo tempo
 
@@ -957,10 +958,58 @@ def jogo_fim():
     _volta_tema()
 
 
+# ---------- copie o relevo: o projetor mostra um relevo-alvo; a nota diz quanto já foi feito ----------
+
+FORMAS = {"montanha": "Montanha", "duas": "Duas montanhas", "vulcao": "Vulcão", "cratera": "Cratera",
+          "ilha": "Ilha e lago", "serra": "Serra"}
+
+
+def copia(forma="sorteio", nivel="normal"):
+    """Começa o Copie o relevo. forma: uma de FORMAS ou "sorteio". Devolve (forma, nível 1-3)."""
+    f = _chave_tema(str(forma or "sorteio"))
+    f = {"duas-montanhas": "duas", "ilha-e-lago": "ilha", "lago": "ilha", "aleatorio": "sorteio"}.get(f, f)
+    if f != "sorteio" and f not in FORMAS:
+        raise Erro("forma: sorteio, " + ", ".join(FORMAS))
+    lv = NIVEIS_JOGO.get(_chave_tema(str(nivel or "normal")))
+    if lv is None:
+        raise Erro("nível: facil, normal ou dificil")
+    _brincadeira(f"copia {f} {lv}")
+    return f, lv
+
+
+def copia_situacao():
+    """{"forma", "nota" (0-100), "conseguiu" (bool), "rodadas"} ou forma None se o jogo não está ligado."""
+    vazio = {"forma": None, "nota": 0, "conseguiu": False, "rodadas": 0}
+    if qual() != "rosto":
+        return vazio
+    linhas = _registro_caca()
+    inicio = max((i for i, l in enumerate(linhas) if l.startswith("Copia: forma")), default=-1)
+    if inicio < 0:
+        return vazio
+    depois = [l.strip() for l in linhas[inicio:]]
+    if any(l.startswith(("Copia desligada", "Tesouro: escondendo", "Fossil: escondendo", "Labirinto: nascente",
+                         "Jogo pedido", "Animais:", "Modo Rosto:", "Modo Esculpir:")) for l in depois[1:]):
+        return vazio
+    m = re.match(r"Copia: forma (.+) \(nível", depois[0])
+    nota, conseguiu = 0, False
+    for l in depois[1:]:
+        n = re.match(r"Copia: (?:conseguiu! )?(\d+)%", l)
+        if n:
+            nota, conseguiu = int(n.group(1)), l.startswith("Copia: conseguiu")
+    rodadas = sum(1 for l in linhas if l.startswith("Copia: conseguiu"))
+    return {"forma": m.group(1) if m else "?", "nota": nota, "conseguiu": conseguiu, "rodadas": rodadas}
+
+
+def copia_nova():
+    if copia_situacao()["forma"] is None:
+        raise Erro("o Copie o relevo não está ligado")
+    _comando("copiaNova")
+
+
 def para_tudo():
     """Encerra todas as brincadeiras de uma vez (botão "Parar brincadeiras")."""
     if qual() == "rosto":
-        _comando("tesouroFim", "fossilFim", "animais nada", "labirintoFim", "jogoFim")
+        _comando("tesouroFim", "fossilFim", "animais nada", "labirintoFim", "jogoFim", "copiaFim")
     _volta_tema()
 
 

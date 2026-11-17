@@ -138,6 +138,8 @@ def labirinto(args):
 
 def jogo(args):
     pedido = args[0] if args else "ajuda"
+    if pedido in ("copia", "copie", "relevo"):
+        return copia(args[1:])
     if pedido in ("ajuda", "-h", "--help", "lista"):
         print("uso: areia-jogo <jogo> [facil|normal|dificil] | placar | nova | parar\njogos:")
         for nome, (titulo, curta, _) in areia.JOGOS.items():
@@ -159,6 +161,27 @@ def jogo(args):
         n, lv = areia.jogo(pedido, args[1] if len(args) > 1 else "normal")
         titulo, _, como = areia.JOGOS[n]
         print(f"{titulo} ligado (nível {lv})!\n{como}")
+    return 0
+
+
+def copia(args):
+    pedido = args[0] if args else "sorteio"
+    if pedido in ("ajuda", "-h", "--help"):
+        print("uso: areia-jogo copia [sorteio|" + "|".join(areia.FORMAS) + "] [facil|normal|dificil] | placar | nova | parar")
+    elif pedido in ("placar", "nota", "estado"):
+        s = areia.copia_situacao()
+        print("Copie o relevo não está ligado." if s["forma"] is None else
+              f"Copie o relevo ({s['forma']}): nota {s['nota']}%" + (" — conseguiu!" if s["conseguiu"] else ""))
+    elif pedido in ("nova", "outra"):
+        areia.copia_nova()
+        print("Outro relevo sorteado!")
+    elif pedido in ("parar", "fim"):
+        areia.para_tudo()
+        print("Copie o relevo encerrado.")
+    else:
+        f, lv = areia.copia(pedido, args[1] if len(args) > 1 else "normal")
+        print(f"Copie o relevo ligado (nível {lv})! Azul: falta areia. Vermelho: sobra. Verde: já está certo.\n"
+              "A barra no canto mostra a nota; passando de 85%, comemora e sorteia outro relevo.")
     return 0
 
 

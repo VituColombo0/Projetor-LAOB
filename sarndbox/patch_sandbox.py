@@ -9,7 +9,8 @@
    fossilFim                                               encerra a escavação
    animais peixes|carros|pessoas|todos|nada [quantidade]   peixes no lago, carrinhos e pessoas andando
    mundo <giro> <n com rosto> <painel|-> <moradores> [NOME[+]...] / mundoRosto NOME   a cidade LAOB (Mundo.cpp)
-   mar peixe=N tubarao=N tartaruga=N aguaviva=N polvo=N arraia=N   animais marinhos escolhidos
+   copia [montanha|duas|vulcao|cratera|ilha|serra] [1-3] / copiaNova / copiaFim   copie o relevo
+   mar peixe=N tubarao=N ...                                 vida na areia escolhida
    chuva <x 0-1> <y 0-1> [s] / secar                         nuvem de chuva num ponto; tira toda a água
    membros <giro> <n com rosto> <painel|-> [NOME[+]...]    membros andando com rosto e nome (+ = presente agora)
    efeito <tema>                                           animação do tema (lava, neve, poeira...)
@@ -395,6 +396,26 @@ void Sandbox::toggleDEM(DEM* dem)
 					if(extras.mundoRosto(tokens[1].c_str()))
 						std::cout<<"Mundo: mostrando o rosto de "<<tokens[1]<<std::endl;
 					}
+				else if(isToken(tokens[0],"copia"))
+					{
+					/* copia [forma|sorteio] [1-3]: copie o relevo */
+					int f=tokens.size()>=2?Extras::formaDoNome(tokens[1].c_str()):-1;
+					int n=tokens.size()>=3?atoi(tokens[2].c_str()):2;
+					setFaceMode(0,0);
+					extras.copiaRodadas=0;
+					extras.copiaNova(f,n);
+					}
+				else if(isToken(tokens[0],"copiaNova"))
+					{
+					if(extras.copia)
+						extras.copiaNova(-1,extras.copiaNivel);
+					}
+				else if(isToken(tokens[0],"copiaFim"))
+					{
+					if(extras.copia)
+						std::cout<<"Copia desligada"<<std::endl;
+					extras.copia=false;
+					}
 				else if(isToken(tokens[0],"mar"))
 					{
 					/* mar peixe=8 tubarao=1 tartaruga=2 ...: os animais marinhos escolhidos no painel */
@@ -495,6 +516,8 @@ void Sandbox::toggleDEM(DEM* dem)
 					extras.amostra(float(p[0]),float(p[1]),float(p[2]));
 					}
 			extras.fechaMapa();
+			if(extras.copia)
+				extras.copiaMede();
 			if(tesouroPedido>0.0f&&extras.novoTesouro(tesouroPedido))
 				{
 				if(extras.tipoTesouro>=2)
@@ -537,6 +560,7 @@ void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
 		extras.labirinto=false;
 		extras.labEstado=0;
 		extras.fimDoJogo();
+		extras.copia=false;
 		}
 """)
     c = rep(c, """				else if(isToken(tokens[0],"relevo"))""", """				else if(isToken(tokens[0],"labirinto"))

@@ -24,7 +24,7 @@ class Extras
 	public:
 	enum {MAX_AGENTES=32};
 	enum Modo {NADA=0,PEIXES=1,CARROS=2,TODOS=3,PESSOAS=4,MEMBROS=5,MUNDO=6}; // MUNDO: a cidade LAOB (Mundo.cpp) // TODOS = peixes, carrinhos e pessoas
-	enum {NUM_UNIFORMS=15};
+	enum {NUM_UNIFORMS=17};
 	enum {MAX_NOMES=8,MAX_LETRAS=8}; // membros do laboratório andando na areia, com o nome em cima
 	/* Efeito animado de cada tema de cor: */
 	enum Efeito {SEM_EFEITO=0,LAVA=1,NEVE=2,POEIRA=3,AREIA=4,ONDAS=5,BRILHO=6,CHUVA=7};
@@ -64,7 +64,7 @@ class Extras
 	/* Ligado: o shader precisa do código extra (tesouro, lago ou agentes): */
 	bool ativo(void) const
 		{
-		return tesouro||modo!=NADA||efeito!=SEM_EFEITO||labirinto||jogo!=SEM_JOGO||temChuva;
+		return tesouro||modo!=NADA||efeito!=SEM_EFEITO||labirinto||jogo!=SEM_JOGO||temChuva||copia;
 		}
 
 	void setArea(const double areaMin[2],const double areaMax[2],const OGTransform& cameraToBox);
@@ -163,6 +163,18 @@ class Extras
 	float wpX[MAX_AGENTES][5],wpY[MAX_AGENTES][5]; int wpN[MAX_AGENTES],wpI[MAX_AGENTES],wpCarro[MAX_AGENTES]; // pontos de passagem
 	bool noLab[MAX_AGENTES]; int mDest[MAX_AGENTES]; // dentro do laboratório (4ª tela); destino já escolhido ao sair
 	float horaFixa; // hora da cidade para testes (0-24); <0 = a hora de verdade
+	/* Copie o relevo: o alvo é a soma de até 4 morros/buracos (gaussianas: x, y, altura cm, largura cm)
+	   sobre a altura da areia no começo; a nota (0-100) compara o alvo com o relevo medido, 2x por segundo */
+	enum {COPIA_MAX=4,NUM_FORMAS=6};
+	bool copia; int copiaForma,copiaNivel,copiaRodadas; float copiaG[COPIA_MAX][4]; float copiaRef,copiaTol,copiaNota,copiaAnunciada;
+	double copiaInicio,copiaConseguiu,copiaAnuncio;
+	static const char* nomeForma(int f); static int formaDoNome(const char* nome);
+	void copiaNova(int forma,int nivel); // forma <0 = sorteio
+	float copiaAlvo(float x,float y) const;
+	void copiaMede(void); // depois de cada mapa de alturas
+	void copiaPasso(void);
+	/* Transição: quando a brincadeira muda, o desenho novo aparece aos poucos (0,6 s) */
+	long long assinaturaAntes; double trocaTempo;
 	float fatorVazao; // multiplica a água de todas as nascentes dos jogos e do labirinto (calibração)
 	float camX,camAlvo; double camTroca; // a cidade tem 3 telas de largura: deslocamento da imagem (cm)
 	bool mundoPedido,mundoPronto; // pedido antes de haver mapa; sala montada
