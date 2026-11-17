@@ -1096,7 +1096,7 @@ void Extras::passo(float dt)
 				}
 			vx+=2.0f*sepX;
 			vy+=2.0f*sepY;
-			/* Vida mais viva: patinhos em fila, o tubarão caça, todos fogem da mão e do perigo */
+			/* Vida mais viva: patinhos em fila, o tubarão caça, fogem do perigo (da mão não) */
 			const int esp=int(tipo[i]);
 			float susto=0.0f,fila=-1.0f;
 			bool cacando=false;
@@ -1139,19 +1139,7 @@ void Extras::passo(float dt)
 						}
 					}
 				}
-			if(esp!=10) // o barquinho não tem medo
-				{
-				float borda;
-				int m=maoPerto(ax[i],ay[i],borda);
-				if(m>=0&&borda<10.0f)
-					{
-					float dx=ax[i]-maos[m].x,dy=ay[i]-maos[m].y,d=std::max(0.1f,std::sqrt(dx*dx+dy*dy));
-					float f=1.0f-std::max(0.0f,borda)/10.0f;
-					vx+=dx/d*4.5f*f;
-					vy+=dy/d*4.5f*f;
-					susto=std::max(susto,f);
-					}
-				}
+			/* a mão NÃO espanta os bichos da água (Victor, 17/11/2026: tirar o espantar) */
 			if(esp==1||esp==9||esp==5)
 				for(int j=0;j<quantos;++j)
 					{
@@ -1371,7 +1359,7 @@ bool Extras::lugarDePouso(int i,int m)
 void Extras::passaro(int i,float dt)
 	{
 	/* Pássaro: voa em curvas largas por cima de tudo. Vê uma mão: desce e pousa perto dela (cada um do seu
-	   lado) e fica bicando o chão; sai voando quando a mão some, vem para cima dele ou chega um cachorro.
+	   lado) e fica bicando o chão; sai voando quando a mão some ou chega um cachorro (a mão não espanta).
 	   Vê um peixe: mergulha para pescar (às vezes consegue). voo = altura (1 alto, 0 no chão). */
 	acaoT[i]+=dt;
 	float borda;
@@ -1391,7 +1379,7 @@ void Extras::passaro(int i,float dt)
 	float c0=std::cos(ang[i]),s0=std::sin(ang[i]);
 	if(acao[i]==1||acao[i]==3)
 		{
-		bool sai=m<0||dCao<7.0f||(acao[i]==1&&(acaoT[i]>25.0f||borda<0.8f||agua(ax[i],ay[i])));
+		bool sai=m<0||dCao<7.0f||(acao[i]==1&&(acaoT[i]>25.0f||agua(ax[i],ay[i])));
 		if(!sai)
 			{
 			/* a mão andou: escolhe outro lugar perto dela */
