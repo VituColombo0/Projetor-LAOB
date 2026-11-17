@@ -150,7 +150,7 @@ class Extras
 	std::vector<float> aguaSim;               // profundidade da água por célula do mapa (cm)
 	std::vector<float> aguaVx,aguaVy;         // correnteza por célula (cm/s, espaço da caixa)
 	bool querAguaSim(void) const {return mapaOk&&(modo==PEIXES||modo==TODOS||modo==CARROS||modo==PESSOAS);}
-	bool lencol(void) const {return nivelAgua>SEM_NIVEL&&(modo==PEIXES||modo==TODOS);} // manter o lago cheio
+	bool lencol(void) const {return jogo==SEM_JOGO&&!labirinto&&nivelAgua>SEM_NIVEL&&(modo==PEIXES||modo==TODOS);} // manter o lago cheio (jogos desligam o lençol)
 	enum {SEM_NIVEL=-999};
 	float profAgua(float x,float y) const;    // profundidade interpolada (cm); 0 = seco
 	void correnteza(float x,float y,float& vx,float& vy) const; // velocidade da água no ponto (cm/s)

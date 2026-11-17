@@ -739,7 +739,7 @@ void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
 		for(int i=0;i<24;++i)
 			{
 			Scalar angle=Scalar(2)*Math::Constants<Scalar>::pi*Scalar(i)/Scalar(24);
-			glVertex(centro+x*(Math::cos(angle)*Scalar(2))+y*(Math::sin(angle)*Scalar(2)));
+			glVertex(centro+x*(Math::cos(angle)*Scalar(3.2))+y*(Math::sin(angle)*Scalar(3.2)));
 			}
 		glEnd();
 		glPopAttrib();
@@ -793,7 +793,7 @@ void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
 			for(int i=0;i<24;++i)
 				{
 				Scalar angle=Scalar(2)*Math::Constants<Scalar>::pi*Scalar(i)/Scalar(24);
-				glVertex(centro+x*(Math::cos(angle)*Scalar(2))+y*(Math::sin(angle)*Scalar(2)));
+				glVertex(centro+x*(Math::cos(angle)*Scalar(3.2))+y*(Math::sin(angle)*Scalar(3.2)));
 				}
 			glEnd();
 			}

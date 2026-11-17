@@ -21,7 +21,7 @@ uniform vec4 extrasEfeito; // Projetor-LAOB: efeito do tema (0 = água normal)
 		float ondaA=0.5+0.5*sin(waterAnimationTime*2.0+fragCoord.x*0.045+fragCoord.y*0.03);
 		vec3 rasoA=vec3(0.14,0.56,0.93);   // azul firme (17/11: a água estava transparente e difícil de ver)
 		vec3 profA=vec3(0.02,0.11,0.42);
-		float brilhoA=0.4;
+		float brilhoA=0.5;
 		/* com bichos da água (lago ligado: extrasInfo.w = nível do mar) a água é água em todo tema: peixe não nada em lava */
 		bool lagoA=extrasInfo.w>-999.0;
 		if(extrasEfeito.w>0.5||(efA>0.5&&efA<1.5&&!lagoA))
@@ -41,20 +41,14 @@ uniform vec4 extrasEfeito; // Projetor-LAOB: efeito do tema (0 = água normal)
 			rasoA=vec3(0.6)+0.4*cos(6.2832*(vec3(fragCoord.x*0.004+waterAnimationTime*0.15)+vec3(0.0,0.33,0.67)));
 			profA=rasoA*0.55;                                                        // arco-íris
 			}
-		waterColor=vec4(mix(rasoA,profA,fundoA)+vec3(0.05*ondaA)+vec3(colorW*brilhoA),1.0);
+		waterColor=vec4(mix(rasoA,profA,fundoA)+vec3(0.06*ondaA)+vec3(colorW*brilhoA*0.5),1.0);
 """)
-    # a lâmina fina já aparece, e os animais marinhos continuam à vista dentro da água
-    s = rep(s, "\t\tbaseColor=mix(baseColor,waterColor,min(waterLevel*waterOpacity,1.0));\n", """\t\tfloat cobreA=max(min(waterLevel*waterOpacity,1.0),smoothstep(0.0,0.08,waterLevel)*0.6);
-		/* lâmina fina (chuva escorrendo): areia molhada, escura e com brilho, em vez de um véu leitoso;
-		   vai ganhando a cor da água conforme fica funda (a lava continua brilhando) */
-		if(!(extrasEfeito.w>0.5||(efA>0.5&&efA<1.5&&!lagoA)))
-			{
-			float finaA=1.0-smoothstep(0.12,0.7,waterLevel);
-			vec3 molhadaA=baseColor.rgb*0.76+rasoA*0.08+vec3(colorW*brilhoA*0.3);
-			waterColor=vec4(mix(waterColor.rgb,molhadaA,finaA),1.0);
-			cobreA=max(cobreA,smoothstep(0.0,0.04,waterLevel)*0.92);
-			}
-		cobreA=max(cobreA,smoothstep(0.08,0.4,waterLevel)); // água de verdade (4 mm ou mais) cobre por inteiro
+    # a lâmina fina já aparece com cor viva e nítida, e os animais continuam à vista dentro da água
+    s = rep(s, "\t\tbaseColor=mix(baseColor,waterColor,min(waterLevel*waterOpacity,1.0));\n", """\t\t/* Projetor-LAOB: cobertura nítida e água vibrante mesmo em lâmina fina (escorrendo):
+		   a água dos jogos e da chuva é imediatamente visível como água azul brilhante, não areia escura */
+		float cobreA=clamp(waterLevel*5.0,0.0,1.0);
+		cobreA=max(cobreA,smoothstep(0.02,0.12,waterLevel)*0.88);
+		cobreA=max(cobreA,smoothstep(0.12,0.35,waterLevel));
 		if(extrasInfo.x>0.0&&extrasMarca>0.5)
 			cobreA*=0.25; // tem um animal marinho aqui (marcado pelo shader dos extras)
 		baseColor=mix(baseColor,waterColor,cobreA);

@@ -46,7 +46,7 @@ Extras::Extras(void)
 	camX=camAlvo=0.0f;
 	camTroca=0.0;
 	horaFixa=-1.0f;
-	fatorVazao=0.66f;
+	fatorVazao=1.0f;
 	copia=false;
 	copiaForma=copiaNivel=copiaRodadas=0;
 	copiaRef=0.0f;
@@ -865,7 +865,7 @@ void Extras::novoLabirinto(int dificuldade)
 	ltx=bx;
 	lty=by;
 	lraio=labDificuldade==1?5.0f:4.0f;
-	labVazao=labDificuldade==3?0.6f:1.0f;
+	labVazao=labDificuldade==3?1.0f:1.4f;
 	labirinto=true;
 	labEstado=1;
 	labInicio=tempo;
@@ -3271,7 +3271,7 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 	glUniform4fARB(locations[2],tx,ty,traio,tz);
 	/* .y: 0 = não achado; achado = 1 + segundos desde então (a animação do baú abrindo usa o tempo) */
 	glUniform4fARB(locations[3],GLfloat(tempo),achado?1.0f+GLfloat(std::min(600.0,tempo-quandoAchou)):0.0f,
-	               tesouro?GLfloat(tipoTesouro):0.0f,nivelAgua);
+	               tesouro?GLfloat(tipoTesouro):0.0f,(jogo!=SEM_JOGO||labirinto)?SEM:nivelAgua);
 	glUniform4fARB(locations[4],GLfloat(efeito),referencia,GLfloat(tipoTesouro),
 	               jogo==VULCAO&&jogoFase>0?1.0f:0.0f); // .w: jogo do vulcão (a água é lava; sem lava de enfeite)
 	glUniform4fARB(locations[5],lsx,lsy,ltx,lty);
