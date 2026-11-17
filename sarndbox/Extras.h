@@ -187,12 +187,13 @@ class Extras
 	void armadilhasDoLabirinto(void); // peças P_PERIGO entre a nascente e o alvo
 	float vbx,vby; // última velocidade da água no barco
 	/* Mãos sobre a areia (os bichos reagem a elas). O Sandbox compara o quadro CRU do sensor com o mapa de
-	   alturas: o que está mais de 1,2 cm acima da areia é mão (sem ninguém, o ruído medido não passa de 0,5 cm). Embaixo da mão o mapa fica congelado (a
-	   mão parada perto da areia não vira morro). Mão = mancha que entra pela beirada (o braço) ou que
+	   alturas: o que está mais de 1,2 cm acima da areia é mão (sem ninguém, o ruído medido não passa de 0,5 cm). Embaixo da mão a areia de REFERÊNCIA (fundo)
+	   fica congelada (a mão parada perto da areia continua mão); o mapa dos bichos é sempre o atual. Mão = mancha que entra pela beirada (o braço) ou que
 	   apareceu há pouco (um monte de areia novo para de contar em 4 s). */
 	enum {MAX_MAOS=4}; // a última vaga é a mão de teste (maoTeste)
 	struct Mao {float x,y,r; double visto,desde;};
 	Mao maos[MAX_MAOS];
+	std::vector<float> fundo; // areia de referência só para achar a mão (congelada embaixo dela; os bichos usam o mapa atual)
 	std::vector<float> somaM; std::vector<int> contaM; std::vector<double> congela; std::vector<float> maoSeg; std::vector<unsigned char> eraMao;
 	int maosAntes; double maoFalsaAte; bool maoDiag; // maoDiag: imprime no log a diferença cru x mapa (calibração)
 	bool querMaos(void) const {return mapaOk&&modo!=NADA&&modo!=MUNDO&&modo!=MEMBROS;}

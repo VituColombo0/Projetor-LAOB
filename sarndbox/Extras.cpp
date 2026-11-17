@@ -124,6 +124,7 @@ void Extras::setArea(const double areaMin[2],const double areaMax[2],const OGTra
 	gh=std::max(4,int((bmax[1]-bmin[1])/celula)+1);
 	alt.assign(gw*gh,SEM);
 	congela.assign(gw*gh,-1.0);
+	fundo.assign(gw*gh,SEM);
 	maoSeg.assign(gw*gh,0.0f);
 	eraMao.assign(gw*gh,0);
 	PTransform pb(cameraToBox);
@@ -151,14 +152,16 @@ void Extras::amostra(float x,float y,float z)
 void Extras::fechaMapa(void)
 	{
 	std::vector<float> todas;
-	bool comMaos=congela.size()==alt.size();
+	bool comMaos=congela.size()==alt.size()&&fundo.size()==alt.size();
 	for(int i=0;i<gw*gh;++i)
 		if(conta[i]>0)
 			{
-			/* embaixo de uma mão o mapa não muda: o filtro do sensor acaba aceitando a mão parada como areia */
-			if(!(comMaos&&congela[i]>tempo&&alt[i]>SEM+1.0f))
-				alt[i]=soma[i]/float(conta[i]);
+			alt[i]=soma[i]/float(conta[i]); // os bichos sempre usam a areia de agora (mexeram nela, eles veem na hora)
 			todas.push_back(alt[i]);
+			/* a referência das mãos não muda embaixo de uma mão: o filtro do sensor acaba aceitando a mão
+			   parada como areia, e ela sumiria */
+			if(comMaos&&!(congela[i]>tempo&&fundo[i]>SEM+1.0f))
+				fundo[i]=alt[i];
 			}
 	if(todas.size()<10)
 		return;
@@ -183,8 +186,9 @@ void Extras::comecaMaos(void)
 	{
 	somaM.assign(gw*gh,0.0f);
 	contaM.assign(gw*gh,0);
-	if(congela.size()!=alt.size())
+	if(congela.size()!=alt.size()||fundo.size()!=alt.size())
 		{
+		fundo=alt;
 		congela.assign(gw*gh,-1.0);
 		maoSeg.assign(gw*gh,0.0f);
 		eraMao.assign(gw*gh,0);
@@ -208,7 +212,7 @@ bool maior(const Mancha& a,const Mancha& b) {return a.cel.size()>b.cel.size();}
 void Extras::fechaMaos(float dt)
 	{
 	int n=gw*gh;
-	if(int(contaM.size())!=n||int(alt.size())!=n||!mapaOk)
+	if(int(contaM.size())!=n||int(alt.size())!=n||int(fundo.size())!=n||!mapaOk)
 		return;
 	/* 1. o que está acima da areia (média do quadro cru na célula contra o mapa de alturas) */
 	const int beira=int(3.0f/celula+0.5f); // 3 cm da beirada iluminada: lá o sensor vê a borda da caixa
@@ -218,9 +222,9 @@ void Extras::fechaMaos(float dt)
 		for(int cx=beira;cx<gw-beira;++cx)
 			{
 			int k=cy*gw+cx;
-			if(contaM[k]<2||alt[k]<SEM+1.0f)
+			if(contaM[k]<2||fundo[k]<SEM+1.0f)
 				continue;
-			acima[k]=somaM[k]/float(contaM[k])-alt[k];
+			acima[k]=somaM[k]/float(contaM[k])-fundo[k];
 			float limiar=eraMao[k]?0.8f:1.2f; // histerese: a mão que já estava é seguida mesmo mais baixa
 			cru[k]=acima[k]>limiar&&acima[k]<90.0f;
 			}
@@ -233,7 +237,7 @@ void Extras::fechaMaos(float dt)
 		double sm=0.0,sa=0.0;
 		float mx=-1e9f,mn=1e9f;
 		for(int k=0;k<n;++k)
-			if(contaM[k]>=2&&alt[k]>SEM+1.0f)
+			if(contaM[k]>=2&&fundo[k]>SEM+1.0f)
 				{
 				++nc;
 				sm+=acima[k];
@@ -374,7 +378,7 @@ void Extras::fechaMaos(float dt)
 			h.desde=velhas[perto].desde;
 			}
 		novas[nn++]=h;
-		/* embaixo da mão (e em volta) o mapa de alturas fica congelado por 3 s */
+		/* embaixo da mão (e em volta) a referência fica congelada por 3 s */
 		for(size_t j=0;j<m.cel.size();++j)
 			{
 			int q=m.cel[j],qx=q%gw,qy=q/gw;
@@ -1020,7 +1024,7 @@ void Extras::passo(float dt)
 			}
 		if(peixe)
 			{
-			const float raioA=1.8f*std::max(0.65f,escala[i]); // patinho cabe em água mais estreita
+			const float raioA=int(tipo[i])==4?2.4f:1.8f*std::max(0.65f,escala[i]); // tubarão (comprido) precisa de água larga; patinho cabe na estreita
 			bool folgado=aguaLarga(ax[i],ay[i],raioA);
 			if(!agua(ax[i],ay[i])) // o lago secou embaixo dele: reaparece em outro lugar
 				{
@@ -1313,8 +1317,8 @@ bool Extras::lugarDePouso(int i,int m)
 		float a=base+((k%2)?1.0f:-1.0f)*float((k+1)/2)*0.45f;
 		float d=h.r+3.5f+1.5f*aleatorio();
 		float x=h.x+std::cos(a)*d,y=h.y+std::sin(a)*d;
-		if(!dentro(x,y,2.5f)||agua(x,y))
-			continue;
+		if(!dentro(x,y,2.5f)||!chaoLivre(x,y,1.5f))
+			continue; // chão firme, sem água e sem paredão
 		bool ocupado=false;
 		for(int j=0;j<quantos&&!ocupado;++j)
 			if(j!=i&&voador(tipo[j])&&(acao[j]==1||acao[j]==3))
@@ -1352,7 +1356,7 @@ void Extras::passaro(int i,float dt)
 	float c0=std::cos(ang[i]),s0=std::sin(ang[i]);
 	if(acao[i]==1||acao[i]==3)
 		{
-		bool sai=m<0||dCao<7.0f||(acao[i]==1&&(acaoT[i]>25.0f||borda<0.8f));
+		bool sai=m<0||dCao<7.0f||(acao[i]==1&&(acaoT[i]>25.0f||borda<0.8f||agua(ax[i],ay[i])));
 		if(!sai)
 			{
 			/* a mão andou: escolhe outro lugar perto dela */

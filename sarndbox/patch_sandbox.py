@@ -998,7 +998,11 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
     # funda, deixava a simulação inteira em câmera lenta (66% do tempo real) e os jogos de água lentos.
     c = rep(c, """			/* Render a rain disk approximating the hand: */
 			glBegin(GL_POLYGON);
-""", """			/* Projetor-LAOB: só chove com a mão sobre a areia (a mais de 4 cm da beirada iluminada) */
+""", """			/* Projetor-LAOB: com bichos na areia a mão é para brincar com eles: não chove (chuva pelo painel) */
+			if(extras.querMaos())
+				continue;
+			
+			/* Projetor-LAOB: só chove com a mão sobre a areia (a mais de 4 cm da beirada iluminada) */
 			if(faceBoxMin[0]<faceBoxMax[0])
 				{
 				Point pm=boxTransform.transform(hIt->center);
