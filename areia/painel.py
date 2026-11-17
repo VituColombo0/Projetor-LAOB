@@ -343,10 +343,10 @@ body {
   font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
-main { max-width: 720px; margin: 0 auto; padding: 20px 16px 72px; }
+main { max-width: 760px; margin: 0 auto; padding: 14px 16px 40px; }
 header {
   position: sticky; top: 0; z-index: 5;
-  margin: -20px -16px 18px; padding: 16px 16px 12px;
+  margin: -14px -16px 14px; padding: 12px 16px 10px;
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
@@ -410,6 +410,45 @@ input[type=file] { display: none; }
 .seg button { min-height: 34px; padding: 6px 12px; border: 0; background: transparent; font-size: .84rem; border-radius: 8px; }
 .seg button.active { background: var(--accent); color: var(--accent-fg); }
 
+/* abas: uma parte do painel por vez (antes era uma página só, comprida) */
+.abas { display: flex; gap: 6px; margin-top: 10px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.abas::-webkit-scrollbar { display: none; }
+.abas button { flex: 1 0 auto; min-height: 40px; padding: 6px 12px; font-size: .86rem; white-space: nowrap; border-radius: 999px; }
+.abas button.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+section.card[hidden] { display: none; }
+section.card { animation: entra .18s ease-out; }
+@keyframes entra { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { section.card { animation: none; } }
+
+/* compacto: o cartão do jogo mostra figura e nome; a frase curta e a explicação só ao tocar ou passar o mouse */
+.jogo { padding: 10px; gap: 4px; }
+.jogo .ic { width: 32px; height: 32px; font-size: 1.1rem; border-radius: 9px; }
+.jogo .t { font-size: .88rem; }
+.jogo .c { display: none; }
+.jogo:hover .c, .jogo.aberto .c { display: block; }
+.jogo.aberto { grid-column: 1 / -1; }
+.barra { flex-wrap: nowrap; margin-bottom: 10px; }
+.barra .danger { min-height: 34px; padding: 6px 12px; font-size: .84rem; white-space: nowrap; }
+section.card { padding: 14px; margin-bottom: 12px; }
+h2 { margin-bottom: 10px; }
+.hint { margin-bottom: 10px; }
+@media (max-width: 520px) {
+  header { margin: -14px -16px 12px; padding: 10px 16px 8px; }
+  .logo { width: 30px; height: 30px; border-radius: 9px; }
+  h1 { font-size: 1.05rem; }
+  .sub { display: none; }
+  .pills { flex-wrap: nowrap; overflow-x: auto; margin-top: 8px; scrollbar-width: none; }
+  .pills::-webkit-scrollbar { display: none; }
+  .pill { white-space: nowrap; flex: none; }
+  .abas { margin-top: 8px; }
+  .abas button { min-height: 36px; padding: 5px 10px; font-size: .82rem; }
+  .barra .lbl { display: none; }
+  .seg button { padding: 6px 9px; }
+  #sec-jogos .hint { display: none; }
+  .temas { grid-template-columns: repeat(4, 1fr); }
+  .temas button { font-size: .7rem; padding: 6px 4px; min-height: 40px; }
+}
+
 /* temas */
 .temas { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
 .temas button { flex-direction: column; gap: 6px; padding: 8px; font-size: .8rem; }
@@ -417,7 +456,7 @@ input[type=file] { display: none; }
 .temas button.active { background: var(--accent-soft); color: var(--fg); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 
 /* jogos */
-.jogos { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.jogos { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 8px; }
 .jogo {
   position: relative; border: 1px solid var(--border); background: var(--surface2);
   border-radius: 14px; padding: 12px; cursor: pointer; outline: none;
@@ -511,6 +550,17 @@ img#prev {
 details summary { cursor: pointer; font-size: .84rem; color: var(--muted); margin-top: 12px; list-style: none; }
 details summary::-webkit-details-marker { display: none; }
 footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top: 8px; }
+/* celular: listas mais baixas e sem os textos longos (ficam no computador) */
+@media (max-width: 520px) {
+  .especies { grid-template-columns: 1fr; gap: 5px; }
+  .especie { padding: 3px 8px; }
+  .especie .e { font-size: 1.1rem; }
+  .especie button { min-height: 34px; width: 38px; }
+  section.card[data-aba="bichos"] .hint, section.card[data-aba="chuva"] .hint, section.card[data-aba="projetor"] .hint { display: none; }
+  .moradores { grid-template-columns: 1fr 1fr; }
+  .morador { padding: 8px 10px; min-height: 46px; }
+  .quadro-chuva { max-width: none; }
+}
 </style>
 </head>
 <body>
@@ -528,10 +578,18 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
       <span class="pill" id="p-sit"><i></i><span id="sit">Nenhuma brincadeira</span></span>
       <span class="pill" id="p-wb"><i></i><span id="wb">Willbert</span></span>
     </div>
+    <nav class="abas" id="abas" aria-label="Partes do painel">
+      <button data-ir="jogos">🎮 Jogos</button>
+      <button data-ir="bichos">🐟 Bichos</button>
+      <button data-ir="chuva">🌧️ Chuva</button>
+      <button data-ir="laob">🔬 LAOB</button>
+      <button data-ir="fotos">📷 Fotos</button>
+      <button data-ir="projetor">⚙️ Projetor</button>
+    </nav>
     <div id="msg" role="status" aria-live="polite"></div>
   </header>
 
-  <section class="card" id="sec-laob">
+  <section class="card" data-aba="laob" id="sec-laob">
     <h2>LAOB <span class="extra" id="laob-estado"></span></h2>
     <p class="hint" id="laob-dica">O laboratório por dentro, desenhado na areia, com os membros lá.</p>
     <div class="moradores" id="moradores"></div>
@@ -541,7 +599,7 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
     </div>
   </section>
 
-  <section class="card" id="sec-jogos">
+  <section class="card" data-aba="jogos" id="sec-jogos">
     <h2>Jogos e brincadeiras <span class="extra" id="njogos"></span></h2>
     <div class="placar" id="placar"></div>
     <div class="barra">
@@ -558,7 +616,7 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
     <div class="jogos" id="jogos"></div>
   </section>
 
-  <section class="card">
+  <section class="card" data-aba="bichos">
     <h2>Bichos, carros e pessoas <span class="extra" id="mar-total"></span></h2>
     <p class="hint">Escolha quantos de cada um aparecem na areia. Os animais marinhos nadam no lago (onde a areia é baixa) e na água da chuva; carrinhos e pessoas andam em chão firme.</p>
     <div class="especies" id="especies"></div>
@@ -568,7 +626,7 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
     </div>
   </section>
 
-  <section class="card">
+  <section class="card" data-aba="chuva">
     <h2>Chuva</h2>
     <p class="hint">Além de abrir a mão sobre a areia: toque no quadro, no ponto onde quer que chova. O quadro é a areia vista de cima, como o projetor a mostra.</p>
     <div class="quadro-chuva" id="quadro-chuva" role="button" tabindex="0" aria-label="Tocar onde chover">☁️ toque onde chover</div>
@@ -578,7 +636,7 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
     </div>
   </section>
 
-  <section class="card">
+  <section class="card" data-aba="fotos">
     <h2>Fotos na areia</h2>
     <div class="grid">
       <button id="cam" class="primary full">📷 Tirar foto pela câmera</button>
@@ -593,7 +651,7 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
     <img id="prev" alt="Foto que está na areia" hidden>
   </section>
 
-  <section class="card">
+  <section class="card" data-aba="projetor">
     <h2>Modo do projetor</h2>
     <div class="grid g4" id="modos">
       <button data-m="original">⛰️ Topografia</button>
@@ -603,12 +661,12 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
     </div>
   </section>
 
-  <section class="card">
+  <section class="card" data-aba="projetor">
     <h2>Cores do relevo</h2>
     <div class="temas" id="temas"></div>
   </section>
 
-  <section class="card">
+  <section class="card" data-aba="projetor">
     <h2>Willbert</h2>
     <p class="hint">Foto na areia pelo Willbert: as duas mãos abertas ao lado do rosto, perto da câmera.</p>
     <div class="grid">
@@ -617,7 +675,7 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
     </div>
   </section>
 
-  <section class="card">
+  <section class="card" data-aba="projetor">
     <h2>Se a areia travar</h2>
     <p class="hint">A imagem parou ou não responde? Este botão fecha e abre a areia de novo (uns 10 s).</p>
     <button id="reabrir" class="danger" style="width:100%">Reabrir a areia</button>
@@ -888,6 +946,13 @@ function chove(ev) {
   post('/chuva', {x: x, y: 1 - y});
 }
 
+function abre(aba) {
+  $$('section.card').forEach(sec => { sec.hidden = sec.dataset.aba !== aba; });
+  $$('#abas button').forEach(b => b.classList.toggle('active', b.dataset.ir === aba));
+  try { localStorage.setItem('areia-aba', aba); } catch (e) {}
+  window.scrollTo(0, 0);
+}
+
 function envia(inp) {
   inp.onchange = () => {
     if (!inp.files[0]) return;
@@ -899,6 +964,10 @@ function envia(inp) {
 }
 
 monta();
+$$('#abas button').forEach(b => b.onclick = () => abre(b.dataset.ir));
+let ABA = 'jogos';
+try { ABA = localStorage.getItem('areia-aba') || 'jogos'; } catch (e) {}
+abre($$('#abas button[data-ir="' + ABA + '"]').length ? ABA : 'jogos');
 envia($('#selfie'));
 envia($('#galeria'));
 $('#cam').onclick = () => post('/foto', new FormData(), true);
