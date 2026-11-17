@@ -550,6 +550,23 @@ img#prev {
 details summary { cursor: pointer; font-size: .84rem; color: var(--muted); margin-top: 12px; list-style: none; }
 details summary::-webkit-details-marker { display: none; }
 footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top: 8px; }
+/* computador: a página usa a largura da tela. Jogos em mais colunas e com a frase curta à vista;
+   na aba Projetor os quatro quadros ficam lado a lado (2x2); listas em mais colunas. */
+@media (min-width: 900px) {
+  main { max-width: 1180px; display: grid; grid-template-columns: 1fr 1fr; column-gap: 14px; align-items: start; }
+  main > header, main > footer, main > section.card { grid-column: 1 / -1; }
+  main > section.card[data-aba="projetor"] { grid-column: auto; }
+  .jogos { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+  .jogo { padding: 12px; }
+  .jogo .c { display: block; }
+  .especies { grid-template-columns: repeat(4, 1fr); }
+  .moradores { grid-template-columns: repeat(4, 1fr); }
+  .quadro-chuva { max-width: 620px; }
+  .abas { flex-wrap: nowrap; }
+  .abas button { flex: 0 1 auto; padding: 6px 18px; }
+  img#prev { max-height: 300px; }
+}
+
 /* celular: listas mais baixas e sem os textos longos (ficam no computador) */
 @media (max-width: 520px) {
   .especies { grid-template-columns: 1fr; gap: 5px; }
@@ -967,6 +984,7 @@ monta();
 $$('#abas button').forEach(b => b.onclick = () => abre(b.dataset.ir));
 let ABA = 'jogos';
 try { ABA = localStorage.getItem('areia-aba') || 'jogos'; } catch (e) {}
+if (location.hash.length > 1) ABA = location.hash.slice(1);   // ex.: http://...:8090/#bichos abre direto na aba
 abre($$('#abas button[data-ir="' + ABA + '"]').length ? ABA : 'jogos');
 envia($('#selfie'));
 envia($('#galeria'));
