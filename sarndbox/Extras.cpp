@@ -22,7 +22,7 @@ Extras::Extras(void)
 	:celula(1.5f),gw(0),gh(0),mapaOk(false),referencia(0.0f),
 	 tesouro(false),achado(false),tipoTesouro(1),tx(0),ty(0),traio(5.0f),tz(0),quandoAchou(0.0),
 	 profundidade(3.0f),reaparece(20.0f),quantosAchados(0),
-	 modo(NADA),quantos(0),nivelAgua(SEM),semente(12345u),tempo(0.0),efeito(SEM_EFEITO),
+	 modo(NADA),quantos(0),nivelAgua(SEM),modoNivel(0),nivelFixo(0.0f),absorcao(0.02f),semente(12345u),tempo(0.0),efeito(SEM_EFEITO),
 	 labirinto(false),labEstado(0),lsx(0),lsy(0),ltx(0),lty(0),lraio(4.0f),labVazao(1.0f),
 	 labInicio(0.0),labChegou(0.0),labRodadas(0),labDificuldade(2),labZerarAgua(false)
 	{
@@ -32,7 +32,7 @@ Extras::Extras(void)
 		caixa[i]=(i%5==0)?1.0f:0.0f;
 	for(int i=0;i<MAX_AGENTES;++i)
 		{
-		ax[i]=ay[i]=ang[i]=vel[i]=vb[i]=parado[i]=0.0f;
+		ax[i]=ay[i]=ang[i]=vel[i]=vb[i]=parado[i]=encharcado[i]=0.0f;
 		tipo[i]=0.0f;
 		}
 	nNomes=giroNomes=nFotos=0;
@@ -168,8 +168,8 @@ void Extras::fechaMapa(void)
 	std::nth_element(todas.begin(),todas.begin()+todas.size()/2,todas.end());
 	referencia=todas[todas.size()/2];
 	mapaOk=true;
-	/* O lago dos peixes: tudo 1,5 cm abaixo da areia "normal" (cavar um buraco cria um lago): */
-	nivelAgua=(modo==PEIXES||modo==TODOS)?referencia-1.5f:SEM;
+	/* O lago dos bichos é água de verdade até o nível do mar (cavar um buraco faz a água brotar): */
+	nivelAgua=(modo==PEIXES||modo==TODOS)?nivelLago():SEM;
 	}
 
 float Extras::altura(float x,float y) const
@@ -629,21 +629,47 @@ void Extras::copiaPasso(void)
 		copiaNova(-1,copiaNivel); // outro relevo, sorteado
 	}
 
+float Extras::profAgua(float x,float y) const
+	{
+	/* profundidade da água da simulação, interpolada entre os centros das células (margem suave) */
+	if(aguaSim.size()!=size_t(gw)*size_t(gh)||gw<1||gh<1)
+		return 0.0f;
+	float fx=(x-bmin[0])/celula-0.5f,fy=(y-bmin[1])/celula-0.5f;
+	int x0=int(std::floor(fx)),y0=int(std::floor(fy));
+	float ux=fx-float(x0),uy=fy-float(y0),soma=0.0f;
+	for(int j=0;j<2;++j)
+		for(int i=0;i<2;++i)
+			{
+			int qx=std::max(0,std::min(gw-1,x0+i)),qy=std::max(0,std::min(gh-1,y0+j));
+			soma+=aguaSim[qy*gw+qx]*(i?ux:1.0f-ux)*(j?uy:1.0f-uy);
+			}
+	return soma;
+	}
+
+void Extras::correnteza(float x,float y,float& vx,float& vy) const
+	{
+	vx=vy=0.0f;
+	if(aguaVx.size()!=size_t(gw)*size_t(gh))
+		return;
+	int cx=int((x-bmin[0])/celula),cy=int((y-bmin[1])/celula);
+	if(cx<0||cy<0||cx>=gw||cy>=gh)
+		return;
+	vx=aguaVx[cy*gw+cx];
+	vy=aguaVy[cy*gw+cx];
+	float v=std::sqrt(vx*vx+vy*vy);
+	if(v>12.0f) // onda forte de uma chuva em cima: não arremessa ninguém
+		{
+		vx*=12.0f/v;
+		vy*=12.0f/v;
+		}
+	}
+
 bool Extras::agua(float x,float y) const
 	{
-	float h=altura(x,y);
-	if(h<SEM+1.0f||!dentro(x,y,1.0f))
+	/* Água para os bichos da água: a mesma da simulação (lago, rio de chuva, poça funda), com uns 4,5 mm */
+	if(altura(x,y)<SEM+1.0f||!dentro(x,y,1.0f))
 		return false;
-	if(h<nivelAgua)
-		return true; // lago: areia baixa
-	/* água da chuva (a que cai da mão aberta ou das nuvens do painel): os animais marinhos entram nela */
-	if(aguaSim.size()==size_t(gw)*size_t(gh)&&nivelAgua>SEM+1.0f)
-		{
-		int cx=int((x-bmin[0])/celula),cy=int((y-bmin[1])/celula);
-		if(cx>=0&&cy>=0&&cx<gw&&cy<gh&&aguaSim[cy*gw+cx]>=0.45f)
-			return true;
-		}
-	return false;
+	return profAgua(x,y)>=0.45f;
 	}
 
 bool Extras::aguaLarga(float x,float y,float raio) const
@@ -665,13 +691,7 @@ bool Extras::molhado(float x,float y) const
 		return false;
 	if(nivelAgua>SEM+1.0f&&h<nivelAgua+0.4f)
 		return true;
-	if(aguaSim.size()==size_t(gw)*size_t(gh))
-		{
-		int cx=int((x-bmin[0])/celula),cy=int((y-bmin[1])/celula);
-		if(cx>=0&&cy>=0&&cx<gw&&cy<gh&&aguaSim[cy*gw+cx]>=0.15f)
-			return true;
-		}
-	return false;
+	return profAgua(x,y)>=0.15f;
 	}
 
 bool Extras::chaoLivre(float x,float y,float raio) const
@@ -885,13 +905,18 @@ void Extras::povoa(int novoModo,int quantidade)
 	mundoPedido=mundoPronto=false;
 	for(int i=0;i<MAX_AGENTES;++i)
 		temAlvo[i]=escondido[i]=false;
+	bool tinhaLago=lencol();
 	modo=novoModo;
 	nNomes=0;
 	quantos=std::max(0,std::min(int(MAX_AGENTES),quantidade));
 	if(modo==PEIXES||modo==TODOS)
-		nivelAgua=referencia-1.5f;
+		nivelAgua=nivelLago();
 	else
 		nivelAgua=SEM;
+	/* o lago dos bichos é água de verdade: quando ele acaba (bichos tirados ou só de terra), a água dele vai
+	   embora junto, como a dos jogos */
+	if(tinhaLago&&!lencol())
+		labZerarAgua=true;
 	for(int i=0;i<MAX_AGENTES;++i)
 		{
 		tipo[i]=0.0f;
@@ -961,6 +986,8 @@ void Extras::membros(const std::vector<std::string>& lista,int giro,int fotos)
 					novo[i]=false;
 					}
 		}
+	if(lencol())
+		labZerarAgua=true; // o lago dos bichos vai embora
 	modo=MEMBROS;
 	nivelAgua=SEM;
 	giroNomes=((giro%4)+4)%4;
@@ -1061,11 +1088,39 @@ void Extras::passo(float dt)
 			{
 			const float raioA=int(tipo[i])==4?2.4f:1.8f*std::max(0.65f,escala[i]); // tubarão (comprido) precisa de água larga; patinho cabe na estreita
 			bool folgado=aguaLarga(ax[i],ay[i],raioA);
-			if(!agua(ax[i],ay[i])) // o lago secou embaixo dele: reaparece em outro lugar
+			if(!agua(ax[i],ay[i]))
 				{
-				nasce(i);
+				/* a água baixou embaixo dele (escorreu, foi absorvida): nada para onde está mais fundo; só
+				   reaparece em outro lugar se ficar 2 s sem achar água */
+				encharcado[i]+=dt;
+				float p0=profAgua(ax[i],ay[i]),melhor=p0;
+				int k0=-1;
+				for(int k=0;k<12;++k)
+					{
+					float a=float(k)*PI/6.0f;
+					float pk=profAgua(ax[i]+std::cos(a)*3.0f,ay[i]+std::sin(a)*3.0f);
+					if(pk>melhor+0.02f)
+						{
+						melhor=pk;
+						k0=k;
+						}
+					}
+				if(encharcado[i]>2.0f||(p0<0.05f&&k0<0))
+					{
+					encharcado[i]=0.0f;
+					nasce(i);
+					continue;
+					}
+				if(k0>=0)
+					{
+					float a=float(k0)*PI/6.0f;
+					ang[i]=difAng(ang[i]+std::max(-6.0f*dt,std::min(6.0f*dt,difAng(a-ang[i]))));
+					ax[i]+=std::cos(a)*vb[i]*1.3f*dt;
+					ay[i]+=std::sin(a)*vb[i]*1.3f*dt;
+					}
 				continue;
 				}
+			encharcado[i]=0.0f;
 			/* Cardume: afasta dos muito perto, nada junto com os vizinhos e puxa para o grupo */
 			float vx=c0,vy=s0,sepX=0.0f,sepY=0.0f,aliX=0.0f,aliY=0.0f,cx=0.0f,cy=0.0f;
 			int n=0;
@@ -1188,6 +1243,13 @@ void Extras::passo(float dt)
 			vel[i]+=(alvoVel-vel[i])*std::min(1.0f,2.0f*dt);
 			vel[i]=std::max(vel[i],0.5f);
 			float nx=ax[i]+std::cos(ang[i])*vel[i]*dt,ny=ay[i]+std::sin(ang[i])*vel[i]*dt;
+			/* a correnteza (rio de chuva, água entrando no lago) leva junto: quem boia (pato, barquinho,
+			   água-viva) vai inteiro com ela; quem nada, só um pouco; o tubarão quase nada */
+			float cvx,cvy;
+			correnteza(ax[i],ay[i],cvx,cvy);
+			const float leva=(esp==9||esp==10||esp==6)?0.9f:esp==4?0.15f:0.45f;
+			nx+=cvx*leva*dt;
+			ny+=cvy*leva*dt;
 			/* só avança se o corpo inteiro continuar na água (encostado na margem, qualquer água serve
 			   para ele conseguir sair dali) */
 			if(aguaLarga(nx,ny,raioA)||(!folgado&&agua(nx,ny)))
@@ -1206,11 +1268,50 @@ void Extras::passo(float dt)
 			/* Carrinho: entre as direções possíveis, a que segue mais baixo (o vale), sem subir
 			   rampa íngreme, sem entrar no lago e sem sair da área iluminada: */
 			float h0=altura(ax[i],ay[i]);
-			if(h0<SEM+1.0f||agua(ax[i],ay[i])||!dentro(ax[i],ay[i],1.0f))
+			if(h0<SEM+1.0f||!dentro(ax[i],ay[i],1.0f))
 				{
-				nasce(i); // cavaram um lago embaixo dele (ou a areia sumiu dali): aparece em chão firme
+				nasce(i); // a areia sumiu dali: aparece em chão firme
 				continue;
 				}
+			if(molhado(ax[i],ay[i]))
+				{
+				/* a água chegou (chuva escorrendo, lago subindo): corre para o seco mais perto, na direção
+				   em que está andando se der; só reaparece em outro lugar se ficar 4 s na água ou se afundar */
+				encharcado[i]+=dt;
+				float melhorA=0.0f,melhorD=1e9f;
+				bool achou=false;
+				for(int r=1;r<=4&&!achou;++r)
+					for(int k=0;k<16;++k)
+						{
+						float a=ang[i]+float((k+1)/2)*((k%2)?0.39f:-0.39f);
+						float d=2.5f*float(r);
+						if(chaoLivre(ax[i]+std::cos(a)*d,ay[i]+std::sin(a)*d,1.2f))
+							{
+							float custo=d+1.5f*std::abs(difAng(a-ang[i]));
+							if(custo<melhorD)
+								{
+								melhorD=custo;
+								melhorA=a;
+								achou=true;
+								}
+							}
+						}
+				if(!achou||encharcado[i]>4.0f||profAgua(ax[i],ay[i])>1.5f)
+					{
+					encharcado[i]=0.0f;
+					nasce(i);
+					continue;
+					}
+				ang[i]=difAng(ang[i]+std::max(-5.0f*dt,std::min(5.0f*dt,difAng(melhorA-ang[i]))));
+				vel[i]+=(1.6f*vb[i]-vel[i])*std::min(1.0f,4.0f*dt);
+				float cvx,cvy;
+				correnteza(ax[i],ay[i],cvx,cvy); // a enxurrada empurra
+				ax[i]+=(std::cos(ang[i])*vel[i]+0.3f*cvx)*dt;
+				ay[i]+=(std::sin(ang[i])*vel[i]+0.3f*cvy)*dt;
+				parado[i]=0.0f;
+				continue;
+				}
+			encharcado[i]=0.0f;
 			if(int(tipo[i])==12&&cachorro(i,dt))
 				{
 				vel[i]=std::max(0.05f,vel[i]*(1.0f-std::min(1.0f,4.0f*dt)));
@@ -1778,12 +1879,8 @@ const char* Extras::glslFragmentMain=R"GLSL(
 		float anel=smoothstep(0.35,0.0,abs(d-fase*2.5))*(1.0-fase);
 		baseColor=vec4(mix(baseColor.rgb,vec3(0.85,0.93,1.0),anel*0.55),1.0);
 		}
-	if(ep.z<extrasInfo.w)
-		{
-		float prof=clamp((extrasInfo.w-ep.z)/4.0,0.0,1.0);
-		float onda=0.05*sin(et*2.0+ep.x*0.9+ep.y*0.6);
-		baseColor=vec4(mix(vec3(0.30,0.72,0.90),vec3(0.03,0.20,0.50),prof)+vec3(onda),1.0);
-		}
+	/* (o lago dos bichos não é mais desenhado aqui: é a água de verdade da simulação, pintada pelo
+	   SurfaceAddWaterColor com o mesmo visual, junto com a chuva) */
 	if(extrasCopiaInfo.x>0.5)
 		{
 		/* Copie o relevo: o relevo fica desbotado; vermelho = sobra areia (tirar), azul = falta (pôr),

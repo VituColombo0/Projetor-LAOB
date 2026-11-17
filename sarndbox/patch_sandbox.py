@@ -12,6 +12,7 @@
    copia [montanha|duas|vulcao|cratera|ilha|serra] [1-3] / copiaNova / copiaFim   copie o relevo
    mar peixe=N tubarao=N ...                                 vida na areia escolhida
    chuva <x 0-1> <y 0-1> [s] / secar                         nuvem de chuva num ponto; tira toda a água
+   aguaNivel auto|mapa|areia|<cm> [absorção] / aguaInfo     nível do mar do lago dos bichos; diagnóstico da água
    membros <giro> <n com rosto> <painel|-> [NOME[+]...]    membros andando com rosto e nome (+ = presente agora)
    efeito <tema>                                           animação do tema (lava, neve, poeira...)
    labirinto [facil|normal|dificil] / labirintoNovo / labirintoFim (labirintoTeste: alvo na nascente)
@@ -455,6 +456,51 @@ void Sandbox::toggleDEM(DEM* dem)
 					float seg=tokens.size()>=4?float(atof(tokens[3].c_str())):8.0f;
 					extras.chove(float(atof(tokens[1].c_str())),float(atof(tokens[2].c_str())),seg);
 					std::cout<<"Chuva: nuvem por "<<seg<<" s"<<std::endl;
+					}
+				else if(isToken(tokens[0],"aguaNivel")&&tokens.size()>=2)
+					{
+					/* nível do mar do lago dos bichos: "auto" (padrão: o maior entre o azul do mapa e 1,5 cm abaixo
+					   da areia mediana), "mapa" (0 cm), "areia" (o jeito antigo) ou cm; absorção opcional em cm/s */
+					if(isToken(tokens[1],"auto"))
+						extras.modoNivel=0;
+					else if(isToken(tokens[1],"areia"))
+						extras.modoNivel=2;
+					else
+						{
+						extras.modoNivel=1;
+						extras.nivelFixo=isToken(tokens[1],"mapa")?0.0f:float(atof(tokens[1].c_str()));
+						}
+					if(tokens.size()>=3)
+						extras.absorcao=float(std::max(0.0,std::min(1.0,atof(tokens[2].c_str()))));
+					if(extras.lencol())
+						extras.nivelAgua=extras.nivelLago();
+					std::cout<<"Agua: nivel do mar "<<extras.nivelLago()<<" cm, absorcao "<<extras.absorcao<<" cm/s"<<std::endl;
+					}
+				else if(isToken(tokens[0],"aguaInfo"))
+					{
+					/* diagnóstico: areia mediana, nível do mar e quanto da área está com água */
+					int n=0,molhadas=0,fundas=0,abaixo=0;
+					float maior=0.0f,soma=0.0f;
+					for(size_t k=0;k<extras.aguaSim.size();++k)
+						{
+						++n;
+						float h=extras.aguaSim[k];
+						maior=std::max(maior,h);
+						soma+=h;
+						if(h>=0.15f) ++molhadas;
+						if(h>=0.45f) ++fundas;
+						}
+					for(int cy=0;cy<extras.celulasY();++cy)
+						for(int cx=0;cx<extras.celulasX();++cx)
+							{
+							float x=extras.cantoMin()[0]+(cx+0.5f)*extras.celulaCm(),y=extras.cantoMin()[1]+(cy+0.5f)*extras.celulaCm();
+							float h=extras.altura(x,y);
+							if(h>-999.0f&&h<extras.nivelLago())
+								++abaixo;
+							}
+					std::cout<<"AguaInfo: areia mediana "<<extras.referencia<<" cm, nivel do mar "<<extras.nivelLago()
+					         <<" cm (lago "<<(extras.lencol()?"ligado":"desligado")<<"), abaixo do nivel "<<abaixo<<" celulas, com agua "<<molhadas
+					         <<", funda (bichos) "<<fundas<<" de "<<n<<", media "<<(n>0?soma/n:0.0f)<<" cm, maior "<<maior<<" cm"<<std::endl;
 					}
 				else if(isToken(tokens[0],"secar"))
 					{
@@ -902,11 +948,18 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
 			else if(extras.nPecas>0)
 				medeJogo(contextData); // armadilhas: a água não pode encostar nelas
 			}
-		/* Animais marinhos: a profundidade da água da chuva em cada célula do mapa, 2x por segundo */
-		static double aguaSimLeitura=0.0;
-		if(extras.querAguaSim()&&extras.celulasX()>0&&Vrui::getApplicationTime()-aguaSimLeitura>0.5)
+		/* Água única (Projetor-LAOB, 17/11/2026): a chuva, o lago dos bichos e o azul do mapa são a MESMA
+		   água, a da simulação. Com bichos da água, o lago é mantido cheio de verdade até o nível do mar
+		   (cavar faz a água brotar devagar) e a água a mais (chuva) a areia absorve aos poucos; só o nível
+		   muda: a correnteza continua. 4x por segundo, a profundidade e a correnteza de cada célula do mapa
+		   vão para os bichos. */
+		static double aguaLeitura=0.0;
+		static std::vector<GLfloat> aQ,aB;
+		double agoraA=Vrui::getApplicationTime();
+		if(extras.querAguaSim()&&extras.celulasX()>0&&agoraA-aguaLeitura>0.25)
 			{
-			aguaSimLeitura=Vrui::getApplicationTime();
+			float dtA=aguaLeitura>0.0?float(std::min(1.0,agoraA-aguaLeitura)):0.25f;
+			aguaLeitura=agoraA;
 			GLint qw=0,qh=0,bw=0,bh=0;
 			waterTable->bindQuantityTexture(contextData);
 			glGetTexLevelParameteriv(GL_TEXTURE_RECTANGLE_ARB,0,GL_TEXTURE_WIDTH,&qw);
@@ -916,25 +969,84 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
 			glGetTexLevelParameteriv(GL_TEXTURE_RECTANGLE_ARB,0,GL_TEXTURE_HEIGHT,&bh);
 			if(qw>2&&qh>2&&bw>1&&bh>1)
 				{
-				labFundo.resize(size_t(bw)*size_t(bh));
-				glGetTexImage(GL_TEXTURE_RECTANGLE_ARB,0,GL_RED,GL_FLOAT,&labFundo[0]);
+				aB.resize(size_t(bw)*size_t(bh));
+				glGetTexImage(GL_TEXTURE_RECTANGLE_ARB,0,GL_RED,GL_FLOAT,&aB[0]);
 				waterTable->bindQuantityTexture(contextData);
-				labQuantidade.resize(size_t(qw)*size_t(qh));
-				glGetTexImage(GL_TEXTURE_RECTANGLE_ARB,0,GL_RED,GL_FLOAT,&labQuantidade[0]);
+				aQ.resize(size_t(qw)*size_t(qh)*3);
+				glGetTexImage(GL_TEXTURE_RECTANGLE_ARB,0,GL_RGB,GL_FLOAT,&aQ[0]);
+				glBindTexture(GL_TEXTURE_RECTANGLE_ARB,0);
+				const GLfloat* cs=waterTable->getCellSize();
+				const ONTransform& wb=waterTable->getBaseTransform();
+				double dmx=waterTable->getDomain().min[0],dmy=waterTable->getDomain().min[1];
+				int ni=std::min(int(qw),int(bw)),nj=std::min(int(qh),int(bh));
+				/* o plano do nível do mar (z = H na caixa) na grade da água: W(bx,by) = w0 + bx*eX + by*eY */
+				float H=extras.lencol()?extras.nivelAgua:extras.referencia;
+				Point w0=wb.transform(boxTransform.inverseTransform(Point(0,0,H)));
+				Point w1=wb.transform(boxTransform.inverseTransform(Point(10,0,H)));
+				Point w2=wb.transform(boxTransform.inverseTransform(Point(0,10,H)));
+				double m00=(w1[0]-w0[0])/10.0,m01=(w2[0]-w0[0])/10.0,m10=(w1[1]-w0[1])/10.0,m11=(w2[1]-w0[1])/10.0;
+				double zx=(w1[2]-w0[2])/10.0,zy=(w2[2]-w0[2])/10.0;
+				double det=m00*m11-m01*m10;
+				if(extras.lencol()&&std::abs(det)>1.0e-9)
+					{
+					bool mudou=false;
+					const float sobe=std::min(1.0f,1.6f*dtA);        // brota: ~35% do que falta a cada leitura
+					const float absorve=extras.absorcao*dtA;           // cm de água a mais que a areia absorve
+					for(int j=1;j<nj;++j)
+						for(int i=1;i<ni;++i)
+							{
+							double xw=dmx+(i+0.5)*cs[0]-w0[0],yw=dmy+(j+0.5)*cs[1]-w0[1];
+							double bx=(m11*xw-m01*yw)/det,by=(-m10*xw+m00*yw)/det;
+							if(bx<faceBoxMin[0]||bx>faceBoxMax[0]||by<faceBoxMin[1]||by>faceBoxMax[1])
+								continue; // só dentro da área iluminada
+							float T=float(w0[2]+zx*bx+zy*by);
+							float b=0.25f*(aB[(j-1)*bw+i-1]+aB[(j-1)*bw+i]+aB[j*bw+i-1]+aB[j*bw+i]);
+							GLfloat* q=&aQ[(size_t(j)*qw+i)*3];
+							if(b<T&&q[0]<T-0.002f)
+								{
+								q[0]+=(T-q[0])*sobe;
+								mudou=true;
+								}
+							else
+								{
+								float chao=std::max(b,T);
+								if(q[0]>chao+0.0005f&&absorve>0.0f)
+									{
+									q[0]-=std::min(q[0]-chao,absorve);
+									if(q[0]<=b+0.001f)
+										q[1]=q[2]=0.0f;
+									mudou=true;
+									}
+								}
+							}
+					if(mudou)
+						waterTable->setQuantity(&aQ[0],contextData);
+					}
+				/* para os bichos: profundidade e correnteza no centro de cada célula do mapa */
 				int gx=extras.celulasX(),gy=extras.celulasY();
 				extras.aguaSim.assign(size_t(gx)*size_t(gy),0.0f);
-				const GLfloat* cs=waterTable->getCellSize();
+				extras.aguaVx.assign(size_t(gx)*size_t(gy),0.0f);
+				extras.aguaVy.assign(size_t(gx)*size_t(gy),0.0f);
 				for(int cy=0;cy<gy;++cy)
 					for(int cx=0;cx<gx;++cx)
 						{
-						Point pb(extras.cantoMin()[0]+(cx+0.5f)*extras.celulaCm(),extras.cantoMin()[1]+(cy+0.5f)*extras.celulaCm(),extras.referencia);
-						Point pw=waterTable->getBaseTransform().transform(boxTransform.inverseTransform(pb));
-						int i=int((pw[0]-waterTable->getDomain().min[0])/cs[0]);
-						int j=int((pw[1]-waterTable->getDomain().min[1])/cs[1]);
-						if(i<1||j<1||i>=std::min(int(qw),int(bw))||j>=std::min(int(qh),int(bh)))
+						Point pb(extras.cantoMin()[0]+(cx+0.5f)*extras.celulaCm(),extras.cantoMin()[1]+(cy+0.5f)*extras.celulaCm(),H);
+						Point pw=wb.transform(boxTransform.inverseTransform(pb));
+						int i=int((pw[0]-dmx)/cs[0]);
+						int j=int((pw[1]-dmy)/cs[1]);
+						if(i<1||j<1||i>=ni||j>=nj)
 							continue;
-						float b=0.25f*(labFundo[(j-1)*bw+i-1]+labFundo[(j-1)*bw+i]+labFundo[j*bw+i-1]+labFundo[j*bw+i]);
-						extras.aguaSim[size_t(cy)*gx+cx]=std::max(0.0f,labQuantidade[size_t(j)*qw+i]-b);
+						float b=0.25f*(aB[(j-1)*bw+i-1]+aB[(j-1)*bw+i]+aB[j*bw+i-1]+aB[j*bw+i]);
+						const GLfloat* q=&aQ[(size_t(j)*qw+i)*3];
+						float h=std::max(0.0f,q[0]-b);
+						size_t k=size_t(cy)*gx+cx;
+						extras.aguaSim[k]=h;
+						if(h>0.08f&&std::abs(det)>1.0e-9)
+							{
+							double u=q[1]/h,v=q[2]/h; // velocidade na grade da água -> caixa
+							extras.aguaVx[k]=float((m11*u-m01*v)/det);
+							extras.aguaVy[k]=float((-m10*u+m00*v)/det);
+							}
 						}
 				}
 			glBindTexture(GL_TEXTURE_RECTANGLE_ARB,0);
@@ -1056,6 +1168,22 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
 	/* Movimento dos peixes e carrinhos: */
 	extras.passo(dt);""")
     open("Sandbox.cpp", "w").write(c)
+
+# WaterTable2 (Projetor-LAOB, 17/11/2026): setWaterLevel troca só o nível e ZERA a correnteza; a água
+# única precisa mexer no nível várias vezes por segundo sem parar a água, então setQuantity sobe as três
+# grandezas (nível, hu, hv) como estão.
+wh = open("WaterTable2.h").read()
+if "setQuantity" not in wh:
+    wh = rep(wh, "\tGLfloat runSimulationStep(", "\tvoid setQuantity(const GLfloat* quantityGrid,GLContextData& contextData) const; // Projetor-LAOB: nível e correnteza (RGB por célula)\n\tGLfloat runSimulationStep(")
+    open("WaterTable2.h", "w").write(wh)
+wc = open("WaterTable2.cpp").read()
+if "setQuantity" not in wc:
+    a = wc.index("void WaterTable2::setWaterLevel(")
+    b = wc.index("GLfloat WaterTable2::runSimulationStep(")
+    f = wc[a:b].replace("setWaterLevel(const GLfloat* waterGrid", "setQuantity(const GLfloat* quantityGrid")
+    f = rep(f, "GL_RED,GL_FLOAT,waterGrid", "GL_RGB,GL_FLOAT,quantityGrid")
+    wc = wc[:b] + f + wc[b:]
+    open("WaterTable2.cpp", "w").write(wc)
 
 m = open("makefile").read()
 if "FaceImage.cpp" not in m:

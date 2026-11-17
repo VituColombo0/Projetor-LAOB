@@ -55,7 +55,13 @@ class Extras
 	float ax[MAX_AGENTES],ay[MAX_AGENTES],ang[MAX_AGENTES],vel[MAX_AGENTES],tipo[MAX_AGENTES]; // tipo: 0 nada, 1.xx peixe, 2.xx carro (xx = cor)
 	float vb[MAX_AGENTES]; // velocidade de cruzeiro (vel varia em volta dela: nadadas, rampas, curvas)
 	float parado[MAX_AGENTES]; // segundos travado (carro dá meia-volta; peixe preso numa poça renasce)
-	float nivelAgua; // peixes: lago = tudo abaixo desta altura (cm)
+	float nivelAgua; // com bichos da água: nível do mar (cm, espaço da caixa); a simulação mantém cheio tudo abaixo dele (SEM = sem lago)
+	/* nível do mar: 0 auto = o maior entre o azul do mapa (0 cm) e 1,5 cm abaixo da areia mediana (lago do tamanho
+	   de sempre, e o azul do mapa nunca fica seco); 1 fixo (nivelFixo); 2 só pela areia. absorcao: cm/s de água a
+	   mais (acima do nível) que a areia absorve com o lago ligado */
+	int modoNivel; float nivelFixo; float absorcao;
+	float nivelLago(void) const {return modoNivel==1?nivelFixo:modoNivel==2?referencia-1.5f:(referencia-1.5f>0.0f?referencia-1.5f:0.0f);}
+	float encharcado[MAX_AGENTES]; // segundos com água embaixo (bicho de terra) ou fora da água (bicho da água)
 	unsigned int semente;
 	double tempo;
 
@@ -139,8 +145,15 @@ class Extras
 	static const char* nomeEspecie(int k);    // "peixe", "tubarao", ..., "carro", "pessoa"
 	static int codigoEspecie(int k);          // 1, 4, 5, 6, 7, 8, 2 (carro), 3 (pessoa)
 	void mar(const int quantidades[NUM_ESPECIES]);
-	std::vector<float> aguaSim;               // profundidade da água da chuva por célula do mapa (cm)
-	bool querAguaSim(void) const {return modo==PEIXES||modo==TODOS;}
+	/* Água única (17/11/2026): a água da chuva, a do lago dos bichos e o azul do mapa são a MESMA, a da
+	   simulação do SARndbox. O Sandbox lê 4x por segundo a profundidade e a correnteza em cada célula do mapa. */
+	std::vector<float> aguaSim;               // profundidade da água por célula do mapa (cm)
+	std::vector<float> aguaVx,aguaVy;         // correnteza por célula (cm/s, espaço da caixa)
+	bool querAguaSim(void) const {return mapaOk&&(modo==PEIXES||modo==TODOS||modo==CARROS||modo==PESSOAS);}
+	bool lencol(void) const {return nivelAgua>SEM_NIVEL&&(modo==PEIXES||modo==TODOS);} // manter o lago cheio
+	enum {SEM_NIVEL=-999};
+	float profAgua(float x,float y) const;    // profundidade interpolada (cm); 0 = seco
+	void correnteza(float x,float y,float& vx,float& vy) const; // velocidade da água no ponto (cm/s)
 	int celulasX(void) const {return gw;} int celulasY(void) const {return gh;}
 	float celulaCm(void) const {return celula;} const float* cantoMin(void) const {return bmin;}
 	/* Chuva pelo painel: até quatro nuvens que jogam água num ponto por alguns segundos */

@@ -22,7 +22,9 @@ uniform vec4 extrasEfeito; // Projetor-LAOB: efeito do tema (0 = água normal)
 		vec3 rasoA=vec3(0.30,0.72,0.90);
 		vec3 profA=vec3(0.03,0.20,0.50);
 		float brilhoA=0.55;
-		if(extrasEfeito.w>0.5||(efA>0.5&&efA<1.5))
+		/* com bichos da água (lago ligado: extrasInfo.w = nível do mar) a água é água em todo tema: peixe não nada em lava */
+		bool lagoA=extrasInfo.w>-999.0;
+		if(extrasEfeito.w>0.5||(efA>0.5&&efA<1.5&&!lagoA))
 			{
 			rasoA=vec3(1.0,0.66,0.12); profA=vec3(0.78,0.13,0.0); brilhoA=0.9;       // vulcão: lava
 			if(extrasEfeito.w>0.5)
@@ -43,6 +45,15 @@ uniform vec4 extrasEfeito; // Projetor-LAOB: efeito do tema (0 = água normal)
 """)
     # a lâmina fina já aparece, e os animais marinhos continuam à vista dentro da água
     s = rep(s, "\t\tbaseColor=mix(baseColor,waterColor,min(waterLevel*waterOpacity,1.0));\n", """\t\tfloat cobreA=max(min(waterLevel*waterOpacity,1.0),smoothstep(0.0,0.08,waterLevel)*0.6);
+		/* lâmina fina (chuva escorrendo): areia molhada, escura e com brilho, em vez de um véu leitoso;
+		   vai ganhando a cor da água conforme fica funda (a lava continua brilhando) */
+		if(!(extrasEfeito.w>0.5||(efA>0.5&&efA<1.5&&!lagoA)))
+			{
+			float finaA=1.0-smoothstep(0.12,0.7,waterLevel);
+			vec3 molhadaA=baseColor.rgb*0.66+rasoA*0.10+vec3(colorW*brilhoA*0.3);
+			waterColor=vec4(mix(waterColor.rgb,molhadaA,finaA),1.0);
+			cobreA=max(cobreA,smoothstep(0.0,0.04,waterLevel)*0.92);
+			}
 		if(extrasInfo.x>0.0&&extrasMarca>0.5)
 			cobreA*=0.25; // tem um animal marinho aqui (marcado pelo shader dos extras)
 		baseColor=mix(baseColor,waterColor,cobreA);

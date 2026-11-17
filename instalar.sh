@@ -17,7 +17,7 @@ if [ "${1:-}" = "--compilar" ]; then SO_COMPILAR=1; DEST=${2:?uso: instalar.sh -
 echo "[1/8] cópia do SARndbox em $DEST (o original em $ORIG fica intacto)"
 if [ ! -d "$DEST" ]; then cp -a "$ORIG" "$DEST"; fi
 # fontes sempre limpas do original antes dos patches
-for f in SurfaceRenderer.h SurfaceRenderer.cpp Sandbox.h Sandbox.cpp makefile; do cp "$ORIG/$f" "$DEST/$f"; done
+for f in SurfaceRenderer.h SurfaceRenderer.cpp Sandbox.h Sandbox.cpp WaterTable2.h WaterTable2.cpp makefile; do cp "$ORIG/$f" "$DEST/$f"; done
 mkdir -p "$DEST/etc/SARndbox-2.8"
 for f in BoxLayout.txt ProjectorMatrix.dat HeightColorMap.cpt SARndbox.cfg; do
   if [ -r "$CALIB/$f" ]; then cp "$CALIB/$f" "$DEST/etc/SARndbox-2.8/"
