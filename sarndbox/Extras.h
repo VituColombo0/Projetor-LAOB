@@ -226,6 +226,7 @@ class Extras
 	bool agua(float x,float y) const;
 	bool dentro(float x,float y,float margem) const;
 	bool aguaLarga(float x,float y,float raio) const; // água no ponto e em volta (cabe o peixe)
+	bool molhado(float x,float y) const; // água ou quase (para quem anda em terra)
 	bool chaoLivre(float x,float y,float raio) const; // chão firme no ponto e em volta (cabe o carrinho)
 	bool sorteiaPonto(bool queAgua,float& x,float& y);
 	void nasce(int i);

@@ -197,13 +197,16 @@ _willbert_cache = [0.0, None]
 
 
 def willbert_estado():
-    """'ligado', 'desligado' ou None (sem o Willbert nesta máquina); guarda 10 s (o painel pergunta a cada 5 s)."""
+    """'ligado', 'desligado' ou None (sem o Willbert nesta máquina); guarda 10 s (o painel pergunta a cada 4 s).
+    Pergunta direto ao systemd, sem sudo: antes o "sudo willbert-controle estado" deixava ~950 linhas por hora
+    no registro do sistema enquanto alguém estava com o painel aberto."""
     agora = time.time()
     if agora - _willbert_cache[0] < 10:
         return _willbert_cache[1]
     try:
-        out = subprocess.run(WILLBERT + ["estado"], capture_output=True, text=True, timeout=10).stdout
-        est = "ligado" if "visao-detector=active" in out else ("desligado" if "visao-detector=" in out else None)
+        out = subprocess.run(["systemctl", "show", "visao-detector", "-p", "LoadState,ActiveState"],
+                             capture_output=True, text=True, timeout=10).stdout
+        est = None if "LoadState=loaded" not in out else ("ligado" if "ActiveState=active" in out else "desligado")
     except (OSError, subprocess.SubprocessError):
         est = None
     _willbert_cache[:] = [agora, est]

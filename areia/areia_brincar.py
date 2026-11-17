@@ -140,6 +140,10 @@ def jogo(args):
     pedido = args[0] if args else "ajuda"
     if pedido in ("copia", "copie", "relevo"):
         return copia(args[1:])
+    if pedido in ("placar", "status", "estado", "nova", "novo", "outra", "parar", "tirar", "fim") \
+            and areia.jogo_situacao()["jogo"] is None and areia.copia_situacao()["forma"] is not None:
+        return copia([{"novo": "nova", "outra": "nova", "tirar": "parar", "fim": "parar", "status": "placar",
+                       "estado": "placar"}.get(pedido, pedido)])   # o jogo ligado é o Copie o relevo
     if pedido in ("ajuda", "-h", "--help", "lista"):
         print("uso: areia-jogo <jogo> [facil|normal|dificil] | placar | nova | parar\njogos:")
         for nome, (titulo, curta, _) in areia.JOGOS.items():

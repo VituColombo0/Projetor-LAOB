@@ -633,6 +633,20 @@ class CopieORelevo(Ambiente):
         self.areia.para_tudo()
         self.assertEqual(self.cmds()[-1], "cmd copiaFim")
 
+    def test_areia_jogo_placar_com_o_copie_ligado(self):
+        """areia-jogo placar/nova/parar valem também para o Copie o relevo (antes: "nenhum jogo ligado")"""
+        import importlib
+        import areia_brincar
+        ab = importlib.reload(areia_brincar)
+        self.areia.copia("serra")                                             # abre a areia (de mentira) no jogo
+        escreve(os.path.join(self.D, "sandbox.log"), "Copia: forma serra (nível 2)\nCopia: 64%\n")
+        saida = io.StringIO()
+        with redirect_stdout(saida):
+            ab.jogo(["placar"])
+            ab.jogo(["nova"])
+        self.assertIn("Copie o relevo (serra): nota 64%", saida.getvalue())
+        self.assertEqual(self.cmds()[-1], "cmd copiaNova")
+
 
 class Labirinto(Ambiente):
     def cmds(self):

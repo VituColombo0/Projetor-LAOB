@@ -177,7 +177,25 @@ float Extras::altura(float x,float y) const
 	int cx=int((x-bmin[0])/celula),cy=int((y-bmin[1])/celula);
 	if(!mapaOk||cx<0||cy<0||cx>=gw||cy>=gh)
 		return SEM;
-	return alt[cy*gw+cx];
+	/* interpolada entre os centros das células vizinhas: o desenho (que pinta o lago ponto a ponto)
+	   e os bichos concordam sobre onde fica a margem; antes, com a célula inteira (1,5 cm) valendo uma
+	   altura só, um carrinho podia ficar com metade dentro da água desenhada */
+	float fx=(x-bmin[0])/celula-0.5f,fy=(y-bmin[1])/celula-0.5f;
+	int x0=int(std::floor(fx)),y0=int(std::floor(fy));
+	float ux=fx-float(x0),uy=fy-float(y0);
+	float soma=0.0f,peso=0.0f;
+	for(int j=0;j<2;++j)
+		for(int i=0;i<2;++i)
+			{
+			int qx=std::max(0,std::min(gw-1,x0+i)),qy=std::max(0,std::min(gh-1,y0+j));
+			float h=alt[qy*gw+qx];
+			if(h<SEM+1.0f)
+				continue;
+			float w=(i?ux:1.0f-ux)*(j?uy:1.0f-uy);
+			soma+=h*w;
+			peso+=w;
+			}
+	return peso>1e-4f?soma/peso:alt[cy*gw+cx];
 	}
 
 /* ------------------------------------------------------------- mãos */
@@ -633,22 +651,39 @@ bool Extras::aguaLarga(float x,float y,float raio) const
 	/* água no ponto e em volta dele: o peixe inteiro (uns 4,5 cm) cabe, sem a cauda na margem */
 	if(!agua(x,y))
 		return false;
-	for(int k=0;k<6;++k)
-		if(!agua(x+raio*std::cos(k*PI/3.0f),y+raio*std::sin(k*PI/3.0f)))
+	for(int k=0;k<8;++k)
+		if(!agua(x+raio*std::cos(k*PI/4.0f),y+raio*std::sin(k*PI/4.0f)))
 			return false;
 	return true;
+	}
+
+bool Extras::molhado(float x,float y) const
+	{
+	/* para quem anda em terra: água ou quase (4 mm de folga acima do lago; água da chuva já rasa) */
+	float h=altura(x,y);
+	if(h<SEM+1.0f)
+		return false;
+	if(nivelAgua>SEM+1.0f&&h<nivelAgua+0.4f)
+		return true;
+	if(aguaSim.size()==size_t(gw)*size_t(gh))
+		{
+		int cx=int((x-bmin[0])/celula),cy=int((y-bmin[1])/celula);
+		if(cx>=0&&cy>=0&&cx<gw&&cy<gh&&aguaSim[cy*gw+cx]>=0.15f)
+			return true;
+		}
+	return false;
 	}
 
 bool Extras::chaoLivre(float x,float y,float raio) const
 	{
 	/* chão firme no ponto e em volta: areia medida, fora do lago e longe da borda iluminada
 	   (antes só o centro do carrinho era conferido e metade dele entrava no lago ou saía da areia) */
-	if(!dentro(x,y,raio+1.0f)||altura(x,y)<SEM+1.0f||agua(x,y))
+	if(!dentro(x,y,raio+1.0f)||altura(x,y)<SEM+1.0f||molhado(x,y))
 		return false;
-	for(int k=0;k<6;++k)
+	for(int k=0;k<8;++k) // 8 direções: o carrinho é comprido, 6 deixavam escapar a quina
 		{
-		float px=x+raio*std::cos(k*PI/3.0f),py=y+raio*std::sin(k*PI/3.0f);
-		if(altura(px,py)<SEM+1.0f||agua(px,py))
+		float px=x+raio*std::cos(k*PI/4.0f),py=y+raio*std::sin(k*PI/4.0f);
+		if(altura(px,py)<SEM+1.0f||molhado(px,py))
 			return false;
 		}
 	return true;
