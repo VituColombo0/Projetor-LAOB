@@ -41,7 +41,7 @@ abre a **topografia** de sempre; por comando, atalho, painel do celular ou pelo
 
   Na vila e no vulcão, uma fila de casinhas num canto da areia (e o painel) mostra quantas estão de pé e quantas foram perdidas.
 - **Uma brincadeira por vez:** começar uma encerra as outras; o tema de cor fica.
-- **Painel no navegador** (:8090): controla tudo (modos, temas, jogos em cartões com a descrição ao passar o mouse ou tocar, nível, fotos, Willbert, "Reabrir a areia"); a Área de Trabalho tem só o atalho para ele.
+- **Painel no navegador** (:8090): organizado em abas (Jogos, Bichos, Chuva, LAOB, Fotos, Projetor), cada uma cabendo numa tela de celular; controla tudo (modos, temas, jogos em cartões com a descrição ao passar o mouse ou tocar, nível, fotos, Willbert, "Reabrir a areia"); a Área de Trabalho tem só o atalho para ele.
 - **Vigia:** reabre a topografia se ela fechar, se ficar parada (sem desenhar por 2 min) ou se o GNOME travar.
 
 ## Arquitetura
