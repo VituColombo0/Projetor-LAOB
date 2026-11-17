@@ -90,9 +90,18 @@ class Painel(Ambiente):
         self.assertEqual(r.get_json()["som"]["volume"], 50)
         self.assertTrue(r.get_json()["som"]["mudo"])
 
-        r = self.post("/som/testar", json={"nome": "inicio"})
+        r = self.post("/som", json={"volume": 150})
         self.assertEqual(r.status_code, 200)
-        self.assertTrue(r.get_json()["ok"])
+        self.assertEqual(r.get_json()["som"]["volume"], 100)
+
+        r = self.post("/som", json={"volume": -20})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["som"]["volume"], 0)
+
+        for s in ("inicio", "vitoria", "tesouro", "splash", "alerta"):
+            r = self.post("/som/testar", json={"nome": s})
+            self.assertEqual(r.status_code, 200)
+            self.assertTrue(r.get_json()["ok"])
 
     def test_temas(self):
         j = self.get("/estado").get_json()

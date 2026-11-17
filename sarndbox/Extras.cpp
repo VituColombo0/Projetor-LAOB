@@ -2851,7 +2851,8 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					cb+=vec3(0.22)*smoothstep(0.5,0.0,distance(f,vec2(1.0,0.2)));                           // brilho molhado
 					if(distance(f,vec2(2.5,0.5*sign(f.y)))<0.13)
 						cb=vec3(0.02);                                                                      // olhos
-					cb*=mix(1.0,0.6,smoothstep(0.82,1.0,corpoT));
+					cb*=mix(1.0,temaClaro>0.5?0.4:0.6,smoothstep(0.82,1.0,corpoT));
+					cb+=vec3(0.2)*temaEscuro*smoothstep(0.75,0.98,corpoT);
 					}
 				else if(caudaT||peitoral)
 					cb=vec3(0.26,0.32,0.4);
@@ -2877,7 +2878,8 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					cb*=mix(0.5,1.0,smoothstep(0.0,0.1,0.5-max(abs(gomo.x),abs(gomo.y))));                    // sulcos
 					cb=mix(cb,vec3(0.72,0.66,0.38),smoothstep(0.84,0.93,casco));                             // borda clara
 					cb*=mix(1.2,0.75,smoothstep(0.2,1.0,casco))+0.25*smoothstep(0.6,0.0,distance(l,vec2(0.5,0.4)));
-					cb*=mix(1.0,0.6,smoothstep(0.95,1.0,casco));
+					cb*=mix(1.0,temaClaro>0.5?0.38:0.6,smoothstep(0.95,1.0,casco));
+					cb+=vec3(0.2)*temaEscuro*smoothstep(0.9,0.98,casco);
 					}
 				else if(cabecaT<1.0)
 					cb=distance(l,vec2(2.55,0.27*sign(l.y)))<0.11?vec3(0.02):pele*mix(1.15,0.8,cabecaT);
@@ -3089,7 +3091,8 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				if(abs(l.x-0.05)<0.03&&abs(l.y)>tam.y*0.55)
 					cc*=0.65;                                                                    // vão das portas
 				cc+=vec3(0.3)*smoothstep(0.22,0.0,abs(l.y-0.35-l.x*0.12))*smoothstep(tam.x,0.0,abs(l.x))*0.6;   // reflexo da lataria
-				cc*=mix(1.0,0.6,smoothstep(-0.12,0.0,carro));                                      // contorno
+				cc*=mix(1.0,temaClaro>0.5?0.4:0.6,smoothstep(-0.12,0.0,carro));                    // contorno
+				cc+=vec3(0.22)*temaEscuro*smoothstep(-0.08,0.0,carro);
 				baseColor=vec4(cc,1.0);
 				}
 			else if(rodas)

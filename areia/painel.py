@@ -856,9 +856,20 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
   <section class="card" data-aba="projetor">
     <h2>Efeitos sonoros</h2>
     <p class="hint">Sons da água, seres vivos e comemorações nas caixas de som e no projetor.</p>
-    <div class="grid">
+    <div class="grid" style="grid-template-columns: 1fr 1fr">
       <button id="som-mudo-btn">🔊 Som ligado</button>
-      <button id="som-testar-btn">▶ Testar som</button>
+      <div style="display:flex; gap:6px">
+        <select id="som-teste-sel" style="flex:1; border-radius:11px; border:1px solid var(--border); background:var(--surface2); color:var(--fg); padding:4px 8px; font-size:0.85rem">
+          <option value="inicio">🎮 Início</option>
+          <option value="vitoria">🏆 Vitória</option>
+          <option value="tesouro">💎 Tesouro</option>
+          <option value="splash">💧 Água/Splash</option>
+          <option value="passaro">🐦 Pássaro</option>
+          <option value="cachorro">🐶 Cachorro</option>
+          <option value="alerta">⚠️ Alerta</option>
+        </select>
+        <button id="som-testar-btn" style="min-width:44px; padding:0 12px" title="Tocar som escolhido">▶</button>
+      </div>
     </div>
     <div style="display:flex; align-items:center; gap:12px; margin-top:12px">
       <span style="font-size:0.85rem; color:var(--muted)">Volume</span>
@@ -1056,6 +1067,7 @@ async function carrega() {
       if ($('#som-top')) {
         $('#som-top').textContent = E.som.mudo ? '🔇' : '🔊';
         $('#som-top').title = E.som.mudo ? 'Som silenciado (toque para ativar)' : 'Som ativo (toque para silenciar)';
+        $('#som-top').classList.toggle('active', !E.som.mudo);
       }
     }
     montaMar();
@@ -1286,8 +1298,13 @@ $$('[data-m]').forEach(b => b.onclick = () => post('/modo', {modo: b.dataset.m})
 $('#reabrir').onclick = () => post('/reabrir', {});
 $('#som-mudo-btn').onclick = () => post('/som', {mudo: !E.som?.mudo});
 if ($('#som-top')) $('#som-top').onclick = () => post('/som', {mudo: !E.som?.mudo});
+$('#som-vol-range').oninput = () => { $('#som-vol-val').textContent = $('#som-vol-range').value + '%'; };
 $('#som-vol-range').onchange = () => post('/som', {volume: $('#som-vol-range').value});
-$('#som-testar-btn').onclick = () => post('/som/testar', {nome: 'inicio'});
+$('#som-testar-btn').onclick = () => {
+  const sel = $('#som-teste-sel');
+  const nome = sel ? sel.value : 'inicio';
+  post('/som/testar', {nome});
+};
 $('#laob-ligar').onclick = () => post('/brincar', {acao: 'mundo'});
 $('#mar-soltar').onclick = () => post('/mar', MAR || {});
 $('#quadro-chuva').onclick = chove;

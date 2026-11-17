@@ -32,6 +32,25 @@ PADRAO = {"volume": 80, "mudo": False, "saida": "combinado"}
 _lock = threading.Lock()
 _vigia_thread = None
 _vigia_ativo = False
+_ultimo_toque = {}
+_ultimo_toque_geral = 0.0
+
+
+def _garantir_sink_combinado():
+    """Garante que a saída combinada (HDMI + analógica) existe no PulseAudio sem duplicatas."""
+    try:
+        res = subprocess.run(["pactl", "list", "short", "sinks"],
+                             capture_output=True, text=True, timeout=1.5)
+        if "combinado" not in res.stdout:
+            subprocess.run([
+                "pactl", "load-module", "module-combine-sink",
+                "sink_name=combinado",
+                "slaves=alsa_output.pci-0000_01_00.1.hdmi-stereo,alsa_output.pci-0000_00_1b.0.analog-stereo"
+            ], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2.0)
+            subprocess.run(["pactl", "set-sink-mute", "alsa_output.pci-0000_00_1b.0.analog-stereo", "0"],
+                           check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1.0)
+    except Exception:
+        pass
 
 
 def estado():
@@ -68,9 +87,9 @@ def definir_volume(vol):
     try:
         vol_pct = f"{vol}%"
         subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", vol_pct],
-                       check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                       check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1.0)
         subprocess.run(["pactl", "set-sink-volume", "combinado", vol_pct],
-                       check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                       check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1.0)
     except Exception:
         pass
     return e
@@ -84,7 +103,8 @@ def definir_mudo(mudo):
 
 
 def tocar(nome):
-    """Toca um efeito sonoro de forma assíncrona."""
+    """Toca um efeito sonoro de forma assíncrona com cooldown e debounce."""
+    global _ultimo_toque_geral
     e = estado()
     if e.get("mudo", False) or e.get("volume", 80) <= 0:
         return
@@ -92,21 +112,31 @@ def tocar(nome):
     if not os.path.isfile(caminho):
         return
 
+    agora = time.time()
+    with _lock:
+        if agora - _ultimo_toque.get(nome, 0.0) < 0.6:
+            return
+        if agora - _ultimo_toque_geral < 0.12:
+            return
+        _ultimo_toque[nome] = agora
+        _ultimo_toque_geral = agora
+
     def _play():
-        # Tenta tocar no sink combinado ou default
-        cmd = ["paplay"]
         saida = e.get("saida", "combinado")
+        cmd = ["paplay"]
         if saida:
             cmd.extend(["-d", saida])
         cmd.append(caminho)
         try:
-            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5.0)
             if res.returncode != 0:
+                if saida == "combinado":
+                    _garantir_sink_combinado()
                 # Fallback sem especificar device
-                subprocess.run(["paplay", caminho], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(["paplay", caminho], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5.0)
         except Exception:
             try:
-                subprocess.run(["aplay", "-q", caminho], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(["aplay", "-q", caminho], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5.0)
             except Exception:
                 pass
 
@@ -144,17 +174,29 @@ def _loop_vigia():
                     if not linha:
                         continue
                     # Detecção de eventos chave
-                    if "Tesouro: achou" in linha or "Fossil: achou" in linha:
+                    if ("Tesouro encontrado" in linha or "Fossil encontrado" in linha
+                            or "Tesouro: achou" in linha or "Fossil: achou" in linha):
                         tocar("tesouro")
-                    elif ("venceu o time" in linha or "Labirinto: a água chegou" in linha
-                          or "Copia: parabens" in linha or "Copia: parabéns" in linha
-                          or "casas de pé" in linha):
+                    elif ("venceu o time" in linha
+                          or "Labirinto: a água chegou" in linha
+                          or "Copia: conseguiu" in linha
+                          or "casas a salvo" in linha or "casas secas" in linha
+                          or "casas de pé" in linha
+                          or "plantações vivas" in linha or "plantacoes vivas" in linha
+                          or "o lago encheu na medida" in linha
+                          or "peixes salvos" in linha
+                          or "barquinho chegou ao porto" in linha
+                          or "passou pelos portões e chegou" in linha):
                         tocar("vitoria")
-                    elif "Jogo pedido:" in linha or "Jogo: corrida" in linha or "Labirinto: nascente" in linha:
+                    elif ("Jogo pedido:" in linha or "Jogo: corrida" in linha
+                          or "Labirinto: nascente" in linha or "Labirinto: rodada nova" in linha
+                          or "Copia: forma" in linha):
                         tocar("inicio")
-                    elif "aviso de lava" in linha or "boca nova" in linha:
+                    elif ("aviso de lava" in linha or "boca de lava" in linha or "terra tremeu" in linha
+                          or "tocou numa armadilha" in linha or "casa alagou" in linha or "lava pegou" in linha):
                         tocar("alerta")
-                    elif "Vida: o tubarao pegou um peixe" in linha:
+                    elif ("o tubarao pegou um peixe" in linha or "passaro pescou um peixe" in linha
+                          or "Chuva: nuvem" in linha):
                         tocar("splash")
         except Exception:
             time.sleep(1.0)
@@ -162,6 +204,7 @@ def _loop_vigia():
 
 def iniciar_vigia():
     global _vigia_thread
+    _garantir_sink_combinado()
     if _vigia_thread is None or not _vigia_thread.is_alive():
         _vigia_thread = threading.Thread(target=_loop_vigia, daemon=True)
         _vigia_thread.start()

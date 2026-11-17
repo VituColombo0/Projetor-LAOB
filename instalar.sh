@@ -41,7 +41,9 @@ echo "[3/8] programas da pasta areia/"
 cp "$REPO"/areia/{areia.py,areia_foto.py,areia_tema.py,areia_brincar.py,rosto.py,membros.py,painel.py,som.py,sandbox.sh,atualizar_papel_parede.py} "$DEST/"
 mkdir -p "$DEST/sons" && cp "$REPO"/areia/sons/*.wav "$DEST/sons/"
 # Som combinado (HDMI do projetor + caixas de som) e desmuta saída analógica
-pactl load-module module-combine-sink sink_name=combinado slaves=alsa_output.pci-0000_01_00.1.hdmi-stereo,alsa_output.pci-0000_00_1b.0.analog-stereo 2>/dev/null || true
+if ! pactl list short sinks 2>/dev/null | grep -q '\bcombinado\b'; then
+  pactl load-module module-combine-sink sink_name=combinado slaves=alsa_output.pci-0000_01_00.1.hdmi-stereo,alsa_output.pci-0000_00_1b.0.analog-stereo 2>/dev/null || true
+fi
 pactl set-sink-mute alsa_output.pci-0000_00_1b.0.analog-stereo 0 2>/dev/null || true
 mkdir -p "$DEST/membros"   # fotos dos membros para as pessoinhas (Nome.jpg); ficam só nesta máquina
 COMANDOS=(areia-foto areia-tema areia-topografia areia-tesouro areia-animais areia-fossil areia-labirinto areia-jogo areia-vigia)
