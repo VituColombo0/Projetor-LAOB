@@ -9,7 +9,9 @@ def rep(s, old, new, count=1):
 h = open("SurfaceRenderer.h").read()
 if "FaceImage" not in h:
     h = rep(h, "class DEM;\n", "class DEM;\nclass FaceImage;\n")
-    h = rep(h, "GLint heightMapShaderUniforms[16];", "GLint heightMapShaderUniforms[32];")
+    # 48: com tudo ligado o shader pede 21 + Extras::NUM_UNIFORMS localizações (39 hoje; o static_assert
+    # abaixo para a compilação se faltar lugar, em vez de escrever por cima das variáveis seguintes)
+    h = rep(h, "GLint heightMapShaderUniforms[16];", "GLint heightMapShaderUniforms[48];")
     h = rep(h, "\tGLfloat demDistScale; // Maximum deviation", "\tFaceImage* faceImage; // Foto projetada na areia (modo Rosto); 0 = desligado\n\tGLfloat demDistScale; // Maximum deviation")
     h = rep(h, "\tvoid setDemDistScale(", "\tvoid setFaceImage(FaceImage* newFaceImage); // Liga/desliga o modo Rosto\n\tvoid setDemDistScale(")
     h = rep(h, "class FaceImage;\n", "class FaceImage;\nclass Extras;\n")
@@ -164,6 +166,10 @@ void SurfaceRenderer::setDemDistScale(""")
 				}
 """, """				*(ulPtr++)=glGetUniformLocationARB(result,"faceReference");
 				}
+			/* pior caso: 2 comuns + 2 do mapa de cores + 4 do Rosto + os Extras + 2 das curvas de nível + 2 do
+			   dipping bed + 2 da iluminação + 6 da água + 1 da projeção (o DEM, 3, entra no lugar do mapa) */
+			static_assert(21+Extras::NUM_UNIFORMS<=sizeof(DataItem::heightMapShaderUniforms)/sizeof(GLint),
+			              "heightMapShaderUniforms pequeno demais para Extras::NUM_UNIFORMS");
 			if(extras!=0)
 				for(int k=0;k<Extras::NUM_UNIFORMS;++k)
 					*(ulPtr++)=glGetUniformLocationARB(result,Extras::nomesUniforms[k]);
@@ -180,7 +186,7 @@ void SurfaceRenderer::setDemDistScale(""")
 			extras->uploadUniforms(el);
 			}
 """)
-    # cidade LAOB: sem as linhas de relevo por cima das ruas e das casas (a luz do relevo continua)
+    # laboratório (Mundo): sem as linhas de relevo por cima da sala (a luz do relevo continua)
     c = rep(c, """			fragmentMain+="\\
 				/* Modulate the base color by contour line color: */\\n\\
 				addContourLines(gl_FragCoord.xy,baseColor);\\n\\

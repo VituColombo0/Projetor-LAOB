@@ -24,11 +24,12 @@ export DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-unix:path=/run/user/
 
 # janela em tela cheia no projetor (sem isso ela abre no monitor); só se o projetor estiver ligado.
 # Só é consultado quando um programa vai abrir: "estado" e "cmd" são chamados o tempo todo pelo
-# painel e não precisam do xrandr (uns 50 ms e uma conversa com o X a cada chamada).
+# painel e não precisam do xrandr. --current lê o que o X já sabe, sem sondar as saídas de vídeo
+# (o xrandr puro faz o driver NVIDIA sondar tudo de novo e despeja umas 20 linhas no journal).
 TELA=()
 tela() {
   TELA=()
-  if xrandr 2>/dev/null | grep -q "^HDMI-0 connected"; then
+  if xrandr --current 2>/dev/null | grep -q "^HDMI-0 connected"; then
     TELA=(-mergeConfig "$D/projetor.cfg")
   fi
 }

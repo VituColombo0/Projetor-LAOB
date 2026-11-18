@@ -3,6 +3,7 @@ import importlib
 import io
 import os
 import unittest
+from unittest import mock
 
 import cv2
 import numpy as np
@@ -19,6 +20,11 @@ class Painel(Ambiente):
         importlib.reload(som)
         import painel
         self.painel = importlib.reload(painel)
+        # nada de capturar a tela de verdade: no laob o teste abria um ffmpeg no projetor e gravava no
+        # mesmo /dev/shm/areia-projetor-*.jpg do painel em uso
+        self.tela_de_verdade = self.painel._tela_do_projetor
+        self.painel._tela_do_projetor = lambda: (None, {})
+        self.painel.AO_VIVO = os.path.join(self.tmp, "ao-vivo.jpg")
         self.c = self.painel.app.test_client()
 
     def get(self, url, ip="100.101.102.103"):
@@ -191,12 +197,78 @@ class Painel(Ambiente):
         self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd chuva 0.400 0.600 8")
         self.assertEqual(self.post("/chuva", json={"x": 3, "y": 0.6}).status_code, 400)
         self.assertEqual(self.post("/chuva", json={"secar": True}).status_code, 200)
-        self.assertIn(self.get("/projetor.jpg").status_code, (200, 404))   # sem tela nos testes: 404, nunca erro
+        self.assertEqual(self.get("/projetor.jpg").status_code, 404)    # sem tela nos testes: 404, nunca erro
         pagina = self.get("/").get_data(as_text=True)
         self.assertIn('id="ao-vivo"', pagina)
         self.assertEqual(pagina.count('data-m="rosto"'), 1)                # a foto só na aba Fotos
         self.assertIn("Vida na areia", pagina)
         self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd secar")
+
+    def test_comida_pelo_painel(self):
+        log = os.path.join(self.D, "sandbox.log")
+        self.assertEqual(self.post("/comida", json={"x": 0.4, "y": 0.6}).status_code, 400)   # areia fechada
+        self.assertEqual(self.post("/mar", json={"peixe": 3}).status_code, 200)
+        with open(log, "w") as f:
+            f.write("Animais: mar (3)\n")
+        r = self.post("/comida", json={"x": 0.4, "y": 0.6})
+        self.assertEqual(r.status_code, 400)                             # só peixes: ninguém vem comer
+        self.assertIn("pássaros nem cachorros", r.get_json()["msg"])
+        self.assertNotIn("cmd comida", " ".join(self.comandos()))
+        self.assertEqual(self.post("/mar", json={"passaro": 3, "cachorro": 1}).status_code, 200)
+        with open(log, "w") as f:
+            f.write("Animais: mar (4)\n")
+        r = self.post("/comida", json={"x": 0.4, "y": 0.6})
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertEqual(r.get_json()["msg"], "Comida jogada: os pássaros e o cachorro vêm comer")
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd comida 0.400 0.600 20")
+        for ruim in ({"x": 3, "y": 0.6}, {"y": 0.6}, {}):
+            self.assertEqual(self.post("/comida", json=ruim).status_code, 400, ruim)
+        self.assertEqual(self.painel.quem_vem_comer({"passaro": 1}), "o pássaro vem comer")
+        self.assertEqual(self.painel.quem_vem_comer({"cachorro": 2}), "os cachorros vêm comer")
+        pagina = self.get("/").get_data(as_text=True)
+        self.assertIn('id="selo-comida"', pagina)                        # selo "ao vivo" também na comida
+        self.assertIn("m.remove()", pagina)                              # o pão sai se o pedido não deu certo
+
+    def test_versao_da_pagina(self):
+        """A página aberta recarrega sozinha quando o painel é atualizado (versão no /estado)."""
+        pagina = self.get("/").get_data(as_text=True)
+        self.assertNotIn("__VERSAO__", pagina)
+        v = self.get("/estado").get_json()["versao"]
+        self.assertEqual(v, self.painel.VERSAO)
+        self.assertRegex(v, r"^[0-9a-f]{10}$")
+        self.assertIn(f"const VERSAO = '{v}';", pagina)
+        self.assertIn("location.reload()", pagina)
+        self.assertNotIn(".g3 ", pagina)                                 # classe CSS sem uso, tirada
+
+    def test_imagem_ao_vivo_inteira(self):
+        """/projetor.jpg manda os bytes lidos de uma vez (o tamanho sempre bate) e o ffmpeg grava atômico."""
+        arq = os.path.join(self.tmp, "projetor.jpg")
+        with open(arq, "wb") as f:
+            f.write(b"\xff\xd8quadro\xff\xd9")
+        with mock.patch.object(self.painel, "AO_VIVO", arq), mock.patch.object(self.painel, "_liga_ao_vivo", lambda: True):
+            r = self.get("/projetor.jpg")
+            self.assertEqual(r.status_code, 200)
+            self.assertEqual(r.get_data(), b"\xff\xd8quadro\xff\xd9")
+            self.assertEqual(r.headers["Content-Length"], str(len(r.get_data())))
+            self.assertEqual(r.headers["Content-Type"], "image/jpeg")
+        chamadas = []
+
+        class Proc:
+            def poll(self):
+                return None
+
+        saida = mock.Mock(stdout="HDMI-0 connected 1024x768+1280+0 (normal left inverted right x axis y axis)\n")
+        with mock.patch.object(self.painel, "_tela_do_projetor", self.tela_de_verdade), \
+                mock.patch.object(self.painel.subprocess, "run", lambda a, **kw: chamadas.append(a) or saida), \
+                mock.patch.object(self.painel.subprocess, "Popen", lambda a, **kw: chamadas.append(a) or Proc()):
+            self.painel._ao_vivo["proc"] = None
+            self.assertTrue(self.painel._liga_ao_vivo())
+        self.painel._ao_vivo["proc"] = None
+        self.assertEqual(chamadas[0], ["xrandr", "--current"])           # sem sondar as saídas de vídeo
+        ff = chamadas[1]
+        self.assertEqual(ff[ff.index("-atomic_writing") + 1], "1")
+        self.assertEqual(ff[-1], self.painel.AO_VIVO)                    # por último: o pkill casa
+        self.assertTrue(any(x.endswith(".0+1280,0") for x in ff), ff)   # a saída do projetor
 
     def test_copie_o_relevo_pelo_painel(self):
         self.assertIn("Copie o relevo", self.get("/").get_data(as_text=True))

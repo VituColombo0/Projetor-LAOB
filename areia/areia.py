@@ -268,7 +268,6 @@ def aplica(e):
         if rc != 0 or qual() == "nenhum":
             raise Erro("a topografia não abriu: " + out)
         salva(e)
-        _volta_tema()  # se o jogo do vulcão estava ligado, o tema de antes volta
         return
     if e["modo"] in ("rosto", "esculpir") and not os.path.exists(os.path.join(FOTOS, "rosto.png")):
         raise Erro("ainda não há imagem: escolha uma")
@@ -286,8 +285,6 @@ def aplica(e):
     else:
         _comando("relevo")
     salva(e)
-    if parar:
-        _volta_tema()
 
 
 def ajusta(e):
@@ -377,8 +374,6 @@ def escolhe_tema(nome):
         raise Erro("não consegui trocar as cores agora (" + out + "); valem na próxima abertura")
     e = estado()
     e["tema"] = t
-    if t != "vulcao":
-        e.pop("tema_antes_do_vulcao", None)  # quem escolheu um tema manda nele
     salva(e)
     return t
 
@@ -392,7 +387,6 @@ PARAR_BRINCADEIRAS = {"tesouro": ("fossilFim", "labirintoFim", "jogoFim", "anima
                       "labirinto": ("tesouroFim", "fossilFim", "jogoFim", "animais nada", "copiaFim"),
                       "jogo": ("tesouroFim", "fossilFim", "labirintoFim", "animais nada", "copiaFim"),
                       "animais": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim", "copiaFim"),
-                      "membros": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim", "copiaFim"),
                       "mar": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim", "copiaFim"),
                       "mundo": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim", "copiaFim"),
                       "copia": ("tesouroFim", "fossilFim", "labirintoFim", "jogoFim", "animais nada"),
@@ -413,22 +407,6 @@ def _brincadeira(comando):
     e = estado()
     e["modo"] = "relevo"
     salva(e)
-    if comando != "jogo vulcao" and not comando.startswith("jogo vulcao "):
-        _volta_tema()
-
-
-def _volta_tema():
-    """O jogo do vulcão troca o tema para vulcão (lava); terminado, volta o tema que estava."""
-    e = estado()
-    antes = e.pop("tema_antes_do_vulcao", None)
-    if not antes:
-        return
-    salva(e)
-    if tema_atual() == "vulcao":
-        try:
-            escolhe_tema(antes)
-        except Erro:
-            pass
 
 
 def tesouro(dificuldade="normal"):
@@ -575,14 +553,15 @@ def animais(tipo, quantidade=None):
         sel = mar({k: (n if t == "todos" or k in MARINHOS else 0) for k, n in MAR_PADRAO.items()})
         return t, sum(sel.values())
     n = int(quantidade) if quantidade else (15 if t == "todos" else 10)
-    if not 1 <= n <= 24:
-        raise Erro("quantidade: de 1 a 24")
+    if not 1 <= n <= MAX_BICHOS:   # o SARndbox aceita até 32 (MAX_AGENTES), como no "mar"
+        raise Erro(f"quantidade: de 1 a {MAX_BICHOS}")
     _brincadeira(f"animais {t} {n}")
     return t, n
 
 
 def animais_situacao():
-    """peixes, carros, pessoas, todos ou nada (último pedido no registro; outra brincadeira tira os animais)."""
+    """peixes, carros, pessoas, todos, mar, mundo ou nada (último pedido no registro; outra brincadeira
+    tira os animais)."""
     if qual() != "rosto":
         return "nada"
     linhas = [l for l in _registro_caca() if l.startswith(("Animais", "Tesouro: escondendo", "Fossil: escondendo",
@@ -591,7 +570,7 @@ def animais_situacao():
     if not linhas or not linhas[-1].startswith("Animais: "):
         return "nada"
     t = linhas[-1].split()[1]
-    return t if t in ANIMAIS or t in ("membros", "mundo", "mar") else "nada"
+    return t if t in ANIMAIS or t in ("mundo", "mar") else "nada"
 
 
 # ---------- animais marinhos à escolha (nadam no lago e na água da chuva) ----------
@@ -657,38 +636,56 @@ def mar(selecao=None):
 
 # ---------- chuva pelo painel (além da mão aberta sobre a areia) ----------
 
-def chuva(fx, fy, segundos=8):
-    """Uma nuvem joga água no ponto (fx, fy), de 0 a 1 dentro da área iluminada (0, 0 = canto de
-    baixo, à esquerda, de quem olha a imagem do projetor)."""
+def _ponto(fx, fy, segundos):
+    """Confere um ponto da área iluminada (0 a 1) e a duração (1 a 60 s); devolve os três como float."""
     try:
         fx, fy, segundos = float(fx), float(fy), float(segundos)
     except (TypeError, ValueError):
         raise Erro("ponto inválido")
     if not (0 <= fx <= 1 and 0 <= fy <= 1) or not 1 <= segundos <= 60:
         raise Erro("ponto fora da areia")
-    if qual() != "rosto":
-        raise Erro("a areia não está aberta")
+    return fx, fy, segundos
+
+
+def _exige_rosto(o_que):
+    """Chuva, comida e secar só existem na versão com Foto. Antes tudo dizia "a areia não está aberta",
+    até com a topografia de reserva (o SARndbox original) no projetor."""
+    q = qual()
+    if q == "nenhum":
+        raise Erro("a areia está fechada: toque em Reabrir a areia (aba Projetor)")
+    if q != "rosto":
+        raise Erro(f"a topografia de reserva não aceita {o_que}: toque em Reabrir a areia (aba Projetor)")
+
+
+def chuva(fx, fy, segundos=8):
+    """Uma nuvem joga água no ponto (fx, fy), de 0 a 1 dentro da área iluminada (0, 0 = canto de
+    baixo, à esquerda, de quem olha a imagem do projetor)."""
+    fx, fy, segundos = _ponto(fx, fy, segundos)
+    _exige_rosto("chuva")
     _comando(f"chuva {fx:.3f} {fy:.3f} {segundos:g}")
+
+
+COMEM = ("passaro", "cachorro")   # só eles vêm à comida (Extras.cpp: comidaPerto em passaro() e cachorro())
 
 
 def comida(fx, fy, segundos=20):
     """Joga comida no ponto (fx, fy) da área iluminada: os pássaros pousam em volta e os cachorros
-    sentam do lado (a mão de verdade só faz chover)."""
-    try:
-        fx, fy, segundos = float(fx), float(fy), float(segundos)
-    except (TypeError, ValueError):
-        raise Erro("ponto inválido")
-    if not (0 <= fx <= 1 and 0 <= fy <= 1) or not 1 <= segundos <= 60:
-        raise Erro("ponto fora da areia")
-    if qual() != "rosto":
-        raise Erro("a areia não está aberta")
+    sentam do lado (a mão de verdade só faz chover). Só vale com pássaros ou cachorros na areia
+    (eles só nascem pelo "mar", a Vida na areia do painel). Devolve {"passaro": n, "cachorro": n}."""
+    fx, fy, segundos = _ponto(fx, fy, segundos)
+    _exige_rosto("comida")
+    sel = mar_escolhido()
+    comem = {k: sel.get(k, 0) for k in COMEM if sel.get(k, 0)}
+    if animais_situacao() != "mar" or not comem:
+        raise Erro("não há pássaros nem cachorros na areia, e só eles vêm comer: "
+                   "solte alguns na aba Vida (Soltar na areia) e jogue de novo")
     _comando(f"comida {fx:.3f} {fy:.3f} {segundos:g}")
+    return comem
 
 
 def secar():
     """Tira toda a água da areia (a da chuva e a dos jogos)."""
-    if qual() != "rosto":
-        raise Erro("a areia não está aberta")
+    _exige_rosto("secar a água")
     _comando("secar")
 
 
@@ -764,26 +761,16 @@ def membros_lista():
     return nomes[:8], len(com_foto), [n for n in nomes[:8] if n in presentes]
 
 
-def _comando_membros(nomes, n_fotos, presentes, com_painel):
-    return " ".join(["membros", str(estado()["giro"] // 90), str(n_fotos), PAINEL_ROSTOS if com_painel and n_fotos else "-",
-                     *[n + ("+" if n in presentes else "") for n in nomes]])
-
-
-def membros():
-    """Liga as pessoinhas dos membros: todos os que têm foto (com o rosto), mais quem o Willbert
-    está vendo. Devolve (nomes, presentes)."""
-    membros_com_foto()   # refaz o painel de rostos se a pasta mudou
-    nomes, n_fotos, presentes = membros_lista()
-    _brincadeira(_comando_membros(nomes, n_fotos, presentes, True))
-    _membros_mandados[0] = (nomes, presentes)
-    return nomes, presentes
-
-
 def membros_atualiza():
-    """Chamado de tempos em tempos (painel): no modo membros ou no mundo LAOB, se mudou quem está
-    presente (ou as fotos), manda a lista nova. Devolve True se mandou."""
-    sit = animais_situacao()
-    if sit not in ("membros", "mundo"):
+    """Chamado de tempos em tempos (painel): com o mundo LAOB ligado, se mudou quem está presente
+    (ou as fotos), manda a lista nova. Devolve True se mandou.
+    (As pessoinhas com nome, o antigo modo "membros", saíram em 18/11/2026: o mundo LAOB as substituiu
+    desde 14/11 e "membros" virou só outro nome para o mundo.)"""
+    # Primeiro o registro, que já está na memória: sem o mundo ligado (quase sempre), sai sem abrir
+    # o sandbox.sh estado (antes ele rodava a cada 5 s, o dia todo). As linhas têm sufixo, como
+    # "Animais: mundo (2)", e existe "Animais removidos.": por isso o espaço e o split.
+    ult = next((l for l in reversed(_registro_caca()) if l.startswith("Animais: ")), "")
+    if ult.split()[1:2] != ["mundo"] or animais_situacao() != "mundo":
         _membros_mandados[0] = None
         return False
     _, refez = membros_com_foto()
@@ -791,8 +778,7 @@ def membros_atualiza():
     if (nomes, presentes) == _membros_mandados[0] and not refez:
         return False
     com_painel = refez or _membros_mandados[0] is None
-    _comando(_comando_mundo(nomes, n_fotos, presentes, com_painel) if sit == "mundo"
-             else _comando_membros(nomes, n_fotos, presentes, com_painel))
+    _comando(_comando_mundo(nomes, n_fotos, presentes, com_painel))
     _membros_mandados[0] = (nomes, presentes)
     return True
 
@@ -979,7 +965,6 @@ def jogo_novo():
 def jogo_fim():
     if qual() == "rosto":
         _comando("jogoFim")
-    _volta_tema()
 
 
 # ---------- copie o relevo: o projetor mostra um relevo-alvo; a nota diz quanto já foi feito ----------
@@ -1041,7 +1026,6 @@ def para_tudo():
     """Encerra todas as brincadeiras de uma vez (botão "Parar brincadeiras")."""
     if qual() == "rosto":
         _comando("tesouroFim", "fossilFim", "animais nada", "labirintoFim", "jogoFim", "copiaFim")
-    _volta_tema()
 
 
 def reabre():
@@ -1066,7 +1050,5 @@ if __name__ == "__main__":
     import sys
     if sys.argv[1:] == ["marca-topografia"]:
         marca_topografia()
-    elif sys.argv[1:] == ["volta-tema"]:
-        _volta_tema()
     else:
-        sys.exit("uso: python3 areia.py marca-topografia|volta-tema")
+        sys.exit("uso: python3 areia.py marca-topografia")

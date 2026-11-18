@@ -32,7 +32,7 @@ const float PONTOS[4][2]={{0.64f,0.63f},{0.25f,0.17f},{0.60f,0.40f},{0.84f,0.62f
 const char* NOME_PONTO[4]={"foi até a caixa de areia","foi até o quadro","foi até a bancada do meio","foi ver o manequim"};
 }
 
-void Extras::mundo(const std::vector<std::string>& lista,int giro,int fotos,int)
+void Extras::mundo(const std::vector<std::string>& lista,int giro,int fotos)
 	{
 	/* Mesmos nomes de antes e a sala já montada: só atualiza quem está presente (cada um continua
 	   de onde estava). */
@@ -67,9 +67,11 @@ void Extras::mundo(const std::vector<std::string>& lista,int giro,int fotos,int)
 	labirinto=false;
 	labEstado=0;
 	nPecas=nFontes=0;
-	membros(lista,giro,fotos); // nomes, cores e rostos
+	if(lencol())
+		labZerarAgua=true; // o lago dos bichos vai embora (a sala não tem água)
+	nivelAgua=-1000.0f; // sem lago (o SEM de Extras.cpp)
+	copiaNomes(lista,giro,fotos); // nomes, cores e rostos
 	modo=MUNDO;
-	quantos=nNomes;
 	for(int i=0;i<MAX_AGENTES;++i)
 		{
 		if(i>=quantos)
@@ -78,11 +80,9 @@ void Extras::mundo(const std::vector<std::string>& lista,int giro,int fotos,int)
 		mEstado[i]=1;
 		mAte[i]=mTroca[i]=0.0f;
 		escondido[i]=true;
-		noLab[i]=false;
 		}
 	for(int i=0;i<MAX_NOMES;++i)
 		rostoAte[i]=0.0;
-	camX=camAlvo=0.0f;
 	mundoPronto=false;
 	mundoPedido=true;
 	if(mapaOk)
@@ -109,8 +109,8 @@ void Extras::mundoMonta(void)
 			ax[i]=bmin[0]+ASSENTOS[i%8][0]*w;
 			ay[i]=bmin[1]+ASSENTOS[i%8][1]*h;
 			ang[i]=-PI*0.5f;
-			wpX[i][0]=ax[i];
-			wpY[i][0]=ay[i];
+			wpX[i]=ax[i];
+			wpY[i]=ay[i];
 			mTroca[i]=float(tempo)+6.0f+10.0f*aleatorio();
 			mAte[i]=0.0f;
 			}
@@ -129,11 +129,6 @@ void Extras::mundoMonta(void)
 			anuncia(std::string("Mundo: ")+nomes[i]+" está na bancada");
 		else
 			anuncia(std::string("Mundo: ")+nomes[i]+" saiu do laboratório");
-	}
-
-int Extras::mundoEscolhe(int)
-	{
-	return 0; // (era o sorteio de lugares da cidade; a sala só tem os pontos fixos)
 	}
 
 void Extras::mundoPasso(float dt)
@@ -166,8 +161,8 @@ void Extras::mundoPasso(float dt)
 			ay[i]=py-1.5f;
 			ang[i]=PI*0.5f;
 			vel[i]=vb[i];
-			wpX[i][0]=bmin[0]+ASSENTOS[i%8][0]*w;
-			wpY[i][0]=bmin[1]+ASSENTOS[i%8][1]*h;
+			wpX[i]=bmin[0]+ASSENTOS[i%8][0]*w;
+			wpY[i]=bmin[1]+ASSENTOS[i%8][1]*h;
 			mTroca[i]=float(tempo)+8.0f+8.0f*aleatorio();
 			mAte[i]=float(tempo)+25.0f+30.0f*aleatorio(); // a visita de quem não está presente dura isso
 			if(i<nNomes)
@@ -200,11 +195,11 @@ void Extras::mundoPasso(float dt)
 					if(i<nNomes)
 						anuncia(std::string("Mundo: ")+nomes[i]+" "+NOME_PONTO[k]);
 					}
-				wpX[i][0]=bmin[0]+fx*w;
-				wpY[i][0]=bmin[1]+fy*h;
+				wpX[i]=bmin[0]+fx*w;
+				wpY[i]=bmin[1]+fy*h;
 				}
-			tx=wpX[i][0];
-			ty=wpY[i][0];
+			tx=wpX[i];
+			ty=wpY[i];
 			anda=true;
 			if(!presente[i]&&float(tempo)>=mAte[i])
 				mEstado[i]=2; // acabou a visita: vai embora

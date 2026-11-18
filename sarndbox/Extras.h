@@ -23,11 +23,11 @@ class Extras
 	{
 	public:
 	enum {MAX_AGENTES=32};
-	enum Modo {NADA=0,PEIXES=1,CARROS=2,TODOS=3,PESSOAS=4,MEMBROS=5,MUNDO=6}; // MUNDO: a cidade LAOB (Mundo.cpp) // TODOS = peixes, carrinhos e pessoas
-	enum {NUM_UNIFORMS=19};
-	enum {MAX_NOMES=8,MAX_LETRAS=8}; // membros do laboratório andando na areia, com o nome em cima
+	enum Modo {NADA=0,PEIXES=1,CARROS=2,TODOS=3,PESSOAS=4,MUNDO=6}; // TODOS = peixes, carrinhos e pessoas; MUNDO: o laboratório (Mundo.cpp); 5 era o modo membros (tirado em 18/11/2026)
+	enum {NUM_UNIFORMS=18}; // cabe em heightMapShaderUniforms[48] do SurfaceRenderer (static_assert no patch_surface.py)
+	enum {MAX_NOMES=8,MAX_LETRAS=8}; // membros do laboratório (Mundo), com o nome em cima
 	/* Efeito animado de cada tema de cor: */
-	enum Efeito {SEM_EFEITO=0,LAVA=1,NEVE=2,POEIRA=3,AREIA=4,ONDAS=5,BRILHO=6,CHUVA=7};
+	enum Efeito {SEM_EFEITO=0,LAVA=1,NEVE=2,POEIRA=3,AREIA=4,ONDAS=5,BRILHO=6}; // (a chuva fina do clássico saiu em 13/11)
 	int efeito;
 
 	/* Área iluminada (cm, espaço da caixa) e mapa de alturas: */
@@ -104,9 +104,11 @@ class Extras
 	static int efeitoDoTema(const char* nome); // vulcao -> LAVA, inverno -> NEVE...; -1 se não existe
 
 	/* Jogos de água (Jogos.cpp): como o labirinto, a água é a da simulação do SARndbox e a GPU mede
-	   quanta água há em cada peça (casa, planta, portão...) duas vezes por segundo. */
-	enum Jogo {SEM_JOGO=0,CORRIDA=1,VILA=2,FAZENDA=3,ROTA=4,LAGO=5,VULCAO=6,BARCO=7,RESGATE=8,NUM_JOGOS=9};
-	enum TipoPeca {P_NADA=0,P_NASCENTE=1,P_ALVO=2,P_CASA=3,P_PLANTA=4,P_PORTAO=5,P_LAGO=6,P_BARCO=7,P_PORTO=8,P_PEIXE=9,P_PLACAR=10,P_AVISO=11,P_PERIGO=12,P_LAB=13,P_PRACA=14,P_CAFE=15,P_PARQUE=16,P_CAMPO=17,P_MERCADO=18,P_PESCA=19};
+	   quanta água há em cada peça (casa, portão, bandeira...) duas vezes por segundo.
+	   Os números são fixos (3, 5, 7 e 8 eram jogos tirados): vão para o log e para o shader, que separa
+	   as peças por faixas de tipo (placar 9,5-10,5, aviso 10,5-11,5, armadilha >11,5). */
+	enum Jogo {SEM_JOGO=0,CORRIDA=1,VILA=2,ROTA=4,VULCAO=6,NUM_JOGOS=9};
+	enum TipoPeca {P_NADA=0,P_NASCENTE=1,P_ALVO=2,P_CASA=3,P_PORTAO=5,P_PLACAR=10,P_AVISO=11,P_PERIGO=12};
 	enum {MAX_PECAS=16,MAX_FONTES=4};
 	struct Peca
 		{
@@ -114,16 +116,14 @@ class Extras
 		float x,y,raio; // cm, espaço da caixa
 		int time; // corrida: 0 azul, 1 vermelho
 		int ordem; // rota: número do portão
-		int estado; // 0 esperando/seco, 1 conseguiu (molhado, salvo, chegou), 2 perdeu (inundada, murchou...)
-		float nivel; // planta/peixe: água ou ar que resta (0..1); lago: profundidade média (cm)
-		float ang; // barco: direção
+		int estado; // 0 esperando/seco, 1 conseguiu (passou, chegou, a salvo), 2 perdeu (casa alagada)
 		};
 	struct Fonte {float x,y,vazao; bool ativa;};
 	int jogo,jogoFase; // fase 0 desligado, 1 jogando, 2 terminou (comemoração, rodada nova depois)
 	int jogoNivel; // 1 fácil, 2 normal, 3 difícil
 	double jogoInicio,jogoFim; // início da rodada e do fim (fase 2)
 	float jogoDuracao; // segundos de chuva/rodada (0 = sem limite)
-	int jogoPontos,jogoTotal,jogoRodadas,jogoVencedor,proximoPortao;
+	int jogoPontos,jogoVencedor,proximoPortao;
 	bool jogoPedido; // começar assim que houver mapa de alturas
 	Peca pecas[MAX_PECAS];
 	int nPecas;
@@ -134,10 +134,8 @@ class Extras
 	static const char* nomeDoJogo(int j);
 	void pedeJogo(int qual,int nivel); // começa já ou quando o mapa estiver pronto
 	void fimDoJogo(void); // desliga o jogo (a água dele é esvaziada)
-	/* Medição da GPU: para cada peça, profundidade máxima e média de água no raio (cm) e, no barco,
-	   a velocidade da água (cm/s, espaço da caixa): */
-	void jogoLeitura(const float* maxima,const float* media,float vx,float vy);
-	bool jogoPrecisaVelocidade(void) const {return jogo==BARCO&&jogoFase==1;}
+	/* Medição da GPU: para cada peça, a maior profundidade de água no raio dela (cm): */
+	void jogoLeitura(const float* maxima);
 	void jogoPasso(float dt);
 	/* Animais marinhos: espécie = parte inteira do tipo (1 peixe, 4 tubarão, 5 tartaruga, 6 água-viva,
 	   7 polvo, 8 arraia). Nadam no lago (areia baixa) e na água da chuva (aguaSim, medida pelo Sandbox). */
@@ -169,14 +167,14 @@ class Extras
 	std::vector<unsigned char> atlas; // painel de rostos: MAX_NOMES quadros RGBA lado a lado
 	mutable bool atlasNovo; mutable GLuint atlasTextura; // textura (criada no contexto OpenGL, no envio)
 	bool carregaAtlas(const char* arquivo);
-	/* Mundo LAOB (Mundo.cpp): destino e rotina de cada boneco */
+	/* Mundo LAOB (Mundo.cpp, o laboratório): destino e rotina de cada boneco; alvoX/temAlvo também
+	   servem ao pássaro e ao cachorro */
 	float alvoX[MAX_AGENTES],alvoY[MAX_AGENTES],mAte[MAX_AGENTES],mTroca[MAX_AGENTES];
 	bool temAlvo[MAX_AGENTES],escondido[MAX_AGENTES];
-	int mEstado[MAX_AGENTES],mLugar[MAX_AGENTES],mCasa[MAX_AGENTES]; // 0 no lugar / 1 a caminho; peça atual ou destino; casa
+	int mEstado[MAX_AGENTES]; // 0 dentro da sala, 1 fora (esperando a hora de entrar), 2 saindo pela porta
 	double rostoAte[MAX_NOMES]; // até quando mostrar o rosto no balão
-	float wpX[MAX_AGENTES][5],wpY[MAX_AGENTES][5]; int wpN[MAX_AGENTES],wpI[MAX_AGENTES],wpCarro[MAX_AGENTES]; // pontos de passagem
-	bool noLab[MAX_AGENTES]; int mDest[MAX_AGENTES]; // dentro do laboratório (4ª tela); destino já escolhido ao sair
-	float horaFixa; // hora da cidade para testes (0-24); <0 = a hora de verdade
+	float wpX[MAX_AGENTES],wpY[MAX_AGENTES]; // para onde o boneco está andando (bancada ou ponto da sala)
+	float horaFixa; // hora do laboratório para testes (0-24); <0 = a hora de verdade
 	/* Copie o relevo: o alvo é a soma de até 4 morros/buracos (gaussianas: x, y, altura cm, largura cm)
 	   sobre a altura da areia no começo; a nota (0-100) compara o alvo com o relevo medido, 2x por segundo */
 	enum {COPIA_MAX=4,NUM_FORMAS=6};
@@ -190,28 +188,22 @@ class Extras
 	/* Transição: quando a brincadeira muda, o desenho novo aparece aos poucos (0,6 s) */
 	long long assinaturaAntes; double trocaTempo;
 	float fatorVazao; // multiplica a água de todas as nascentes dos jogos e do labirinto (calibração)
-	float camX,camAlvo; double camTroca; // a cidade tem 3 telas de largura: deslocamento da imagem (cm)
 	bool mundoPedido,mundoPronto; // pedido antes de haver mapa; sala montada
-	void mundo(const std::vector<std::string>& lista,int giro,int fotos,int moradores);
+	void mundo(const std::vector<std::string>& lista,int giro,int fotos); // "NOME+" = presente agora
 	void mundoMonta(void);
-	int mundoEscolhe(int i);
 	void mundoPasso(float dt);
 	bool mundoRosto(const char* nome,float segundos=12.0f);
-	void membros(const std::vector<std::string>& lista,int giro,int fotos=0); // uma pessoinha por nome (mantém quem já estava)
 	void armadilhasDoLabirinto(void); // peças P_PERIGO entre a nascente e o alvo
-	float vbx,vby; // última velocidade da água no barco
 	/* Comida jogada pelo painel (comando "comida"): os pássaros pousam em volta e os cachorros sentam do lado.
-	   A mão de verdade NÃO é seguida (18/11: só faz chover; seguir o quadro cru do sensor custava CPU). */
-	enum {MAX_MAOS=4}; // só a última vaga é usada (a comida)
-	struct Mao {float x,y,r; double visto,desde;};
-	Mao maos[MAX_MAOS];
-	double maoFalsaAte;
-	bool querMaos(void) const {return mapaOk&&modo!=NADA&&modo!=MUNDO&&modo!=MEMBROS;}
-	int maoPerto(float x,float y,float& borda,float idade=0.6f) const; // mão vista há menos de "idade" s mais perto; borda = cm até a beira dela; -1 = nenhuma
-	void maoTeste(float fx,float fy,float segundos); // mão de mentira (testes): fx, fy = 0..1 na área iluminada
-	/* Estado de cada bicho: 0 normal, 1 pousado/sentado, 2 mergulhando, 3 indo pousar/indo até a mão, 4 perseguindo */
+	   O shader desenha um pão com migalhas que somem conforme ela acaba (extrasComida). A mão de verdade NÃO é seguida (18/11: só faz chover). */
+	struct Comida {float x,y,r; double ate,dura;}; // centro e raio (cm); até quando fica e quanto durava
+	Comida comida;
+	bool querComida(void) const {return mapaOk&&modo!=NADA&&modo!=MUNDO;}
+	bool comidaPerto(float x,float y,float& borda,float folga=0.6f) const; // comida na areia (ou acabada há menos de "folga" s); borda = cm até a beira dela
+	void jogarComida(float fx,float fy,float segundos); // fx, fy = 0..1 na área iluminada
+	/* Estado de cada bicho: 0 normal, 1 pousado/sentado, 2 mergulhando, 3 indo pousar/indo até a comida, 4 perseguindo */
 	int acao[MAX_AGENTES],presa[MAX_AGENTES]; float acaoT[MAX_AGENTES],voo[MAX_AGENTES],escala[MAX_AGENTES]; double acaoAte[MAX_AGENTES];
- // relógios, plantas secando, ar dos peixes, barco andando
+ // relógios dos jogos e passo dos bichos
 	void passo(float dt);
 
 	/* Shader: código a acrescentar e envio dos uniforms (na ordem de localizações): */
@@ -238,8 +230,9 @@ class Extras
 	bool sorteiaPonto(bool queAgua,float& x,float& y);
 	void nasce(int i);
 	void passaro(int i,float dt);
-	bool cachorro(int i,float dt); // true = sentado do lado da mão
-	bool lugarDePouso(int i,int m);
+	bool cachorro(int i,float dt); // true = sentado do lado da comida
+	bool lugarDePouso(int i);
+	void copiaNomes(const std::vector<std::string>& lista,int giro,int fotos); // nomes, cores e rostos dos membros (para o mundo)
 	};
 
 #endif

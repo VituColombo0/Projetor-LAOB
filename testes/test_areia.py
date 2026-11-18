@@ -272,7 +272,9 @@ class Brincadeiras(Ambiente):
         self.assertEqual(self.comandos()[-1], "cmd mar peixe=6 tubarao=1 tartaruga=2 aguaviva=2 polvo=1 arraia=1 pato=2 barco=1 carro=4 pessoa=4 cachorro=2 passaro=3")
         self.assertEqual(self.areia.animais("gente", 6), ("pessoas", 6))
         self.assertEqual(self.comandos()[-1], "cmd animais pessoas 6")
-        for t, n in (("gatos", None), ("peixes", "99")):
+        self.assertEqual(self.areia.animais("peixes", 32), ("peixes", 32))  # o SARndbox aceita até 32 (antes 24)
+        self.assertEqual(self.comandos()[-1], "cmd animais peixes 32")
+        for t, n in (("gatos", None), ("peixes", "99"), ("peixes", 33), ("carros", -1)):
             with self.assertRaises(self.areia.Erro):
                 self.areia.animais(t, n)
         self.areia.animais_fim()
@@ -466,7 +468,10 @@ class JogosDeAgua(Ambiente):
         self.assertEqual(self.cmds()[-1], "cmd jogoFim")
 
 
-class MembrosNaAreia(Ambiente):
+class ComMembros(Ambiente):
+    """Base dos testes dos membros (sem testes próprios: antes o MundoLaob herdava os do modo membros
+    e eles rodavam duas vezes)."""
+
     def cmds(self):
         return [c for c in self.comandos() if c.startswith("cmd")]
 
@@ -480,37 +485,7 @@ class MembrosNaAreia(Ambiente):
         self.areia.STATUS_WILLBERT = os.path.join(self.D, "status-willbert.json")
         self.areia._membros_mandados[0] = None
 
-    def test_nomes_de_quem_esta_presente(self):
-        self.assertEqual(self.areia.membros_presentes(), [])            # Willbert desligado
-        self.status(["Victor Vieira", "Gazziro", "João-Pedro", "Maria Antonieta", "Victor"])
-        self.assertEqual(self.areia.membros_presentes(), ["VICTOR", "GAZZIRO", "JOAOPEDR", "MARIA"])
-        self.status(["Victor"], idade=600)                              # Willbert parou de publicar
-        self.assertEqual(self.areia.membros_presentes(), [])
-        escreve(self.areia.STATUS_WILLBERT, "{ quebrado")
-        self.assertEqual(self.areia.membros_presentes(), [])
-
-    def test_liga_e_acompanha_quem_chega_e_sai(self):
-        self.status(["Victor", "Lucas"])
-        self.assertEqual(self.areia.membros(), (["VICTOR", "LUCAS"], ["VICTOR", "LUCAS"]))
-        self.assertEqual(self.cmds()[-1], "cmd membros 0 0 - VICTOR+ LUCAS+")   # sem fotos: só o nome
-        self.assertIn("cmd jogoFim", self.cmds()[-5:])                  # uma brincadeira por vez
-        log = os.path.join(self.D, "sandbox.log")
-        escreve(log, "Animais: membros (2, 0 com rosto)\n")
-        self.assertEqual(self.areia.animais_situacao(), "membros")
-        n = len(self.cmds())
-        self.assertFalse(self.areia.membros_atualiza())                 # ninguém chegou nem saiu
-        self.assertEqual(len(self.cmds()), n)
-        self.status(["Victor", "Lucas", "Mario"])
-        self.assertTrue(self.areia.membros_atualiza())
-        self.assertEqual(self.cmds()[-1], "cmd membros 0 0 - VICTOR+ LUCAS+ MARIO+")
-        self.status([])
-        self.assertTrue(self.areia.membros_atualiza())
-        self.assertEqual(self.cmds()[-1], "cmd membros 0 0 -")
-        escreve(log, "Animais: membros (0, 0 com rosto)\nTesouro: escondendo a 4 cm\n")   # outra brincadeira entrou
-        self.status(["Victor"])
-        self.assertFalse(self.areia.membros_atualiza())
-
-    def test_membros_com_foto_aparecem_sempre(self):
+    def fotos_de_membros(self):
         # painel de rostos já montado (o membros.py de verdade precisa do OpenCV e é testado no laob)
         pasta = os.path.join(self.D, "membros")
         os.makedirs(pasta)
@@ -520,27 +495,38 @@ class MembrosNaAreia(Ambiente):
         escreve(self.areia.PAINEL_ROSTOS, b"x")
         escreve(os.path.join(self.areia.FOTOS, "membros.json"), json.dumps({"nomes": ["GAZZIRO", "VICTOR"]}))
         self.areia.PASTA_MEMBROS = pasta
-        self.status(["Lucas", "Victor"])
-        nomes, presentes = self.areia.membros()
-        self.assertEqual(nomes, ["GAZZIRO", "VICTOR", "LUCAS"])         # com foto primeiro; Lucas só com o nome
-        self.assertEqual(presentes, ["VICTOR", "LUCAS"])
-        self.assertEqual(self.cmds()[-1], f"cmd membros 0 2 {self.areia.PAINEL_ROSTOS} GAZZIRO VICTOR+ LUCAS+")
-        escreve(os.path.join(self.D, "sandbox.log"), "Animais: membros (3, 2 com rosto)\n")
-        self.status([])                                                 # todos foram embora: os com foto continuam
-        self.assertTrue(self.areia.membros_atualiza())
-        self.assertEqual(self.cmds()[-1], "cmd membros 0 2 - GAZZIRO VICTOR")
 
 
-class MundoLaob(MembrosNaAreia):
+class MembrosPresentes(ComMembros):
+    def test_nomes_de_quem_esta_presente(self):
+        self.assertEqual(self.areia.membros_presentes(), [])            # Willbert desligado
+        self.status(["Victor Vieira", "Gazziro", "João-Pedro", "Maria Antonieta", "Victor"])
+        self.assertEqual(self.areia.membros_presentes(), ["VICTOR", "GAZZIRO", "JOAOPEDR", "MARIA"])
+        self.status(["Victor"], idade=600)                              # Willbert parou de publicar
+        self.assertEqual(self.areia.membros_presentes(), [])
+        escreve(self.areia.STATUS_WILLBERT, "{ quebrado")
+        self.assertEqual(self.areia.membros_presentes(), [])
+
+    def test_modo_membros_saiu_e_o_nome_vira_o_mundo(self):
+        """O modo "membros" (pessoinhas com nome) saiu em 18/11/2026: "membros" é só outro nome do mundo
+        LAOB, e nada manda o comando "membros" ao SARndbox (ele também saiu do C++)."""
+        import importlib
+        import areia_brincar
+        ab = importlib.reload(areia_brincar)
+        self.assertFalse(hasattr(self.areia, "membros"))
+        self.assertNotIn("membros", self.areia.PARAR_BRINCADEIRAS)
+        with redirect_stdout(io.StringIO()):
+            ab.animais(["membros"])
+        self.assertEqual(self.cmds()[-1], "cmd mundo 0 0 - 0")
+        self.assertFalse(any(c.startswith("cmd membros") for c in self.cmds()))
+        escreve(os.path.join(self.D, "sandbox.log"), "Animais: membros (2, 0 com rosto)\n")   # registro antigo
+        self.assertEqual(self.areia.animais_situacao(), "nada")
+        self.assertFalse(self.areia.membros_atualiza())
+
+
+class MundoLaob(ComMembros):
     def test_liga_acompanha_e_mostra_rosto(self):
-        pasta = os.path.join(self.D, "membros")
-        os.makedirs(pasta)
-        for n in ("Gazziro.png", "Victor.png"):
-            escreve(os.path.join(pasta, n), b"x")
-        os.makedirs(self.areia.FOTOS, exist_ok=True)
-        escreve(self.areia.PAINEL_ROSTOS, b"x")
-        escreve(os.path.join(self.areia.FOTOS, "membros.json"), json.dumps({"nomes": ["GAZZIRO", "VICTOR"]}))
-        self.areia.PASTA_MEMBROS = pasta
+        self.fotos_de_membros()
         with self.assertRaisesRegex(self.areia.Erro, "não está ligado"):
             self.areia.mundo_rosto("Victor")
         self.status(["Victor"])
@@ -562,7 +548,33 @@ class MundoLaob(MembrosNaAreia):
         self.status(["Victor", "Gazziro"])                              # Gazziro chegou ao laboratório
         self.assertTrue(self.areia.membros_atualiza())
         self.assertEqual(self.cmds()[-1], "cmd mundo 0 2 - 0 GAZZIRO+ VICTOR+")
+        self.assertFalse(self.areia.membros_atualiza())                 # ninguém chegou nem saiu
+
+    def test_todos_saem_e_outra_brincadeira_entra(self):
+        """(casos que antes só os testes do modo membros cobriam)"""
+        self.fotos_de_membros()
+        self.status(["Lucas", "Victor"])
+        nomes, presentes = self.areia.mundo()
+        self.assertEqual(nomes, ["GAZZIRO", "VICTOR", "LUCAS"])         # com foto primeiro; Lucas só com o nome
+        self.assertEqual(presentes, ["VICTOR", "LUCAS"])
+        log = os.path.join(self.D, "sandbox.log")
+        escreve(log, "Animais: mundo (3)\n")
+        self.status([])                                                 # todos foram embora: os com foto continuam
+        self.assertTrue(self.areia.membros_atualiza())
+        self.assertEqual(self.cmds()[-1], "cmd mundo 0 2 - 0 GAZZIRO VICTOR")
+        escreve(log, "Animais: mundo (2)\nTesouro: escondendo a 4 cm\n")   # outra brincadeira entrou
+        self.status(["Victor"])
         self.assertFalse(self.areia.membros_atualiza())
+        self.assertIsNone(self.areia._membros_mandados[0])
+
+    def test_vigia_sem_o_mundo_nao_abre_processo(self):
+        """Sem o mundo ligado, o vigia de 5 s do painel nem pergunta ao sandbox.sh (antes: 17 mil vezes por dia)."""
+        self.areia.mar({"peixe": 3})
+        escreve(os.path.join(self.D, "sandbox.log"), "Animais: mundo (2)\nAnimais: mar (3)\nAnimais removidos.\n")
+        self.areia._qual_cache[0] = 0.0                                 # a resposta guardada venceu
+        n = len(self.comandos())
+        self.assertFalse(self.areia.membros_atualiza())
+        self.assertEqual(len(self.comandos()), n)                       # nenhum "estado" a mais
 
 
 class MarEChuva(Ambiente):
@@ -603,6 +615,43 @@ class MarEChuva(Ambiente):
                 self.areia.chuva(*ruim)
         self.areia.secar()
         self.assertEqual(self.cmds()[-1], "cmd secar")
+
+    def test_chuva_comida_e_secar_dizem_o_que_esta_aberto(self):
+        """Areia fechada e topografia de reserva têm mensagens diferentes (antes: "a areia não está aberta")."""
+        for f, args in ((self.areia.chuva, (0.5, 0.5)), (self.areia.comida, (0.5, 0.5)), (self.areia.secar, ())):
+            with self.assertRaisesRegex(self.areia.Erro, "fechada.*Reabrir"):
+                f(*args)
+        escreve(os.path.join(self.FALSO, "qual"), "original\n")
+        self.areia._qual_cache[0] = 0.0
+        for f, args, o_que in ((self.areia.chuva, (0.5, 0.5), "chuva"), (self.areia.comida, (0.5, 0.5), "comida"),
+                               (self.areia.secar, (), "secar")):
+            with self.assertRaisesRegex(self.areia.Erro, f"reserva não aceita {o_que}"):
+                f(*args)
+        self.assertEqual(self.cmds(), [])
+
+    def test_comida_so_com_passaros_ou_cachorros(self):
+        log = os.path.join(self.D, "sandbox.log")
+        self.areia.mar({"peixe": 6, "tartaruga": 2})                         # só bichos da água: ninguém vem comer
+        escreve(log, "Animais: mar (8)\n")
+        n = len(self.cmds())
+        with self.assertRaisesRegex(self.areia.Erro, "pássaros nem cachorros.*aba Vida"):
+            self.areia.comida(0.5, 0.5)
+        self.assertEqual(len(self.cmds()), n)                                # nada foi mandado
+        self.areia.mar({"peixe": 2, "passaro": 3, "cachorro": 1})
+        escreve(log, "Animais: mar (6)\n")
+        self.assertEqual(self.areia.comida(0.4, "0.6"), {"passaro": 3, "cachorro": 1})
+        self.assertEqual(self.cmds()[-1], "cmd comida 0.400 0.600 20")
+        self.assertEqual(self.areia.comida(0, 1, 5), {"passaro": 3, "cachorro": 1})
+        self.assertEqual(self.cmds()[-1], "cmd comida 0.000 1.000 5")
+        for ruim in ((1.2, 0.5), (0.5, -0.1), ("x", 0.5), (None, 0.5), (0.5, 0.5, 500)):
+            with self.assertRaises(self.areia.Erro):
+                self.areia.comida(*ruim)
+        self.areia.mar({"cachorro": 1})                                      # um cachorro só também vale
+        escreve(log, "Animais: mar (1)\n")
+        self.assertEqual(self.areia.comida(0.5, 0.5), {"cachorro": 1})
+        escreve(log, "Animais: mar (1)\nTesouro: escondendo a 4 cm\n")       # outra brincadeira tirou os bichos
+        with self.assertRaisesRegex(self.areia.Erro, "pássaros nem cachorros"):
+            self.areia.comida(0.5, 0.5)
 
 
 class CopieORelevo(Ambiente):
@@ -700,3 +749,34 @@ class Labirinto(Ambiente):
         self.assertIn("Labirinto de água ligado (Fácil", out)
         self.assertIn("Labirinto encerrado.", out)
         self.assertEqual(self.cmds()[-2:], ["cmd labirinto facil", "cmd labirintoFim"])
+
+
+class VigiaDoSom(Ambiente):
+    """som._loop_vigia: os sons vêm das linhas do sandbox.log (sem paplay: AREIA_SOM_FALSO)."""
+
+    def test_eventos_e_linha_pela_metade(self):
+        import importlib
+        import threading
+        import time
+        import som
+        som = importlib.reload(som)
+        som._vigia_ativo = False
+        time.sleep(0.7)                       # vigias de outros testes (mesmo módulo) param
+        tocados = []
+        som.tocar = tocados.append
+        log = os.path.join(self.D, "sandbox.log")
+        escreve(log, "Antes do vigia: Tesouro encontrado! (velho)\n")
+        t = threading.Thread(target=som._loop_vigia, daemon=True)
+        t.start()
+        try:
+            time.sleep(0.5)
+            with open(log, "a") as f:
+                f.write("Tesouro: achou\nJogo: a terra tremeu! Uma boca de lava vai abrir\nChuva: nu")
+            time.sleep(0.7)
+            with open(log, "a") as f:
+                f.write("vem por 8 s\nFossil encontrado! (1 escavados)\n")
+            time.sleep(0.7)
+        finally:
+            som._vigia_ativo = False
+            t.join(2)
+        self.assertEqual(tocados, ["alerta", "splash", "tesouro"])   # a linha cortada conta uma vez, inteira

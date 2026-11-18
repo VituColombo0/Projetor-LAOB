@@ -8,17 +8,16 @@
    fossil [trex|triceratops|pterodactilo|pegada] [cm] [s]   escavação de fóssil (mesmo mecanismo do tesouro)
    fossilFim                                               encerra a escavação
    animais peixes|carros|pessoas|todos|nada [quantidade]   peixes no lago, carrinhos e pessoas andando
-   mundo <giro> <n com rosto> <painel|-> <moradores> [NOME[+]...] / mundoRosto NOME   a cidade LAOB (Mundo.cpp)
+   mundo <giro> <n com rosto> <painel|-> <0> [NOME[+]...] / mundoRosto NOME   o laboratório (Mundo.cpp)
    copia [montanha|duas|vulcao|cratera|ilha|serra] [1-3] / copiaNova / copiaFim   copie o relevo
    mar peixe=N tubarao=N ...                                 vida na areia escolhida
    chuva <x 0-1> <y 0-1> [s] / secar                         nuvem de chuva num ponto; tira toda a água
    aguaNivel auto|mapa|areia|<cm> [absorção] / aguaInfo     nível do mar do lago dos bichos; diagnóstico da água
-   membros <giro> <n com rosto> <painel|-> [NOME[+]...]    membros andando com rosto e nome (+ = presente agora)
    efeito <tema>                                           animação do tema (lava, neve, poeira...)
    labirinto [facil|normal|dificil] / labirintoNovo / labirintoFim (labirintoTeste: alvo na nascente)
                                                            labirinto de água: uma nascente joga água de
                                                            verdade; cavem canais até ela chegar ao alvo
-   jogo corrida|vila|fazenda|rota|lago|vulcao|barco|resgate [1|2|3] / jogoNovo / jogoFim
+   jogo corrida|vila|rota|vulcao [1|2|3] / jogoNovo / jogoFim
                                                            jogos de água (Jogos.cpp); jogoTeste põe as
                                                            peças em cima da primeira nascente
 Também mede quadros por segundo (linha "Desempenho:" no log a cada 30 s) em vez de encher o
@@ -296,7 +295,7 @@ void Sandbox::toggleDEM(DEM* dem)
 					{
 					int e=tokens.size()>=2?Extras::efeitoDoTema(tokens[1].c_str()):-1;
 					if(e<0)
-						std::cerr<<"uso: efeito classico|vulcao|inverno|marte|deserto|oceano|arco-iris|mapa|nada"<<std::endl;
+						std::cerr<<"uso: efeito classico|vulcao|inverno|marte|deserto|oceano|arco-iris|nada"<<std::endl;
 					else
 						{
 						extras.efeito=e;
@@ -306,10 +305,11 @@ void Sandbox::toggleDEM(DEM* dem)
 				else if((isToken(tokens[0],"comida")||isToken(tokens[0],"maoTeste"))&&tokens.size()>=3)
 					{
 					/* comida jogada pelo painel: fração x, y da área iluminada e segundos (os pássaros pousam
-					   em volta, os cachorros sentam do lado). A mão de verdade só faz chover. */
+					   em volta, os cachorros sentam do lado; o shader desenha um pão com migalhas). A mão de
+					   verdade só faz chover. ("maoTeste" é o nome antigo do comando.) */
 					float seg=tokens.size()>=4?float(atof(tokens[3].c_str())):15.0f;
-					extras.maoTeste(float(atof(tokens[1].c_str())),float(atof(tokens[2].c_str())),seg);
-					std::cout<<"Comida em x "<<extras.maos[Extras::MAX_MAOS-1].x<<" y "<<extras.maos[Extras::MAX_MAOS-1].y<<" por "<<seg<<" s"<<std::endl;
+					extras.jogarComida(float(atof(tokens[1].c_str())),float(atof(tokens[2].c_str())),seg);
+					std::cout<<"Comida em x "<<extras.comida.x<<" y "<<extras.comida.y<<" por "<<seg<<" s"<<std::endl;
 					}
 				else if(isToken(tokens[0],"tesouroTeste"))
 					{
@@ -364,24 +364,11 @@ void Sandbox::toggleDEM(DEM* dem)
 					tesouroPedido=-1.0f;
 					std::cout<<"Fossil desligado"<<std::endl;
 					}
-				else if(isToken(tokens[0],"membros")&&tokens.size()>=4)
-					{
-					/* membros <giro 0-3> <quantos têm rosto> <painel de rostos | -> [NOME ou NOME+ ...]:
-					   uma pessoinha com rosto e nome para cada membro; "+" = está no laboratório agora */
-					std::vector<std::string> lista;
-					for(size_t i=4;i<tokens.size();++i)
-						lista.push_back(tokens[i]);
-					if(tokens[3]!="-"&&!extras.carregaAtlas(tokens[3].c_str()))
-						std::cout<<"Membros: não consegui ler o painel de rostos "<<tokens[3]<<std::endl;
-					if(extras.modo!=Extras::MEMBROS)
-						setFaceMode(0,0);
-					extras.membros(lista,atoi(tokens[1].c_str()),atoi(tokens[2].c_str()));
-					std::cout<<"Animais: membros ("<<lista.size()<<", "<<extras.nFotos<<" com rosto)"<<std::endl;
-					}
 				else if(isToken(tokens[0],"mundo")&&tokens.size()>=5)
 					{
-					/* mundo <giro> <quantos têm rosto> <painel de rostos | -> <moradores sem nome> [NOME[+]...]:
-					   a cidade LAOB (Mundo.cpp); mandar de novo com os mesmos nomes só atualiza quem está presente */
+					/* mundo <giro> <quantos têm rosto> <painel de rostos | -> <moradores> [NOME[+]...]:
+					   o laboratório (Mundo.cpp); mandar de novo com os mesmos nomes só atualiza quem está presente.
+					   <moradores> ficou da cidade LAOB (tirada em 16/11/2026): é ignorado (o painel manda 0) */
 					std::vector<std::string> lista;
 					for(size_t i=5;i<tokens.size();++i)
 						lista.push_back(tokens[i]);
@@ -390,13 +377,13 @@ void Sandbox::toggleDEM(DEM* dem)
 					bool ja=extras.modo==Extras::MUNDO;
 					if(!ja)
 						setFaceMode(0,0);
-					extras.mundo(lista,atoi(tokens[1].c_str()),atoi(tokens[2].c_str()),atoi(tokens[4].c_str()));
+					extras.mundo(lista,atoi(tokens[1].c_str()),atoi(tokens[2].c_str()));
 					if(!ja)
 						std::cout<<"Animais: mundo ("<<lista.size()<<")"<<std::endl;
 					}
 				else if(isToken(tokens[0],"mundoHora")&&tokens.size()>=2)
 					{
-					/* para ver a cidade de dia ou de noite sem esperar: mundoHora 21 / mundoHora auto */
+					/* para ver o laboratório de dia ou de noite sem esperar: mundoHora 21 / mundoHora auto */
 					extras.horaFixa=isToken(tokens[1],"auto")?-1.0f:float(atof(tokens[1].c_str()));
 					std::cout<<"Mundo: hora "<<tokens[1]<<std::endl;
 					}
@@ -440,7 +427,7 @@ void Sandbox::toggleDEM(DEM* dem)
 						for(int k=0;k<Extras::NUM_ESPECIES;++k)
 							if(tokens[t].substr(0,ig)==Extras::nomeEspecie(k))
 								{
-								q[k]=std::max(0,std::min(24,atoi(tokens[t].substr(ig+1).c_str())));
+								q[k]=std::max(0,std::min(int(Extras::MAX_AGENTES),atoi(tokens[t].substr(ig+1).c_str()))); // como o painel: até 32 de uma espécie (e 32 no total)
 								total+=q[k];
 								}
 						}
@@ -671,7 +658,7 @@ void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
 					if(extras.jogo!=Extras::SEM_JOGO&&extras.nFontes>0)
 						{
 						for(int i=0;i<extras.nPecas;++i)
-							if(extras.pecas[i].tipo!=Extras::P_NASCENTE&&extras.pecas[i].tipo!=Extras::P_BARCO)
+							if(extras.pecas[i].tipo!=Extras::P_NASCENTE)
 								{
 								extras.pecas[i].x=extras.fontes[0].x;
 								extras.pecas[i].y=extras.fontes[0].y;
@@ -687,11 +674,11 @@ void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
 					}
 				else if(isToken(tokens[0],"jogoInfo"))
 					{
-					/* Diagnóstico: cada peça (tipo, posição, estado, nível) e a correnteza do barco */
+					/* Diagnóstico: cada peça (tipo, posição, estado) e a fase do jogo */
 					for(int i=0;i<extras.nPecas;++i)
 						std::cout<<"JogoInfo: peça "<<i<<" tipo "<<extras.pecas[i].tipo<<" x "<<extras.pecas[i].x<<" y "<<extras.pecas[i].y
-						         <<" estado "<<extras.pecas[i].estado<<" nível "<<extras.pecas[i].nivel<<std::endl;
-					std::cout<<"JogoInfo: correnteza "<<extras.vbx<<" "<<extras.vby<<" fase "<<extras.jogoFase<<std::endl;
+						         <<" estado "<<extras.pecas[i].estado<<std::endl;
+					std::cout<<"JogoInfo: fase "<<extras.jogoFase<<std::endl;
 					}
 				else if(isToken(tokens[0],"jogoFim"))
 					{
@@ -806,13 +793,11 @@ void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
 
 void Sandbox::medeJogo(GLContextData& contextData) const
 	{
-	/* Lê a água (nível e quantidade de movimento, no centro das células) e o fundo (nos
-	   cantos) e mede, para cada peça, a maior e a média da profundidade dentro dela (cm);
-	   para o barquinho, também a velocidade da correnteza embaixo dele (cm/s, na caixa): */
-	float maxima[Extras::MAX_PECAS],media[Extras::MAX_PECAS];
+	/* Lê a água (só o nível, no centro das células) e o fundo (nos cantos) e mede, para cada
+	   peça, a maior profundidade dentro dela (cm): */
+	float maxima[Extras::MAX_PECAS];
 	for(int i=0;i<Extras::MAX_PECAS;++i)
-		maxima[i]=media[i]=0.0f;
-	float vx=0.0f,vy=0.0f;
+		maxima[i]=0.0f;
 	GLint qw=0,qh=0,bw=0,bh=0;
 	waterTable->bindQuantityTexture(contextData);
 	glGetTexLevelParameteriv(GL_TEXTURE_RECTANGLE_ARB,0,GL_TEXTURE_WIDTH,&qw);
@@ -828,8 +813,8 @@ void Sandbox::medeJogo(GLContextData& contextData) const
 	labFundo.resize(size_t(bw)*size_t(bh));
 	glGetTexImage(GL_TEXTURE_RECTANGLE_ARB,0,GL_RED,GL_FLOAT,&labFundo[0]);
 	waterTable->bindQuantityTexture(contextData);
-	labQuantidade.resize(size_t(qw)*size_t(qh)*3);
-	glGetTexImage(GL_TEXTURE_RECTANGLE_ARB,0,GL_RGB,GL_FLOAT,&labQuantidade[0]);
+	labQuantidade.resize(size_t(qw)*size_t(qh));
+	glGetTexImage(GL_TEXTURE_RECTANGLE_ARB,0,GL_RED,GL_FLOAT,&labQuantidade[0]); // 1/3 do que lia (os outros canais eram do barquinho)
 	glBindTexture(GL_TEXTURE_RECTANGLE_ARB,0);
 	
 	const GLfloat* cs=waterTable->getCellSize();
@@ -844,8 +829,7 @@ void Sandbox::medeJogo(GLContextData& contextData) const
 		double cj=(pw[1]-waterTable->getDomain().min[1])/cs[1];
 		double raio=std::max(1.0,double(pc.raio));
 		double ri=raio/cs[0],rj=raio/cs[1];
-		float maior=0.0f,soma=0.0f,mx=0.0f,my=0.0f,peso=0.0f;
-		int n=0;
+		float maior=0.0f;
 		for(int j=std::max(1,int(cj-rj));j<=std::min(nj,int(cj+rj));++j)
 			for(int i=std::max(1,int(ci-ri));i<=std::min(ni,int(ci+ri));++i)
 				{
@@ -853,31 +837,11 @@ void Sandbox::medeJogo(GLContextData& contextData) const
 				if(di*di+dj*dj>1.0)
 					continue;
 				float b=0.25f*(labFundo[(j-1)*bw+i-1]+labFundo[(j-1)*bw+i]+labFundo[j*bw+i-1]+labFundo[j*bw+i]);
-				const GLfloat* q=&labQuantidade[(size_t(j)*qw+i)*3];
-				float h=std::max(0.0f,q[0]-b);
-				maior=std::max(maior,h);
-				soma+=h;
-				++n;
-				if(h>0.05f)
-					{
-					mx+=q[1];
-					my+=q[2];
-					peso+=h;
-					}
+				maior=std::max(maior,labQuantidade[size_t(j)*qw+i]-b);
 				}
 		maxima[p]=maior;
-		media[p]=n>0?soma/n:0.0f;
-		if(pc.tipo==Extras::P_BARCO&&peso>0.0f)
-			{
-			/* (hu, hv) somados / h somado = velocidade média; grade da água -> câmera -> caixa */
-			Vector vw(mx/peso,my/peso,0);
-			Vector vc=waterTable->getBaseTransform().inverseTransform(vw);
-			Vector vb=boxTransform.transform(vc);
-			vx=float(vb[0]);
-			vy=float(vb[1]);
-			}
 		}
-	extras.jogoLeitura(maxima,media,vx,vy);
+	extras.jogoLeitura(maxima);
 	}
 
 float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const

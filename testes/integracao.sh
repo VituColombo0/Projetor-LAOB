@@ -10,6 +10,13 @@ falhas=0
 ok() { echo "OK    $*"; }
 falha() { echo "FALHA $*"; falhas=1; }
 confere() { if eval "$2"; then ok "$1"; else falha "$1"; fi; }
+# Só o que o SARndbox escreveu desde a marca: o sandbox.log só zera quando a areia abre do zero, e as linhas
+# antigas (de horas antes) faziam os testes passarem mesmo com o comando de agora falhando.
+LOG=$D/sandbox.log
+marca() { L0=$(stat -c%s "$LOG" 2>/dev/null || echo 0); }
+novo() { tail -c +$((L0+1)) "$LOG"; }
+tem() { grep -q "$@" <(novo); }   # sem pipe: com pipefail, o grep -q saindo cedo mataria o tail (SIGPIPE) e daria falha
+L0=0
 no_projetor() { DISPLAY=:0 XAUTHORITY=/run/user/$(id -u)/gdm/Xauthority xwininfo -root -tree 2>/dev/null \
                   | grep '"SARndbox"' | grep -q "+1280+0"; }
 
@@ -19,8 +26,11 @@ trap 'cp -p "$TMP/estado.json" "$D/estado.json" 2>/dev/null; rm -rf "$TMP"' EXIT
 
 echo "== instalação"
 confere "compila do zero a partir do repositório" "bash '$R/instalar.sh' --compilar '$TMP/build' >/dev/null 2>&1"
-confere "binário instalado é o mesmo que o repositório gera" "cmp -s <(strings '$TMP/build/bin/SARndbox' | grep -c faceOut) <(strings '$D/bin/SARndbox' | grep -c faceOut)"
-confere "comandos no PATH" "for c in areia-foto areia-topografia areia-tema areia-tesouro areia-animais areia-fossil areia-labirinto areia-jogo areia-vigia; do command -v \$c >/dev/null || exit 1; done"
+# textos de recursos recentes nos dois binários (antes só a contagem de "faceOut", igual em toda versão desde
+# o modo foto: um binário velho passava)
+tem_texto() { grep -qF "$1" <(strings "$2"); }
+confere "binário instalado é o mesmo que o repositório gera" "(for t in 'Comida em x' 'Copia: forma' 'Chuva: nuvem por' 'Mundo: hora' 'extrasComida'; do tem_texto \"\$t\" '$TMP/build/bin/SARndbox' && tem_texto \"\$t\" '$D/bin/SARndbox' || exit 1; done) && ! tem_texto 'extrasMaos' '$D/bin/SARndbox' && ! tem_texto 'JogoInfo: correnteza' '$D/bin/SARndbox' && cmp -s <(strings '$TMP/build/bin/SARndbox' | grep -c faceOut) <(strings '$D/bin/SARndbox' | grep -c faceOut)"
+confere "comandos no PATH" "(for c in areia-foto areia-topografia areia-tema areia-tesouro areia-animais areia-fossil areia-labirinto areia-jogo areia-vigia; do command -v \$c >/dev/null || exit 1; done)"
 confere "ao ligar abre a topografia" "grep -q '^Exec=.*areia-topografia' '$HOME/.config/autostart/SARndbox.desktop'"
 confere "modelos presentes" "[ -s '$D/modelos/u2net_human_seg.onnx' ] && [ -s '$D/modelos/face_detection_yunet_2023mar.onnx' ]"
 MESA=$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")
@@ -39,39 +49,44 @@ TS=$(tailscale ip -4 2>/dev/null | head -1)
 [ -n "$TS" ] && confere "responde no Tailscale ($TS)" "curl -sf -m 5 http://$TS:8090/estado >/dev/null"
 
 echo "== projetor"
+ANTES=$("$D/sandbox.sh" estado)
+marca
 confere "topografia abre (na versão com efeitos)" "areia-topografia >/dev/null && [ \"\$('$D/sandbox.sh' estado)\" = rosto ]"
+[ "$ANTES" = rosto ] || L0=0   # a areia abriu agora: o registro recomeçou do zero
 confere "topografia no projetor, tela cheia" "no_projetor"
 TEMA0=$(readlink "$D/temas/atual.cpt" 2>/dev/null | sed 's/\.cpt$//'); TEMA0=${TEMA0:-classico}
-confere "topografia recebe o efeito do tema" "grep -q '^Efeito: ' '$D/sandbox.log'"
+confere "topografia recebe o efeito do tema" "tem '^Efeito: '"
 confere "troca de tema na hora (< 2 s)" "s=\$(date +%s); areia-tema vulcao >/dev/null && areia-tema '$TEMA0' >/dev/null && [ \$((\$(date +%s) - s)) -lt 2 ]"
 N=$(areia-foto lista | grep -cE '^ +[0-9]+  ')
 if [ "$N" -gt 0 ]; then
   confere "modo foto abre com a imagem 1" "areia-foto 1 >/dev/null && [ \"\$('$D/sandbox.sh' estado)\" = rosto ]"
-  confere "SARndbox recebeu a imagem" "grep -q 'Modo Rosto:' '$D/sandbox.log'"
+  confere "SARndbox recebeu a imagem" "tem 'Modo Rosto:'"
   confere "foto no projetor, tela cheia" "no_projetor"
   DISPLAY=:0 XAUTHORITY=/run/user/$(id -u)/gdm/Xauthority ffmpeg -loglevel error -y -f x11grab \
     -video_size 1024x768 -i :0.0+1280,0 -frames:v 1 /tmp/integracao-foto.png 2>/dev/null \
     && ok "print do projetor em /tmp/integracao-foto.png"
   GIRO0=$(grep -o '"giro": [0-9]*' "$D/estado.json")
   confere "girar 4 vezes volta ao começo ($GIRO0)" "for i in 1 2 3 4; do areia-foto girar >/dev/null || exit 1; done; grep -q '$GIRO0' '$D/estado.json'"
-  confere "esculpir" "areia-foto esculpir >/dev/null && sleep 1 && grep -q 'Modo Esculpir:' '$D/sandbox.log'"
+  confere "esculpir" "areia-foto esculpir >/dev/null && sleep 1 && tem 'Modo Esculpir:'"
   confere "segunda vez sai do cache (< 15 s)" "s=\$(date +%s); areia-foto 1 >/dev/null; [ \$((\$(date +%s) - s)) -lt 15 ]"
 else
   echo "(pasta Areia vazia: pulei o modo foto)"
 fi
-confere "caça ao tesouro esconde o baú" "areia-tesouro facil >/dev/null && sleep 2 && grep -q 'Tesouro escondido' '$D/sandbox.log'"
+confere "caça ao tesouro esconde o baú" "areia-tesouro facil >/dev/null && sleep 2 && tem 'Tesouro escondido'"
 confere "tesouro: situação" "areia-tesouro achou | grep -qiE 'escondido|acharam'"
-confere "escavação de fóssil" "areia-fossil triceratops facil >/dev/null && sleep 2 && grep -q 'Fossil escondido' '$D/sandbox.log' && areia-fossil achou | grep -qiE 'enterrado|escavado'"
-confere "peixes e carrinhos" "areia-animais todos 12 >/dev/null && grep -q 'Animais: todos (12)' '$D/sandbox.log'"
-confere "baú: animação de achado (tesouroTeste)" "areia-tesouro facil >/dev/null && sleep 2 && '$D/sandbox.sh' cmd tesouroTeste >/dev/null && sleep 1 && grep -q '^Tesouro: teste, mostrando' '$D/sandbox.log' && areia-tesouro parar >/dev/null"
-confere "mundo LAOB: laboratório montado" "areia-animais mundo >/dev/null && for _ in \$(seq 1 30); do grep -q '^Mundo: laboratório montado' '$D/sandbox.log' && break; sleep 0.5; done; grep -q '^Animais: mundo' '$D/sandbox.log' && grep -q '^Mundo: laboratório montado' '$D/sandbox.log' && curl -s -m 5 localhost:8090/estado | grep -q '\"animais\":\"mundo\"'"
-confere "mundo LAOB: hora de teste (mundoHora)" "'$D/sandbox.sh' cmd 'mundoHora 22' >/dev/null && sleep 1 && grep -q '^Mundo: hora 22' '$D/sandbox.log' && '$D/sandbox.sh' cmd 'mundoHora auto' >/dev/null"
-confere "animais marinhos à escolha" "areia-animais mar peixe=6 tubarao=1 tartaruga=1 aguaviva=1 polvo=1 arraia=1 carro=2 pessoa=3 >/dev/null && grep -q 'Animais: mar (16)' '$D/sandbox.log'"
-confere "chuva pelo painel e secar" "curl -s -m 5 -X POST -H 'Content-Type: application/json' -d '{\"x\":0.5,\"y\":0.5}' localhost:8090/chuva | grep -q '\"ok\":true' && sleep 1 && grep -q '^Chuva: nuvem' '$D/sandbox.log' && curl -s -m 5 -X POST -H 'Content-Type: application/json' -d '{\"secar\":true}' localhost:8090/chuva | grep -q '\"ok\":true' && sleep 1 && grep -q '^Chuva: a água foi seca' '$D/sandbox.log'"
-confere "copie o relevo: alvo sorteado e nota medida" "areia-jogo copia montanha facil >/dev/null && for _ in \$(seq 1 30); do grep -q '^Copia: [0-9]*%' '$D/sandbox.log' && break; sleep 0.5; done; grep -q '^Copia: forma montanha' '$D/sandbox.log' && curl -s -m 5 localhost:8090/estado | grep -q '\"forma\":\"montanha\"' && areia-jogo copia parar >/dev/null"
-confere "pessoas andando" "areia-animais pessoas 8 >/dev/null && grep -q 'Animais: pessoas (8)' '$D/sandbox.log'"
-confere "labirinto de água liga" "areia-labirinto facil >/dev/null && sleep 1 && grep -q '^Labirinto: nascente' '$D/sandbox.log' && areia-labirinto placar | grep -qiE 'correndo|chegou'"
-confere "labirinto: a água chega ao alvo e é medida" "'$D/sandbox.sh' cmd labirintoTeste >/dev/null && for _ in \$(seq 1 40); do grep -q '^Labirinto: a água chegou' '$D/sandbox.log' && break; sleep 0.5; done; grep -q '^Labirinto: a água chegou' '$D/sandbox.log' && areia-labirinto placar | grep -q 'chegou'"
+confere "escavação de fóssil" "areia-fossil triceratops facil >/dev/null && sleep 2 && tem 'Fossil escondido' && areia-fossil achou | grep -qiE 'enterrado|escavado'"
+confere "peixes e carrinhos" "areia-animais todos 12 >/dev/null && tem 'Animais: todos (12)'"
+confere "baú: animação de achado (tesouroTeste)" "areia-tesouro facil >/dev/null && sleep 2 && '$D/sandbox.sh' cmd tesouroTeste >/dev/null && sleep 1 && tem '^Tesouro: teste, mostrando' && areia-tesouro parar >/dev/null"
+confere "mundo LAOB: laboratório montado" "areia-animais mundo >/dev/null && for _ in \$(seq 1 30); do tem '^Mundo: laboratório montado' && break; sleep 0.5; done; tem '^Animais: mundo' && tem '^Mundo: laboratório montado' && curl -s -m 5 localhost:8090/estado | grep -q '\"animais\":\"mundo\"'"
+confere "mundo LAOB: hora de teste (mundoHora)" "'$D/sandbox.sh' cmd 'mundoHora 22' >/dev/null && sleep 1 && tem '^Mundo: hora 22' && '$D/sandbox.sh' cmd 'mundoHora auto' >/dev/null"
+confere "animais marinhos à escolha" "areia-animais mar peixe=6 tubarao=1 tartaruga=1 aguaviva=1 polvo=1 arraia=1 carro=2 pessoa=3 >/dev/null && tem 'Animais: mar (16)'"
+confere "comida sem pássaros nem cachorros: o painel avisa" "curl -s -m 5 -X POST -H 'Content-Type: application/json' -d '{\"x\":0.5,\"y\":0.5}' localhost:8090/comida | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if r.get(\"ok\") is False and \"nem cachorros\" in r.get(\"msg\",\"\") else 1)'"
+confere "comida pelo painel: pássaros e cachorros vêm" "areia-animais mar peixe=2 passaro=3 cachorro=2 >/dev/null && tem 'Animais: mar (7)' && curl -s -m 5 -X POST -H 'Content-Type: application/json' -d '{\"x\":0.5,\"y\":0.5}' localhost:8090/comida | grep -q '\"ok\":true' && sleep 1 && tem '^Comida em x'"
+confere "chuva pelo painel e secar" "curl -s -m 5 -X POST -H 'Content-Type: application/json' -d '{\"x\":0.5,\"y\":0.5}' localhost:8090/chuva | grep -q '\"ok\":true' && sleep 1 && tem '^Chuva: nuvem' && curl -s -m 5 -X POST -H 'Content-Type: application/json' -d '{\"secar\":true}' localhost:8090/chuva | grep -q '\"ok\":true' && sleep 1 && tem '^Chuva: a água foi seca'"
+confere "copie o relevo: alvo sorteado e nota medida" "areia-jogo copia montanha facil >/dev/null && for _ in \$(seq 1 30); do tem '^Copia: [0-9]*%' && break; sleep 0.5; done; tem '^Copia: forma montanha' && curl -s -m 5 localhost:8090/estado | grep -q '\"forma\":\"montanha\"' && areia-jogo copia parar >/dev/null"
+confere "pessoas andando" "areia-animais pessoas 8 >/dev/null && tem 'Animais: pessoas (8)'"
+confere "labirinto de água liga" "areia-labirinto facil >/dev/null && sleep 1 && tem '^Labirinto: nascente' && areia-labirinto placar | grep -qiE 'correndo|chegou'"
+confere "labirinto: a água chega ao alvo e é medida" "'$D/sandbox.sh' cmd labirintoTeste >/dev/null && for _ in \$(seq 1 40); do tem '^Labirinto: a água chegou' && break; sleep 0.5; done; tem '^Labirinto: a água chegou' && areia-labirinto placar | grep -q 'chegou'"
 confere "labirinto: rodada nova" "areia-labirinto nova >/dev/null && sleep 1 && tail -n 20 '$D/sandbox.log' | grep -q '^Labirinto: rodada nova'"
 sleep 3
 DISPLAY=:0 XAUTHORITY=/run/user/$(id -u)/gdm/Xauthority ffmpeg -loglevel error -y -f x11grab \
@@ -86,8 +101,8 @@ confere "corrida: a água chega à bandeira e há vencedor" "areia-jogo corrida 
 confere "jogos retirados não ligam" "! areia-jogo barco >/dev/null 2>&1 && ! areia-jogo fazenda >/dev/null 2>&1"
 confere "jogo: parar" "areia-jogo parar >/dev/null && areia-jogo placar | grep -q 'Nenhum jogo'"
 confere "parar brincadeiras" "areia-animais parar >/dev/null && areia-tesouro parar >/dev/null && areia-labirinto parar >/dev/null && areia-labirinto placar | grep -q 'não está ligado'"
-confere "desempenho: mede quanto a água acompanha o tempo real" "grep -q 'a água andou [0-9]*% do tempo real' '$D/sandbox.log'"
-confere "desempenho medido no log" "grep -q '^Desempenho: ' '$D/sandbox.log' || { sleep 31; grep -q '^Desempenho: ' '$D/sandbox.log'; }"
+confere "desempenho: mede quanto a água acompanha o tempo real" "tem 'a água andou [0-9]*% do tempo real' || { sleep 31; tem 'a água andou [0-9]*% do tempo real'; }"
+confere "desempenho medido no log" "tem '^Desempenho: ' || { sleep 31; tem '^Desempenho: '; }"
 confere "log sem a enxurrada de 'Ran out of time'" "! grep -q 'Ran out of time' '$D/sandbox.log'"
 for t in vulcao inverno marte deserto oceano arco-iris classico; do
   confere "efeito do tema $t" "areia-tema $t >/dev/null && sleep 0.5 && [ \"\$(grep '^Efeito: ' '$D/sandbox.log' | tail -n 1)\" = 'Efeito: $t' ]"

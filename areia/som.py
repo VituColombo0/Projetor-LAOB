@@ -158,6 +158,7 @@ def _loop_vigia():
     global _vigia_ativo
     _vigia_ativo = True
     pos = 0
+    resto = b""   # pedaço de linha ainda sendo escrita: fica para a próxima volta (como em areia._le_registro)
     log_path = _caminho_log()
     if os.path.isfile(log_path):
         try:
@@ -173,22 +174,23 @@ def _loop_vigia():
         try:
             tam = os.path.getsize(log_path)
             if tam < pos:
-                pos = 0  # arquivo foi truncado/reiniciado
+                pos, resto = 0, b""  # arquivo foi truncado/reiniciado
             if tam > pos:
-                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                with open(log_path, "rb") as f:
                     f.seek(pos)
-                    linhas = f.readlines()
-                    pos = f.tell()
-                for linha in linhas:
-                    linha = linha.strip()
+                    novo = f.read()
+                pos += len(novo)
+                partes = (resto + novo).split(b"\n")
+                resto = partes.pop()
+                for linha in partes:
+                    linha = linha.decode("utf-8", "replace").strip()
                     if not linha:
                         continue
                     # Detecção de eventos chave
-                    if ("Tesouro encontrado" in linha or "Fossil encontrado" in linha
-                            or "Tesouro: achou" in linha or "Fossil: achou" in linha):
+                    if "Tesouro encontrado" in linha or "Fossil encontrado" in linha:
                         tocar("tesouro")
                     elif linha.startswith("Jogo: fim da rodada"):
-                        # "N de M casas a salvo", "N de M peixes salvos"...: ganhou se salvou algo; empate e
+                        # "N de M casas a salvo da lava"/"casas secas": ganhou se salvou alguma; empate e
                         # "o tempo acabou" (sem chegar) contam como derrota
                         m = re.search(r"(\d+) de (\d+)", linha)
                         perdeu = ("empate" in linha or "o tempo acabou" in linha
@@ -200,7 +202,7 @@ def _loop_vigia():
                           or "Labirinto: nascente" in linha or "Labirinto: rodada nova" in linha
                           or "Copia: forma" in linha):
                         tocar("inicio")
-                    elif ("aviso de lava" in linha or "boca de lava" in linha or "terra tremeu" in linha
+                    elif ("boca de lava" in linha or "terra tremeu" in linha
                           or "tocou numa armadilha" in linha or "casa alagou" in linha or "lava pegou" in linha):
                         tocar("alerta")
                     elif "passaro pescou um peixe" in linha:

@@ -3,6 +3,7 @@ Responde à própria máquina, à rede local (10/8, 172.16/12, 192.168/16: abert
 2026-11-11 para quem está no laboratório, com o endereço no papel de parede) e à Tailscale.
 Rodar com o venv da pasta:  venv/bin/python painel.py
 """
+import hashlib
 import ipaddress
 import json
 import os
@@ -12,7 +13,7 @@ import tempfile
 import threading
 import time
 
-from flask import Flask, abort, jsonify, request, send_file
+from flask import Flask, Response, abort, jsonify, request, send_file
 
 import areia
 import som
@@ -55,12 +56,13 @@ def resposta(fn):
 
 @app.get("/")
 def pagina():
-    return PAGINA
+    return PAGINA, 200, {"Cache-Control": "no-cache"}   # o recarregar automático pega sempre a nova
 
 
 @app.get("/estado")
 def ver_estado():
     e = areia.estado()
+    e["versao"] = VERSAO   # a página aberta compara com a dela e recarrega quando o painel é atualizado
     e["sandbox"] = areia.qual()
     try:  # a página só baixa a prévia de novo quando a foto muda
         e["foto_versao"] = int(os.path.getmtime(os.path.join(areia.FOTOS, "rosto.png")) * 1000)
@@ -268,8 +270,7 @@ def chuva():
             areia.secar()
             return "Água seca"
         areia.chuva(d.get("x"), d.get("y"), d.get("segundos") or 8)
-        som.tocar("splash")
-        return "Chovendo nesse ponto por uns segundos"
+        return "Chovendo nesse ponto por uns segundos"   # o som vem do vigia do som.py ("Chuva: nuvem" no registro)
     return resposta(faz)
 
 
@@ -277,13 +278,21 @@ def chuva():
 def comida():
     def faz():
         d = request.get_json(silent=True) or {}
-        areia.comida(d.get("x"), d.get("y"))
-        return "Comida jogada: pássaros e cachorros vêm comer"
+        return "Comida jogada: " + quem_vem_comer(areia.comida(d.get("x"), d.get("y")))
     return resposta(faz)
 
 
-# Imagem do projetor ao vivo (quadro da chuva): um ffmpeg captura a saída do projetor 3x por segundo
+def quem_vem_comer(comem):
+    """{"passaro": 3, "cachorro": 1} -> "os pássaros e o cachorro vêm comer" (só o que está na areia)."""
+    partes = [("o " + areia.SINGULAR[k]) if n == 1 else ("os " + areia.ESPECIES[k][0].lower())
+              for k, n in comem.items() if n]
+    return " e ".join(partes) + (" vem comer" if sum(comem.values()) == 1 else " vêm comer")
+
+
+# Imagem do projetor ao vivo (quadro da chuva): um ffmpeg captura a saída do projetor 6x por segundo
 # para um arquivo na memória, só enquanto alguém está olhando (para depois de 15 s sem pedido).
+# Escrita atômica (-atomic_writing: arquivo .tmp + rename): antes o ffmpeg truncava e regravava o JPEG
+# no mesmo lugar e o painel às vezes mandava um quadro cortado ou vazio (avisos do waitress no journal).
 AO_VIVO = f"/dev/shm/areia-projetor-{os.getuid()}.jpg"
 _ao_vivo = {"proc": None, "pedido": 0.0}
 _ao_vivo_trava = threading.Lock()
@@ -296,7 +305,9 @@ def _tela_do_projetor():
     if not env.get("XAUTHORITY") and os.path.exists(xa):
         env["XAUTHORITY"] = xa
     try:
-        out = subprocess.run(["xrandr"], capture_output=True, text=True, timeout=5, env=env).stdout
+        # --current: lê o que o X já sabe; o xrandr puro faz o driver NVIDIA sondar todas as saídas
+        # (umas 20 linhas no journal) no X que está desenhando a areia
+        out = subprocess.run(["xrandr", "--current"], capture_output=True, text=True, timeout=5, env=env).stdout
     except (OSError, subprocess.SubprocessError):
         return None, env
     m = re.search(r"^HDMI-0 connected (?:primary )?(\d+)x(\d+)\+(\d+)\+(\d+)", out, re.M)
@@ -332,7 +343,7 @@ def _liga_ao_vivo():
             _ao_vivo["proc"] = subprocess.Popen(
                 ["ffmpeg", "-nostdin", "-loglevel", "error", "-f", "x11grab", "-framerate", "6",
                  "-video_size", f"{w}x{h}", "-i", f"{env['DISPLAY']}.0+{x},{y}", "-vf", "scale=512:-2",
-                 "-q:v", "6", "-update", "1", "-y", AO_VIVO],
+                 "-q:v", "6", "-update", "1", "-atomic_writing", "1", "-y", AO_VIVO],   # AO_VIVO por último (pkill)
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env,
                 preexec_fn=_morre_com_o_painel)
         except OSError:
@@ -355,8 +366,16 @@ def projetor_jpg():
     if not _liga_ao_vivo():
         return "", 404
     for _ in range(20):   # o primeiro quadro leva uns instantes
-        if os.path.exists(AO_VIVO) and time.time() - os.path.getmtime(AO_VIVO) < 5:
-            return send_file(AO_VIVO, mimetype="image/jpeg", max_age=0)
+        try:
+            if time.time() - os.path.getmtime(AO_VIVO) < 5:
+                # lê de uma vez e manda os bytes lidos: o send_file media o tamanho e só depois abria o
+                # arquivo, e um quadro novo no meio fazia o tamanho não bater com o que foi enviado
+                with open(AO_VIVO, "rb") as f:
+                    dados = f.read()
+                if dados:
+                    return Response(dados, mimetype="image/jpeg", headers={"Cache-Control": "no-store"})
+        except OSError:
+            pass
         time.sleep(0.1)
     return "", 404
 
@@ -504,7 +523,6 @@ h2 {
 h2 .extra { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; }
 .hint { font-size: .84rem; color: var(--muted); margin-bottom: 12px; }
 .grid { display: grid; gap: 8px; grid-template-columns: repeat(2, 1fr); }
-.g3 { grid-template-columns: repeat(3, 1fr); }
 .g4 { grid-template-columns: repeat(4, 1fr); }
 @media (max-width: 420px) { .g4 { grid-template-columns: repeat(2, 1fr); } }
 .full { grid-column: 1 / -1; }
@@ -812,6 +830,7 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
     <div class="quadro-chuva" id="quadro-comida" role="button" tabindex="0" aria-label="Tocar onde jogar comida" style="margin-top:12px">
       <img id="ao-vivo-comida" alt="" hidden>
       <span class="aviso-vivo" id="aviso-comida">🍞 toque para jogar comida</span>
+      <span class="selo-vivo" id="selo-comida" hidden>● ao vivo</span>
     </div>
   </section>
 
@@ -905,6 +924,7 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 let E = {}, NIVEL = 'normal';
+const VERSAO = '__VERSAO__';
 const AGUA = __JOGOS__;
 const OUTROS = [
   {id: 'copia', ic: '⛰️', t: 'Copie o relevo', c: 'Esculpa a areia igual ao relevo-alvo.', tag: 'Areia',
@@ -1025,6 +1045,7 @@ async function carrega() {
     const r = await fetch('/estado');
     if (!r.ok) return;
     E = await r.json();
+    if (E.versao && E.versao !== VERSAO) { location.reload(); return; }   // painel atualizado: pega a página nova
     const sb = {rosto: E.modo === 'rosto' ? 'Modo Foto' : (E.modo === 'esculpir' ? 'Esculpir' : 'Relevo'),
                 original: 'Topografia', nenhum: 'Areia desligada'}[E.sandbox] || E.sandbox;
     $('#sb').textContent = sb;
@@ -1202,6 +1223,7 @@ function pintaMar() {
 }
 let VIVO = false;
 let MEXEU = Date.now();
+let ERROS_VIVO = 0;   // quadros ao vivo que falharam em seguida
 ['pointerdown', 'keydown', 'touchstart', 'wheel'].forEach(t => document.addEventListener(t, () => {
   MEXEU = Date.now(); aoVivo();
 }, {passive: true}));
@@ -1215,25 +1237,36 @@ function querVivo() {
   if (window.matchMedia('(min-width: 900px)').matches) return 1000;
   return 0;
 }
+function pausaVivo() {
+  /* a captura parou (ninguém mexe há 3 min, aba escondida...): o último quadro fica, mas sem dizer
+     "ao vivo" (antes o selo continuava aceso numa imagem parada). Um toque religa. */
+  $('#selo-vivo').hidden = true; $('#selo-comida').hidden = true;
+  $('#mini-vivo span').textContent = '⏸ pausado';
+}
 function aoVivo() {
-  if (!querVivo()) { VIVO = false; return; }
+  if (!querVivo()) { if (VIVO) pausaVivo(); VIVO = false; return; }
   if (VIVO) return;
   VIVO = true;
   const img = $('#ao-vivo');
   const proxima = () => {
     const passo = querVivo();
-    if (!passo) { VIVO = false; return; }
+    if (!passo) { VIVO = false; pausaVivo(); return; }
     const n = new Image();
     n.onload = () => {
+      ERROS_VIVO = 0;
       img.src = n.src; img.hidden = false;
-      $('#ao-vivo-comida').src = n.src; $('#ao-vivo-comida').hidden = false;
-      $('#mini-img').src = n.src; $('#mini-vivo').hidden = false;
-      $('#selo-vivo').hidden = false; $('#aviso-vivo').hidden = true;
+      $('#ao-vivo-comida').src = n.src; $('#ao-vivo-comida').hidden = false; $('#aviso-comida').hidden = true;
+      $('#mini-img').src = n.src; $('#mini-vivo').hidden = false; $('#mini-vivo span').textContent = '● ao vivo';
+      $('#selo-vivo').hidden = false; $('#selo-comida').hidden = false; $('#aviso-vivo').hidden = true;
       setTimeout(proxima, querVivo() || 1000);
     };
     n.onerror = () => {
+      /* um quadro ruim tenta de novo logo, sem esconder a imagem; três seguidos = projetor desligado ou
+         areia fechada: esconde as imagens velhas (as duas: chuva e comida) e tenta de novo devagar */
+      if (++ERROS_VIVO < 3) { setTimeout(proxima, 500); return; }
       img.hidden = true; $('#mini-vivo').hidden = true; $('#selo-vivo').hidden = true; $('#aviso-vivo').hidden = false;
-      setTimeout(proxima, 4000);   // projetor desligado ou areia fechada: tenta de novo devagar
+      $('#ao-vivo-comida').hidden = true; $('#selo-comida').hidden = true; $('#aviso-comida').hidden = false;
+      setTimeout(proxima, 4000);
     };
     n.src = '/projetor.jpg?' + Date.now();
   };
@@ -1264,7 +1297,8 @@ function desenhaAlvo(cv, alvo) {
   g.putImageData(img, 0, 0);
 }
 
-function chove(ev) {
+async function chove(ev) {
+  if (OCUPADO) { msg('Espere um instante…'); return; }   // o post() ignoraria o toque: não desenha a nuvem à toa
   const q = $('#quadro-chuva');
   const r = q.getBoundingClientRect();
   const p = ev.touches ? ev.touches[0] : ev;
@@ -1280,21 +1314,25 @@ function chove(ev) {
   q.appendChild(nuvem);
   setTimeout(() => nuvem.classList.add('indo'), 7400);
   setTimeout(() => nuvem.remove(), 8200);
-  post('/chuva', {x: x, y: 1 - y});
+  const j = await post('/chuva', {x: x, y: 1 - y});
+  if (!j || !j.ok) nuvem.remove();   // não choveu (areia fechada, erro, sem conexão)
 }
 
-function jogaComida(ev) {
+async function jogaComida(ev) {
+  if (OCUPADO) { msg('Espere um instante…'); return; }
   const q = $('#quadro-comida');
   const r = q.getBoundingClientRect();
   const p = ev.touches ? ev.touches[0] : ev;
   const x = Math.min(1, Math.max(0, (p.clientX - r.left) / r.width));
   const y = Math.min(1, Math.max(0, (p.clientY - r.top) / r.height));
+  q.querySelectorAll('.pao').forEach(e => e.remove());   // o SARndbox guarda uma comida só: um pão só no quadro
   const m = document.createElement('span');
-  m.textContent = '🍞'; m.className = 'aviso-vivo';
+  m.textContent = '🍞'; m.className = 'aviso-vivo pao';
   m.style.cssText = `left:${x*100}%;top:${y*100}%;transform:translate(-50%,-50%);position:absolute`;
   q.appendChild(m);
-  setTimeout(() => m.remove(), 20000);
-  post('/comida', {x: x, y: 1 - y});
+  const tira = setTimeout(() => m.remove(), 20000);
+  const j = await post('/comida', {x: x, y: 1 - y});
+  if (!j || !j.ok) { clearTimeout(tira); m.remove(); }   // não caiu comida (sem pássaros/cachorros, erro...)
 }
 
 function abre(aba) {
@@ -1360,9 +1398,14 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) carr
 </body>
 </html>""".replace(
     "__JOGOS__", json.dumps([[k, *v] for k, v in areia.JOGOS.items()], ensure_ascii=False))
+# Versão da página (calculada com o marcador ainda no lugar, para não depender dela mesma): vai no /estado e
+# a página aberta recarrega sozinha quando ela muda. Antes o Firefox do laob, aberto havia dias, seguia com o
+# JS antigo depois de cada instalação (e com a captura ao vivo ligada para ninguém).
+VERSAO = hashlib.sha1(PAGINA.encode()).hexdigest()[:10]
+PAGINA = PAGINA.replace("__VERSAO__", VERSAO)
 
 def _vigia_membros():
-    """No modo membros, confere a cada 5 s quem o Willbert vê e atualiza as pessoinhas."""
+    """Com o mundo LAOB ligado, confere a cada 5 s quem o Willbert vê e atualiza os bonecos."""
     while True:
         time.sleep(5)
         try:
