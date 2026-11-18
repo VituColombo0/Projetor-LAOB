@@ -671,6 +671,20 @@ def chuva(fx, fy, segundos=8):
     _comando(f"chuva {fx:.3f} {fy:.3f} {segundos:g}")
 
 
+def comida(fx, fy, segundos=20):
+    """Joga comida no ponto (fx, fy) da área iluminada: os pássaros pousam em volta e os cachorros
+    sentam do lado (a mão de verdade só faz chover)."""
+    try:
+        fx, fy, segundos = float(fx), float(fy), float(segundos)
+    except (TypeError, ValueError):
+        raise Erro("ponto inválido")
+    if not (0 <= fx <= 1 and 0 <= fy <= 1) or not 1 <= segundos <= 60:
+        raise Erro("ponto fora da areia")
+    if qual() != "rosto":
+        raise Erro("a areia não está aberta")
+    _comando(f"comida {fx:.3f} {fy:.3f} {segundos:g}")
+
+
 def secar():
     """Tira toda a água da areia (a da chuva e a dos jogos)."""
     if qual() != "rosto":

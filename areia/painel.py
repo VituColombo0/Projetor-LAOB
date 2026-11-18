@@ -273,6 +273,15 @@ def chuva():
     return resposta(faz)
 
 
+@app.post("/comida")
+def comida():
+    def faz():
+        d = request.get_json(silent=True) or {}
+        areia.comida(d.get("x"), d.get("y"))
+        return "Comida jogada: pássaros e cachorros vêm comer"
+    return resposta(faz)
+
+
 # Imagem do projetor ao vivo (quadro da chuva): um ffmpeg captura a saída do projetor 3x por segundo
 # para um arquivo na memória, só enquanto alguém está olhando (para depois de 15 s sem pedido).
 AO_VIVO = f"/dev/shm/areia-projetor-{os.getuid()}.jpg"
@@ -800,11 +809,15 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
       <button class="primary" id="mar-soltar">▶ Soltar na areia</button>
       <button id="mar-tirar" data-b="parar">Tirar todos</button>
     </div>
+    <div class="quadro-chuva" id="quadro-comida" role="button" tabindex="0" aria-label="Tocar onde jogar comida" style="margin-top:12px">
+      <img id="ao-vivo-comida" alt="" hidden>
+      <span class="aviso-vivo" id="aviso-comida">🍞 toque para jogar comida</span>
+    </div>
   </section>
 
   <section class="card" data-aba="chuva">
     <h2>Chuva</h2>
-    <p class="hint">Além de abrir a mão sobre a areia: toque na imagem, no ponto onde quer que chova. É o que o projetor está mostrando agora, atualizada ao vivo.</p>
+    <p class="hint">Abra a mão sobre a areia ou toque na imagem, no ponto onde quer que chova. É o que o projetor está mostrando agora, atualizada ao vivo.</p>
     <div class="quadro-chuva" id="quadro-chuva" role="button" tabindex="0" aria-label="Tocar onde chover">
       <img id="ao-vivo" alt="" hidden>
       <span class="aviso-vivo" id="aviso-vivo">☁️ toque onde chover</span>
@@ -1188,10 +1201,17 @@ function pintaMar() {
   $('#mar-total').textContent = totalMar() + ' de 32';
 }
 let VIVO = false;
+let MEXEU = Date.now();
+['pointerdown', 'keydown', 'touchstart', 'wheel'].forEach(t => document.addEventListener(t, () => {
+  MEXEU = Date.now(); aoVivo();
+}, {passive: true}));
 function querVivo() {
   /* aba Chuva aberta: rápido (6 por segundo); tela larga: a miniatura do cabeçalho, 1 por segundo */
   if (document.hidden) return 0;
+  /* ninguém mexe na página há 3 min (ex.: o Firefox aberto no próprio laob): para a captura, que gasta CPU */
+  if (Date.now() - MEXEU > 180000) return 0;
   if (!$('section.card[data-aba="chuva"]').hidden) return 160;
+  if (!$('section.card[data-aba="bichos"]').hidden) return 330;
   if (window.matchMedia('(min-width: 900px)').matches) return 1000;
   return 0;
 }
@@ -1206,6 +1226,7 @@ function aoVivo() {
     const n = new Image();
     n.onload = () => {
       img.src = n.src; img.hidden = false;
+      $('#ao-vivo-comida').src = n.src; $('#ao-vivo-comida').hidden = false;
       $('#mini-img').src = n.src; $('#mini-vivo').hidden = false;
       $('#selo-vivo').hidden = false; $('#aviso-vivo').hidden = true;
       setTimeout(proxima, querVivo() || 1000);
@@ -1262,6 +1283,20 @@ function chove(ev) {
   post('/chuva', {x: x, y: 1 - y});
 }
 
+function jogaComida(ev) {
+  const q = $('#quadro-comida');
+  const r = q.getBoundingClientRect();
+  const p = ev.touches ? ev.touches[0] : ev;
+  const x = Math.min(1, Math.max(0, (p.clientX - r.left) / r.width));
+  const y = Math.min(1, Math.max(0, (p.clientY - r.top) / r.height));
+  const m = document.createElement('span');
+  m.textContent = '🍞'; m.className = 'aviso-vivo';
+  m.style.cssText = `left:${x*100}%;top:${y*100}%;transform:translate(-50%,-50%);position:absolute`;
+  q.appendChild(m);
+  setTimeout(() => m.remove(), 20000);
+  post('/comida', {x: x, y: 1 - y});
+}
+
 function abre(aba) {
   $$('section.card').forEach(sec => { sec.hidden = sec.dataset.aba !== aba; });
   $$('#abas button').forEach(b => b.classList.toggle('active', b.dataset.ir === aba));
@@ -1310,6 +1345,7 @@ $('#som-testar-btn').onclick = () => {
 $('#laob-ligar').onclick = () => post('/brincar', {acao: 'mundo'});
 $('#mar-soltar').onclick = () => post('/mar', MAR || {});
 $('#quadro-chuva').onclick = chove;
+$('#quadro-comida').onclick = jogaComida;
 $('#mini-vivo').onclick = () => abre('chuva');
 $('#chuva-secar').onclick = () => post('/chuva', {secar: true});
 $('#chuva-geral').onclick = async () => {

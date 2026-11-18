@@ -78,9 +78,7 @@ Extras::Extras(void)
 		nomes[i][0]=0;
 		presente[i]=false;
 		}
-	maosAntes=0;
 	maoFalsaAte=-1.0;
-	maoDiag=false;
 	for(int k=0;k<MAX_MAOS;++k)
 		{
 		maos[k].x=maos[k].y=maos[k].r=0.0f;
@@ -123,10 +121,6 @@ void Extras::setArea(const double areaMin[2],const double areaMax[2],const OGTra
 	gw=std::max(4,int((bmax[0]-bmin[0])/celula)+1);
 	gh=std::max(4,int((bmax[1]-bmin[1])/celula)+1);
 	alt.assign(gw*gh,SEM);
-	congela.assign(gw*gh,-1.0);
-	fundo.assign(gw*gh,SEM);
-	maoSeg.assign(gw*gh,0.0f);
-	eraMao.assign(gw*gh,0);
 	PTransform pb(cameraToBox);
 	GLfloat* p=caixa;
 	for(int j=0;j<4;++j)
@@ -152,16 +146,11 @@ void Extras::amostra(float x,float y,float z)
 void Extras::fechaMapa(void)
 	{
 	std::vector<float> todas;
-	bool comMaos=congela.size()==alt.size()&&fundo.size()==alt.size();
 	for(int i=0;i<gw*gh;++i)
 		if(conta[i]>0)
 			{
 			alt[i]=soma[i]/float(conta[i]); // os bichos sempre usam a areia de agora (mexeram nela, eles veem na hora)
 			todas.push_back(alt[i]);
-			/* a referência das mãos não muda embaixo de uma mão: o filtro do sensor acaba aceitando a mão
-			   parada como areia, e ela sumiria */
-			if(comMaos&&!(congela[i]>tempo&&fundo[i]>SEM+1.0f))
-				fundo[i]=alt[i];
 			}
 	if(todas.size()<10)
 		return;
@@ -198,233 +187,7 @@ float Extras::altura(float x,float y) const
 	return peso>1e-4f?soma/peso:alt[cy*gw+cx];
 	}
 
-/* ------------------------------------------------------------- mãos */
-
-void Extras::comecaMaos(void)
-	{
-	somaM.assign(gw*gh,0.0f);
-	contaM.assign(gw*gh,0);
-	if(congela.size()!=alt.size()||fundo.size()!=alt.size())
-		{
-		fundo=alt;
-		congela.assign(gw*gh,-1.0);
-		maoSeg.assign(gw*gh,0.0f);
-		eraMao.assign(gw*gh,0);
-		}
-	}
-
-void Extras::amostraMao(float x,float y,float z)
-	{
-	int cx=int((x-bmin[0])/celula),cy=int((y-bmin[1])/celula);
-	if(cx<0||cy<0||cx>=gw||cy>=gh||std::abs(z)>150.0f||contaM.empty())
-		return;
-	somaM[cy*gw+cx]+=z;
-	++contaM[cy*gw+cx];
-	}
-
-namespace {
-struct Mancha {std::vector<int> cel; float ex,ey,braco; int ne; float idade;};
-bool maior(const Mancha& a,const Mancha& b) {return a.cel.size()>b.cel.size();}
-}
-
-void Extras::fechaMaos(float dt)
-	{
-	int n=gw*gh;
-	if(int(contaM.size())!=n||int(alt.size())!=n||int(fundo.size())!=n||!mapaOk)
-		return;
-	/* 1. o que está acima da areia (média do quadro cru na célula contra o mapa de alturas) */
-	const int beira=int(3.0f/celula+0.5f); // 3 cm da beirada iluminada: lá o sensor vê a borda da caixa
-	std::vector<unsigned char> cru(n,0);
-	std::vector<float> acima(n,0.0f);
-	for(int cy=beira;cy<gh-beira;++cy)
-		for(int cx=beira;cx<gw-beira;++cx)
-			{
-			int k=cy*gw+cx;
-			if(contaM[k]<2||fundo[k]<SEM+1.0f)
-				continue;
-			acima[k]=somaM[k]/float(contaM[k])-fundo[k];
-			float limiar=eraMao[k]?0.8f:1.2f; // histerese: a mão que já estava é seguida mesmo mais baixa
-			cru[k]=acima[k]>limiar&&acima[k]<90.0f;
-			}
-	for(int k=0;k<n;++k)
-		maoSeg[k]=cru[k]?maoSeg[k]+dt:0.0f;
-	if(maoDiag)
-		{
-		/* calibração: sem ninguém na caixa a diferença fica perto de 0 e quase nenhuma célula passa do limiar */
-		int nc=0,nAcima=0;
-		double sm=0.0,sa=0.0;
-		float mx=-1e9f,mn=1e9f;
-		for(int k=0;k<n;++k)
-			if(contaM[k]>=2&&fundo[k]>SEM+1.0f)
-				{
-				++nc;
-				sm+=acima[k];
-				sa+=std::abs(acima[k]);
-				mx=std::max(mx,acima[k]);
-				mn=std::min(mn,acima[k]);
-				nAcima+=cru[k];
-				}
-		char t[200];
-		std::snprintf(t,sizeof(t),"Maos diag: %d celulas, media %.2f cm, media abs %.2f cm, min %.1f max %.1f, acima do limiar %d",
-		              nc,nc?sm/nc:0.0,nc?sa/nc:0.0,mn,mx,nAcima);
-		anuncia(t);
-		maoDiag=false;
-		}
-	/* 2. manchas ligadas (8 vizinhos) */
-	std::vector<int> visto(n,0);
-	std::vector<int> pilha;
-	std::vector<Mancha> manchas;
-	for(int k=0;k<n;++k)
-		{
-		if(!cru[k]||visto[k])
-			continue;
-		Mancha m;
-		m.ex=m.ey=0.0f;
-		m.ne=0;
-		m.braco=0.0f;
-		m.idade=0.0f;
-		pilha.clear();
-		pilha.push_back(k);
-		visto[k]=1;
-		while(!pilha.empty())
-			{
-			int q=pilha.back();
-			pilha.pop_back();
-			m.cel.push_back(q);
-			m.idade+=maoSeg[q];
-			int qx=q%gw,qy=q/gw;
-			if(qx<=beira+1||qy<=beira+1||qx>=gw-beira-2||qy>=gh-beira-2)
-				{
-				m.ex+=float(qx);
-				m.ey+=float(qy);
-				++m.ne;
-				m.braco=std::max(m.braco,acima[q]);
-				}
-			for(int oy=-1;oy<=1;++oy)
-				for(int ox=-1;ox<=1;++ox)
-					{
-					int nx=qx+ox,ny=qy+oy;
-					if(nx<0||ny<0||nx>=gw||ny>=gh)
-						continue;
-					int nq=ny*gw+nx;
-					if(cru[nq]&&!visto[nq])
-						{
-						visto[nq]=1;
-						pilha.push_back(nq);
-						}
-					}
-			}
-		m.idade/=float(m.cel.size());
-		/* mão: o braço entra pela beirada (alto: mais de 4 cm acima da areia) ou a mancha é nova (monte de
-		   areia recém-feito também aparece aqui, mas o filtro do sensor o aceita e ele some em ~1 s) */
-		bool braco=m.ne>0&&m.braco>4.0f;
-		if(m.cel.size()>=6&&(braco||m.idade<4.0f))
-			{
-			if(!braco)
-				m.ne=0;
-			manchas.push_back(m);
-			}
-		}
-	std::sort(manchas.begin(),manchas.end(),maior);
-	/* 3. posição da mão: com braço, a ponta (os últimos 9 cm da mancha, longe da beirada); sem, o meio */
-	Mao velhas[MAX_MAOS-1],novas[MAX_MAOS-1];
-	bool usada[MAX_MAOS-1];
-	for(int k=0;k<MAX_MAOS-1;++k)
-		{
-		velhas[k]=maos[k];
-		usada[k]=false;
-		novas[k].x=novas[k].y=novas[k].r=0.0f;
-		novas[k].visto=novas[k].desde=-100.0;
-		}
-	std::fill(eraMao.begin(),eraMao.end(),0);
-	int nn=0;
-	for(size_t b=0;b<manchas.size()&&nn<MAX_MAOS-1;++b)
-		{
-		const Mancha& m=manchas[b];
-		float sx=0.0f,sy=0.0f;
-		int c=0;
-		if(m.ne>0)
-			{
-			float ex=m.ex/float(m.ne),ey=m.ey/float(m.ne),dmax=0.0f;
-			for(size_t j=0;j<m.cel.size();++j)
-				dmax=std::max(dmax,std::sqrt((m.cel[j]%gw-ex)*(m.cel[j]%gw-ex)+(m.cel[j]/gw-ey)*(m.cel[j]/gw-ey)));
-			float corte=dmax-9.0f/celula;
-			for(size_t j=0;j<m.cel.size();++j)
-				if(std::sqrt((m.cel[j]%gw-ex)*(m.cel[j]%gw-ex)+(m.cel[j]/gw-ey)*(m.cel[j]/gw-ey))>=corte)
-					{
-					sx+=float(m.cel[j]%gw);
-					sy+=float(m.cel[j]/gw);
-					++c;
-					}
-			}
-		else
-			for(size_t j=0;j<m.cel.size();++j)
-				{
-				sx+=float(m.cel[j]%gw);
-				sy+=float(m.cel[j]/gw);
-				++c;
-				}
-		if(c==0)
-			continue;
-		float x=bmin[0]+(sx/float(c)+0.5f)*celula,y=bmin[1]+(sy/float(c)+0.5f)*celula;
-		float r=std::max(2.5f,std::min(m.ne>0?7.0f:10.0f,std::sqrt(float(c)/PI)*celula));
-		/* a mesma mão do quadro anterior: suaviza (a medida treme um pouco) */
-		int perto=-1;
-		float dmin=12.0f;
-		for(int k=0;k<MAX_MAOS-1;++k)
-			if(!usada[k]&&tempo-velhas[k].visto<1.0)
-				{
-				float d=std::sqrt((velhas[k].x-x)*(velhas[k].x-x)+(velhas[k].y-y)*(velhas[k].y-y));
-				if(d<dmin)
-					{
-					dmin=d;
-					perto=k;
-					}
-				}
-		Mao h;
-		h.x=x;
-		h.y=y;
-		h.r=r;
-		h.visto=tempo;
-		h.desde=tempo;
-		if(perto>=0)
-			{
-			usada[perto]=true;
-			h.x=0.35f*velhas[perto].x+0.65f*x;
-			h.y=0.35f*velhas[perto].y+0.65f*y;
-			h.r=0.5f*velhas[perto].r+0.5f*r;
-			h.desde=velhas[perto].desde;
-			}
-		novas[nn++]=h;
-		/* embaixo da mão (e em volta) a referência fica congelada por 3 s */
-		for(size_t j=0;j<m.cel.size();++j)
-			{
-			int q=m.cel[j],qx=q%gw,qy=q/gw;
-			eraMao[q]=1;
-			for(int oy=-1;oy<=1;++oy)
-				for(int ox=-1;ox<=1;++ox)
-					if(qx+ox>=0&&qy+oy>=0&&qx+ox<gw&&qy+oy<gh)
-						congela[(qy+oy)*gw+qx+ox]=tempo+3.0;
-			}
-		}
-	/* mão que sumiu agora continua valendo por 0,6 s (um quadro ruim do sensor não espanta ninguém) */
-	for(int k=0;k<MAX_MAOS-1&&nn<MAX_MAOS-1;++k)
-		if(!usada[k]&&tempo-velhas[k].visto<0.6)
-			novas[nn++]=velhas[k];
-	for(int k=0;k<MAX_MAOS-1;++k)
-		maos[k]=novas[k];
-	int agora=0;
-	for(int k=0;k<MAX_MAOS-1;++k)
-		if(maos[k].visto==tempo)
-			++agora;
-	if(agora!=maosAntes)
-		{
-		char t[64];
-		std::snprintf(t,sizeof(t),"Maos: %d",agora);
-		anuncia(t);
-		maosAntes=agora;
-		}
-	}
+/* ------------------------------- comida (jogada pelo painel; a mão de verdade só faz chover) */
 
 int Extras::maoPerto(float x,float y,float& borda,float idade) const
 	{

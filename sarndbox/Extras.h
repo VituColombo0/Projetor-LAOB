@@ -200,20 +200,13 @@ class Extras
 	void membros(const std::vector<std::string>& lista,int giro,int fotos=0); // uma pessoinha por nome (mantém quem já estava)
 	void armadilhasDoLabirinto(void); // peças P_PERIGO entre a nascente e o alvo
 	float vbx,vby; // última velocidade da água no barco
-	/* Mãos sobre a areia (os bichos reagem a elas). O Sandbox compara o quadro CRU do sensor com o mapa de
-	   alturas: o que está mais de 1,2 cm acima da areia é mão (sem ninguém, o ruído medido não passa de 0,5 cm). Embaixo da mão a areia de REFERÊNCIA (fundo)
-	   fica congelada (a mão parada perto da areia continua mão); o mapa dos bichos é sempre o atual. Mão = mancha que entra pela beirada (o braço) ou que
-	   apareceu há pouco (um monte de areia novo para de contar em 4 s). */
-	enum {MAX_MAOS=4}; // a última vaga é a mão de teste (maoTeste)
+	/* Comida jogada pelo painel (comando "comida"): os pássaros pousam em volta e os cachorros sentam do lado.
+	   A mão de verdade NÃO é seguida (18/11: só faz chover; seguir o quadro cru do sensor custava CPU). */
+	enum {MAX_MAOS=4}; // só a última vaga é usada (a comida)
 	struct Mao {float x,y,r; double visto,desde;};
 	Mao maos[MAX_MAOS];
-	std::vector<float> fundo; // areia de referência só para achar a mão (congelada embaixo dela; os bichos usam o mapa atual)
-	std::vector<float> somaM; std::vector<int> contaM; std::vector<double> congela; std::vector<float> maoSeg; std::vector<unsigned char> eraMao;
-	int maosAntes; double maoFalsaAte; bool maoDiag; // maoDiag: imprime no log a diferença cru x mapa (calibração)
+	double maoFalsaAte;
 	bool querMaos(void) const {return mapaOk&&modo!=NADA&&modo!=MUNDO&&modo!=MEMBROS;}
-	void comecaMaos(void);
-	void amostraMao(float x,float y,float z);
-	void fechaMaos(float dt);
 	int maoPerto(float x,float y,float& borda,float idade=0.6f) const; // mão vista há menos de "idade" s mais perto; borda = cm até a beira dela; -1 = nenhuma
 	void maoTeste(float fx,float fy,float segundos); // mão de mentira (testes): fx, fy = 0..1 na área iluminada
 	/* Estado de cada bicho: 0 normal, 1 pousado/sentado, 2 mergulhando, 3 indo pousar/indo até a mão, 4 perseguindo */
