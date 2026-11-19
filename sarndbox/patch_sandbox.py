@@ -14,9 +14,10 @@
    chuva <x 0-1> <y 0-1> [s] / secar                         nuvem de chuva num ponto; tira toda a água
    aguaNivel auto|mapa|areia|<cm> [absorção] / aguaInfo     nível do mar do lago dos bichos; diagnóstico da água
    efeito <tema>                                           animação do tema (lava, neve, poeira...)
-   gestoTeste <x 0-1> <y 0-1> [s] / gestoDiag [n] / gestoAjuste [nome valor]
-                                                           dedo apontado para cima (Gesto.cpp): de mentira;
-                                                           medidas das próximas n procuras no log; limiares
+   gestoTeste <x 0-1> <y 0-1> [s] / gestoDiag [n] / gestoAjuste [nome valor] / gestoGrava [s]
+                                                           dedo apontado (Gesto.cpp): de mentira; medidas das
+                                                           próximas n procuras no log; limiares; grava até 20 s
+                                                           do sensor em /dev/shm/gesto-* (testes/analisa_gesto.cpp)
    labirinto [facil|normal|dificil] / labirintoNovo / labirintoFim (labirintoTeste: alvo na nascente)
                                                            labirinto de água: uma nascente joga água de
                                                            verdade; cavem canais até ela chegar ao alvo
@@ -61,22 +62,24 @@ if "FaceImage" not in h:
     h = rep(h, "\tfloat measureSandHeight(void) const; // Altura mediana da areia (cm acima do plano base)\n",
             "\tfloat measureSandHeight(void) const; // Altura mediana da areia (cm acima do plano base)\n"
             "\tvoid atualizaExtras(void); // Mapa de alturas, movimento e tesouro (a cada quadro)\n"
-            "\tvoid atualizaGesto(double agora); // Dedo apontado para cima: derruba comida embaixo dele\n"
+            "\tvoid atualizaGesto(double agora); // Dedo apontado (para cima ou para a areia): derruba comida embaixo dele\n"
             "\tvoid gestoDedoCai(void); // Comida embaixo do dedo, se há quem coma aquilo (terra ou água)\n"
             "\tfloat medeAguaNoAlvo(GLContextData& contextData) const; // Labirinto: água no alvo (cm)\n"
             "\tvoid medeJogo(GLContextData& contextData) const; // Jogos de água: água em cada peça\n")
     # Dedo apontado para cima (Projetor-LAOB, 18/11/2026): o quadro cru do sensor vai para o detector (Gesto.cpp)
     h = rep(h, '#include "Extras.h"\n', '#include "Extras.h"\n#include "Gesto.h"\n')
     h = rep(h, "\tfloat tesouroPedido; // Profundidade do tesouro pedido antes de haver mapa (<0 = nenhum)\n", """\tfloat tesouroPedido; // Profundidade do tesouro pedido antes de haver mapa (<0 = nenhum)
-	/* Dedo apontado para cima (Gesto.cpp): derruba comida embaixo dele; só com bichos na areia */
+	/* Dedo apontado (Gesto.cpp): derruba comida embaixo dele; só com bichos na areia (ou gravando: gestoGrava) */
 	Threads::TripleBuffer<Kinect::FrameBuffer> brutoFrames; // Quadros crus do sensor (só enquanto brutoQuer)
 	volatile bool brutoQuer=false; // A thread da câmera só passa o quadro cru quando o detector quer
 	Gesto::Detector gestoDetector;
 	Gesto::Rastro gestoRastro; // O dedo confirmado (cm, espaço da caixa); perto dele a mão não chove
-	std::vector<Gesto::Medida> gestoMedidas;
+	Gesto::Rastro gestoRastroGrava; // Gravando sem bichos: o dedo visto só vai para o log
+	std::vector<Gesto::MaoAberta> gestoMaos; // As mãos abertas do HandExtractor, na caixa
+	Gesto::Gravador gestoGravador; double gestoGravaAte=0.0; float gestoGravaPedido=0.0f; // gestoGrava: até quando; pedido (s)
 	double gestoTempo=0.0,gestoComidaTempo=0.0,gestoTesteAte=0.0; // Última procura, última comida, fim do teste
 	float gestoTesteX=0.0f,gestoTesteY=0.0f; // Dedo de teste (cm)
-	float gestoPx=-1.0f,gestoPy=-1.0f; // Onde estava o dedo no quadro (px; <0 = nenhum)
+	void gestoEvento(double agora,int ev); // Confirmou, solto, continua: a comida
 	float gestoLugarX=0.0f,gestoLugarY=0.0f; bool gestoAgua=false,gestoCaiu=false; // Onde a comida caiu, se foi na água e se caiu (alguém come)
 	int gestoDiag=0; // Quantas procuras ainda imprimir no log (gestoDiag)
 	int gestoRet[4]={0,0,0,0}; // Pixels da área iluminada: x0, y0, x1, y1 (x1 = 0: ainda não medido)
@@ -363,7 +366,7 @@ void Sandbox::toggleDEM(DEM* dem)
 					/* as medidas de cada mão vista nas próximas n procuras (para calibrar com a mão de verdade) */
 					gestoDiag=tokens.size()>=2?std::max(1,std::min(100,atoi(tokens[1].c_str()))):1;
 					std::cout<<"GestoDiag: medindo as próximas "<<gestoDiag<<" procura(s)"
-					         <<(extras.querComida()?"":" (desligado: só procura com bichos na areia)")<<std::endl;
+					         <<(extras.querComida()?"":" (desligado: só procura com bichos na areia ou gravando)")<<std::endl;
 					}
 				else if(isToken(tokens[0],"gestoAjuste"))
 					{
@@ -371,6 +374,20 @@ void Sandbox::toggleDEM(DEM* dem)
 					if(tokens.size()>=3&&!gestoDetector.lim.ajusta(tokens[1],float(atof(tokens[2].c_str()))))
 						std::cout<<"GestoAjuste: não existe "<<tokens[1]<<std::endl;
 					std::cout<<"GestoAjuste: "<<gestoDetector.lim.texto()<<std::endl;
+					}
+				else if(isToken(tokens[0],"gestoGrava"))
+					{
+					/* gestoGrava [s]: grava o quadro cru e o filtrado (~12 por segundo, até 20 s) em /dev/shm/gesto-*
+					   para analisar a mão de verdade fora daqui (testes/analisa_gesto.cpp); grava mesmo sem bichos */
+					float seg=tokens.size()>=2?float(atof(tokens[1].c_str())):10.0f;
+					seg=seg>0.0f?std::min(20.0f,std::max(1.0f,seg)):10.0f;
+					if(gestoGravador.gravando())
+						std::cout<<"Gesto: já gravando em "<<gestoGravador.pasta<<std::endl;
+					else
+						{
+						gestoGravaPedido=seg;
+						std::cout<<"Gesto: gravação pedida ("<<seg<<" s)"<<std::endl;
+						}
 					}
 				else if(isToken(tokens[0],"tesouroTeste"))
 					{
@@ -654,87 +671,9 @@ void Sandbox::toggleDEM(DEM* dem)
 
 namespace {
 
-/* Projetor-LAOB: o quadro cru do sensor e o filtrado (a areia) como o detector do dedo apontado vê (Gesto.h):
-   altura em cm acima do plano base. Só as linhas z e w da projeção pixel -> caixa (2 produtos e 1 divisão por
-   pixel), sem transformar o ponto inteiro. */
-class QuadroSensor:public Gesto::Quadro
-	{
-	public:
-	const Kinect::FrameSource::DepthPixel* cru;
-	const float* filtrado;
-	const Kinect::FrameSource::DepthCorrection::PixelCorrection* pdc;
-	int w,h;
-	double m[4][4]; // (x, y, profundidade, 1) do pixel -> caixa (cm)
-	QuadroSensor(const PTransform& t,const Kinect::FrameSource::DepthPixel* sCru,const float* sFiltrado,
-	             const Kinect::FrameSource::DepthCorrection::PixelCorrection* sPdc,int sW,int sH)
-		:cru(sCru),filtrado(sFiltrado),pdc(sPdc),w(sW),h(sH)
-		{
-		for(int i=0;i<4;++i)
-			for(int j=0;j<4;++j)
-				m[i][j]=t.getMatrix()(i,j);
-		}
-	float profCru(int x,int y) const // profundidade corrigida do quadro cru; <0 = sem medida
-		{
-		unsigned int b=cru[y*w+x];
-		if(b==0||b>=Kinect::FrameSource::invalidDepth)
-			return -1.0f;
-		return pdc[y*w+x].correct(float(b));
-		}
-	float profAreia(int x,int y) const // a do quadro filtrado; <0 = sem medida
-		{
-		float d=filtrado[y*w+x];
-		return std::isfinite(d)&&d>0.0f&&d<2047.0f?d:-1.0f;
-		}
-	float altDe(int x,int y,float d) const
-		{
-		double px=x+0.5,py=y+0.5;
-		return float((m[2][0]*px+m[2][1]*py+m[2][2]*d+m[2][3])/(m[3][0]*px+m[3][1]*py+m[3][2]*d+m[3][3]));
-		}
-	void ponto(double px,double py,double d,double& bx,double& by) const // pixel -> x, y na caixa (cm)
-		{
-		double ww=m[3][0]*px+m[3][1]*py+m[3][2]*d+m[3][3];
-		bx=(m[0][0]*px+m[0][1]*py+m[0][2]*d+m[0][3])/ww;
-		by=(m[1][0]*px+m[1][1]*py+m[1][2]*d+m[1][3])/ww;
-		}
-	virtual float alt(int x,int y) const
-		{
-		float d=profCru(x,y);
-		return d<0.0f?std::nanf(""):altDe(x,y,d);
-		}
-	virtual float fundo(int x,int y) const
-		{
-		float d=profAreia(x,y);
-		return d<0.0f?std::nanf(""):altDe(x,y,d);
-		}
-	virtual float cmPorPixel(int x,int y) const
-		{
-		float d=profCru(x,y);
-		if(d<0.0f)
-			d=profAreia(x,y);
-		if(d<0.0f)
-			return 0.0f;
-		double x0,y0,x1,y1;
-		ponto(x+0.5,y+0.5,d,x0,y0);
-		ponto(x+1.5,y+0.5,d,x1,y1);
-		return float(std::sqrt((x1-x0)*(x1-x0)+(y1-y0)*(y1-y0)));
-		}
-	bool caixa(float fx,float fy,double& bx,double& by) const // ponta (px) -> caixa, pela profundidade ali perto
-		{
-		int cx=int(fx+0.5f),cy=int(fy+0.5f);
-		for(int r=0;r<=2;++r)
-			for(int y=std::max(0,cy-r);y<=std::min(h-1,cy+r);++y)
-				for(int x=std::max(0,cx-r);x<=std::min(w-1,cx+r);++x)
-					{
-					float d=profCru(x,y);
-					if(d>=0.0f)
-						{
-						ponto(fx+0.5,fy+0.5,d,bx,by);
-						return true;
-						}
-					}
-		return false;
-		}
-	};
+/* Projetor-LAOB: o quadro do sensor como o detector do dedo apontado vê (Gesto::QuadroKinect, Gesto.h): altura
+   em cm acima do plano base no quadro cru e no filtrado, pela projeção pixel -> caixa */
+typedef Gesto::QuadroKinect<Kinect::FrameSource::DepthCorrection::PixelCorrection> QuadroSensor;
 
 }
 
@@ -752,163 +691,8 @@ void Sandbox::gestoDedoCai(void)
 	         <<(gestoCaiu?"":" nada caiu: ninguem come isso")<<std::endl;
 	}
 
-void Sandbox::atualizaGesto(double agora)
+void Sandbox::gestoEvento(double agora,int ev)
 	{
-	/* Dedo apontado para cima (Projetor-LAOB, 18/11/2026; pedido do Victor): quem aponta com o indicador
-	   para cima, os outros dedos fechados, derruba comida embaixo do dedo: na areia para os bichos de terra,
-	   na água para os da água. O HandExtractor do SARndbox só acha a mão ABERTA (é dela a chuva) e nunca vê
-	   o dedo apontado; o detector é o do Gesto.cpp, sobre o quadro CRU do sensor, ~12x por segundo e só com
-	   bichos na areia (sem eles nem o quadro cru é passado adiante). A mão aberta continua só fazendo chover. */
-	/* só procura se há na areia quem coma (pássaros/cachorros na terra, bichos da água na água) */
-	bool quer=extras.querComida()&&(extras.comem(false)||extras.comem(true))&&faceImage==0&&pixelDepthCorrection!=0;
-	brutoQuer=quer;
-	if(!quer)
-		{
-		if(gestoRastro.ativo)
-			std::cout<<"Gesto: dedo solto"<<std::endl;
-		gestoRastro.larga();
-		gestoTesteAte=0.0;
-		gestoPx=gestoPy=-1.0f;
-		return;
-		}
-	if(agora-gestoTempo<1.0/12.0)
-		return;
-	gestoTempo=agora;
-	bool viu=false;
-	float bx=0.0f,by=0.0f;
-	if(agora<gestoTesteAte)
-		{
-		/* gestoTeste: um dedo de mentira */
-		viu=true;
-		bx=gestoTesteX;
-		by=gestoTesteY;
-		}
-	else
-		{
-		if(!brutoFrames.lockNewValue())
-			return; // nenhum quadro novo do sensor desde a última procura
-		const Kinect::FrameBuffer& rb=brutoFrames.getLockedValue();
-		const Kinect::FrameBuffer& fb=filteredFrames.getLockedValue();
-		const Kinect::FrameSource::DepthPixel* rd=rb.getData<Kinect::FrameSource::DepthPixel>();
-		const float* fd=fb.getData<float>();
-		int w=int(frameSize[0]),h=int(frameSize[1]);
-		if(rd==0||fd==0||int(rb.getSize(0))!=w||int(rb.getSize(1))!=h||int(fb.getSize(0))!=w||int(fb.getSize(1))!=h)
-			return;
-		PTransform full=PTransform(OGTransform(boxTransform));
-		full*=depthImageRenderer->getDepthProjection();
-		QuadroSensor q(full,rd,fd,pixelDepthCorrection,w,h);
-		if(gestoRet[2]==0)
-			{
-			/* uma vez: o retângulo de pixels que cobre a área iluminada (com 2 cm de folga) */
-			int x0=w,y0=h,x1=0,y1=0;
-			for(int y=0;y<h;y+=4)
-				for(int x=0;x<w;x+=4)
-					{
-					float d=q.profAreia(x,y);
-					if(d<0.0f)
-						continue;
-					double px,py;
-					q.ponto(x+0.5,y+0.5,d,px,py);
-					if(px>faceBoxMin[0]-2.0&&px<faceBoxMax[0]+2.0&&py>faceBoxMin[1]-2.0&&py<faceBoxMax[1]+2.0)
-						{
-						x0=std::min(x0,x);
-						y0=std::min(y0,y);
-						x1=std::max(x1,x+4);
-						y1=std::max(y1,y+4);
-						}
-					}
-			if(x1-x0<40||y1-y0<40)
-				return; // ainda sem quadro filtrado
-			gestoRet[0]=std::max(0,x0-4);
-			gestoRet[1]=std::max(0,y0-4);
-			gestoRet[2]=std::min(w,x1+4);
-			gestoRet[3]=std::min(h,y1+4);
-			std::cout<<"Gesto: area iluminada nos pixels x "<<gestoRet[0]<<".."<<gestoRet[2]<<" y "<<gestoRet[1]<<".."<<gestoRet[3]<<std::endl;
-			}
-		gestoDetector.medeTudo=gestoDiag>0;
-		gestoDetector.procura(q,gestoRet[0],gestoRet[1],gestoRet[2],gestoRet[3],gestoRastro.conta>0?gestoPx:-1.0f,gestoPy,gestoMedidas);
-		
-		/* a ponta na caixa: longe da beirada (como a chuva) e longe de uma mão ABERTA achada pelo SARndbox
-		   (mão aberta nunca vira dedo apontado: ela é da chuva) */
-		const HandExtractor::HandList* maos=handExtractor!=0?&handExtractor->getLockedExtractedHands():0;
-		int melhor=-1;
-		double melhorD=1e30,mx[8],my[8];
-		for(size_t i=0;i<gestoMedidas.size()&&i<8;++i)
-			{
-			Gesto::Medida& md=gestoMedidas[i];
-			mx[i]=my[i]=0.0;
-			if(!q.caixa(md.px,md.py,mx[i],my[i]))
-				{
-				if(md.dedo)
-					md.motivo="sem medida na ponta";
-				md.dedo=false;
-				continue;
-				}
-			if(md.dedo&&(mx[i]<faceBoxMin[0]+4.0||mx[i]>faceBoxMax[0]-4.0||my[i]<faceBoxMin[1]+4.0||my[i]>faceBoxMax[1]-4.0))
-				{
-				md.dedo=false;
-				md.motivo="na beirada";
-				}
-			if(md.dedo&&maos!=0)
-				for(HandExtractor::HandList::const_iterator hIt=maos->begin();hIt!=maos->end();++hIt)
-					{
-					Point hc=boxTransform.transform(hIt->center);
-					if((hc[0]-mx[i])*(hc[0]-mx[i])+(hc[1]-my[i])*(hc[1]-my[i])<(hIt->radius+2.0)*(hIt->radius+2.0))
-						{
-						md.dedo=false;
-						md.motivo="mao aberta (chuva)";
-						}
-					}
-			if(!md.dedo)
-				continue;
-			/* com um dedo já visto, fica o mais perto dele; senão, o mais alto */
-			double dd=gestoRastro.conta>0?(mx[i]-gestoRastro.x)*(mx[i]-gestoRastro.x)+(my[i]-gestoRastro.y)*(my[i]-gestoRastro.y):-md.ponta;
-			if(dd<melhorD)
-				{
-				melhorD=dd;
-				melhor=int(i);
-				}
-			}
-		if(gestoDiag>0)
-			{
-			--gestoDiag;
-			std::cout<<"GestoDiag: "<<gestoMedidas.size()<<" candidato(s); "<<(maos!=0?maos->size():0)<<" mao(s) aberta(s) do SARndbox"<<std::endl;
-			for(size_t i=0;i<gestoMedidas.size()&&i<8;++i)
-				{
-				const Gesto::Medida& md=gestoMedidas[i];
-				std::cout<<"GestoDiag: x "<<mx[i]<<" y "<<my[i]<<": ponta "<<md.sobreAreia<<" cm acima da areia; dedo acima do punho "
-				         <<md.degrau<<" cm; pico "<<2.0f*md.picoRaio<<" cm de largura, "<<md.picoArea<<" cm2; punho "<<md.punhoArea
-				         <<" cm2; alto em volta "<<int(100.0f*md.fracAlto+0.5f)<<"%; outro pico "<<md.outroArea<<" cm2"
-				         <<(md.rastreio?" (rastro)":"")<<" -> "<<md.motivo<<std::endl;
-				}
-			}
-		/* abriu a mão em cima do dedo confirmado: solta na hora (a chuva volta sem esperar os 0,4 s) */
-		if(gestoRastro.ativo&&maos!=0)
-			for(HandExtractor::HandList::const_iterator hIt=maos->begin();hIt!=maos->end();++hIt)
-				{
-				Point hc=boxTransform.transform(hIt->center);
-				if((hc[0]-gestoRastro.x)*(hc[0]-gestoRastro.x)+(hc[1]-gestoRastro.y)*(hc[1]-gestoRastro.y)<(hIt->radius+2.0)*(hIt->radius+2.0))
-					{
-					gestoRastro.larga();
-					gestoPx=gestoPy=-1.0f;
-					melhor=-1;
-					std::cout<<"Gesto: dedo solto (mao aberta)"<<std::endl;
-					break;
-					}
-				}
-		if(melhor>=0)
-			{
-			viu=true;
-			bx=float(mx[melhor]);
-			by=float(my[melhor]);
-			gestoPx=gestoMedidas[melhor].px;
-			gestoPy=gestoMedidas[melhor].py;
-			}
-		}
-	
-	Gesto::Rastro::Evento ev=gestoRastro.passo(agora,viu,bx,by);
-	if(gestoRastro.conta==0)
-		gestoPx=gestoPy=-1.0f;
 	if(ev==Gesto::Rastro::CONFIRMOU)
 		{
 		/* confirmado: comida embaixo do dedo; água ou terra é decidido agora (parada, a mão acaba entrando no
@@ -934,6 +718,174 @@ void Sandbox::atualizaGesto(double agora)
 		else if(gestoCaiu)
 			extras.jogarComidaEm(gestoRastro.x,gestoRastro.y,20.0f,gestoAgua?1:0);
 		}
+	}
+
+void Sandbox::atualizaGesto(double agora)
+	{
+	/* Dedo apontado (Projetor-LAOB, 18/11/2026; refeito em 19/11 depois de não funcionar com a mão de verdade;
+	   pedido do Victor): quem aponta com o indicador, os outros dedos fechados, para CIMA ou para BAIXO (para
+	   a areia), derruba comida embaixo do dedo: na areia para os bichos de terra, na água para os da água. O
+	   HandExtractor do SARndbox só acha a mão ABERTA (é dela a chuva) e nunca vê o dedo apontado; o detector é
+	   o do Gesto.cpp, sobre o quadro CRU do sensor, ~12x por segundo e só com bichos na areia (sem eles nem o
+	   quadro cru é passado adiante) ou enquanto grava (gestoGrava). A mão aberta continua só fazendo chover. */
+	/* só procura se há na areia quem coma (pássaros/cachorros na terra, bichos da água na água) */
+	bool quer=extras.querComida()&&(extras.comem(false)||extras.comem(true))&&faceImage==0&&pixelDepthCorrection!=0;
+	bool grava=(gestoGravaPedido>0.0f||gestoGravador.gravando())&&pixelDepthCorrection!=0;
+	brutoQuer=quer||grava;
+	if(!quer)
+		{
+		if(gestoRastro.ativo)
+			std::cout<<"Gesto: dedo solto"<<std::endl;
+		gestoRastro.larga();
+		gestoTesteAte=0.0;
+		if(!grava)
+			{
+			gestoRastroGrava.larga();
+			/* esquece também a areia congelada: quando os bichos voltarem (minutos ou horas depois), a
+			   referência recomeça do quadro filtrado. Antes ficava a velha e todo monte feito nesse meio
+			   tempo aparecia "com mão" e era congelado de novo por 8 s */
+			gestoDetector.esquece();
+			return;
+			}
+		}
+	if(agora-gestoTempo<1.0/12.0)
+		return;
+	gestoTempo=agora;
+	if(quer&&agora<gestoTesteAte)
+		{
+		/* gestoTeste: um dedo de mentira, pelo mesmo tempo e a mesma comida do de verdade */
+		gestoEvento(agora,gestoRastro.passo(agora,true,gestoTesteX,gestoTesteY));
+		return;
+		}
+	if(!brutoFrames.lockNewValue())
+		return; // nenhum quadro novo do sensor desde a última procura
+	const Kinect::FrameBuffer& rb=brutoFrames.getLockedValue();
+	const Kinect::FrameBuffer& fb=filteredFrames.getLockedValue();
+	const Kinect::FrameSource::DepthPixel* rd=rb.getData<Kinect::FrameSource::DepthPixel>();
+	const float* fd=fb.getData<float>();
+	int w=int(frameSize[0]),h=int(frameSize[1]);
+	if(rd==0||fd==0||int(rb.getSize(0))!=w||int(rb.getSize(1))!=h||int(fb.getSize(0))!=w||int(fb.getSize(1))!=h)
+		return;
+	PTransform full=PTransform(OGTransform(boxTransform));
+	full*=depthImageRenderer->getDepthProjection();
+	double mat[4][4];
+	for(int i=0;i<4;++i)
+		for(int j=0;j<4;++j)
+			mat[i][j]=full.getMatrix()(i,j);
+	const std::uint16_t* cru=reinterpret_cast<const std::uint16_t*>(rd);
+	QuadroSensor q(mat,cru,fd,pixelDepthCorrection,0,0,w,h);
+	if(gestoRet[2]==0)
+		{
+		/* uma vez: o retângulo de pixels que cobre a área iluminada (com 2 cm de folga) */
+		int x0=w,y0=h,x1=0,y1=0;
+		for(int y=0;y<h;y+=4)
+			for(int x=0;x<w;x+=4)
+				{
+				float d=q.profAreia(x,y);
+				if(d<0.0f)
+					continue;
+				double px,py;
+				q.ponto(x+0.5,y+0.5,d,px,py);
+				if(px>faceBoxMin[0]-2.0&&px<faceBoxMax[0]+2.0&&py>faceBoxMin[1]-2.0&&py<faceBoxMax[1]+2.0)
+					{
+					x0=std::min(x0,x);
+					y0=std::min(y0,y);
+					x1=std::max(x1,x+4);
+					y1=std::max(y1,y+4);
+					}
+				}
+		if(x1-x0<40||y1-y0<40)
+			return; // ainda sem quadro filtrado
+		gestoRet[0]=std::max(0,x0-4);
+		gestoRet[1]=std::max(0,y0-4);
+		gestoRet[2]=std::min(w,x1+4);
+		gestoRet[3]=std::min(h,y1+4);
+		std::cout<<"Gesto: area iluminada nos pixels x "<<gestoRet[0]<<".."<<gestoRet[2]<<" y "<<gestoRet[1]<<".."<<gestoRet[3]<<std::endl;
+		}
+	
+	/* as mãos ABERTAS que o SARndbox achou (a chuva), na caixa: dedo em cima de uma delas não vale */
+	gestoMaos.clear();
+	if(handExtractor!=0)
+		{
+		const HandExtractor::HandList& maos=handExtractor->getLockedExtractedHands();
+		for(HandExtractor::HandList::const_iterator hIt=maos.begin();hIt!=maos.end();++hIt)
+			{
+			Point hc=boxTransform.transform(hIt->center);
+			Gesto::MaoAberta m={float(hc[0]),float(hc[1]),float(hc[2]),float(hIt->radius)};
+			gestoMaos.push_back(m);
+			}
+		}
+	/* procura, posição na caixa, beirada (4 cm, como a chuva), mão aberta, tempo: tudo no Gesto::Detector::passo
+	   (o mesmo caminho da análise das gravações) */
+	float area[4]={float(faceBoxMin[0]),float(faceBoxMin[1]),float(faceBoxMax[0]),float(faceBoxMax[1])};
+	Gesto::Rastro& rastro=quer?gestoRastro:gestoRastroGrava;
+	gestoDetector.medeTudo=gestoDiag>0;
+	Gesto::Passo p;
+	gestoDetector.passo(q,gestoRet[0],gestoRet[1],gestoRet[2],gestoRet[3],agora,area,gestoMaos,rastro,p);
+	if(gestoDiag>0)
+		{
+		--gestoDiag;
+		const std::vector<Gesto::Medida>& ms=gestoDetector.medidas;
+		std::cout<<"GestoDiag: "<<ms.size()<<" candidato(s); "<<gestoMaos.size()<<" mao(s) aberta(s) do SARndbox"<<std::endl;
+		for(size_t i=0;i<ms.size()&&i<8;++i)
+			{
+			const Gesto::Medida& md=ms[i];
+			if(md.tipo==0)
+				std::cout<<"GestoDiag: pico x "<<md.bx<<" y "<<md.by<<": ponta "<<md.sobreAreia<<" cm acima da areia; dedo acima do punho "
+				         <<md.degrau<<" cm; pico "<<md.picoArea<<" cm2, "<<md.picoLarg<<" x "<<md.picoComp<<" cm; encosta "<<md.altaArea
+				         <<" cm2; punho "<<md.punhoArea<<" cm2; alto em volta "<<int(100.0f*md.fracAlto+0.5f)<<"%; outro pico "<<md.outroArea<<" cm2"
+				         <<(md.rastreio?" (rastro)":"")<<" -> "<<md.motivo<<std::endl;
+			else
+				std::cout<<"GestoDiag: contorno x "<<md.bx<<" y "<<md.by<<": dedo sai "<<md.comp<<" cm do punho, "<<md.larg<<" cm de largura, "
+				         <<md.angulo<<" graus do braco; punho "<<md.degrau<<" cm acima da ponta; ponta "<<md.sobreAreia<<" cm acima da areia; corpo "
+				         <<md.punhoArea<<" cm2; outra parte fina "<<md.outroArea<<" cm; braco "<<md.braco<<" cm acima da areia na borda"<<(md.rastreio?" (rastro)":"")<<" -> "<<md.motivo<<std::endl;
+			}
+		}
+	
+	/* gravação (gestoGrava): o recorte da área do detector com 24 px de folga, ~12 quadros por segundo */
+	if(grava)
+		{
+		if(!gestoGravador.gravando()&&gestoGravaPedido>0.0f)
+			{
+			int rec[4]={std::max(0,gestoRet[0]-24),std::max(0,gestoRet[1]-24),std::min(w,gestoRet[2]+24),std::min(h,gestoRet[3]+24)};
+			std::vector<float> corr;
+			corr.reserve(size_t(2)*size_t(rec[2]-rec[0])*size_t(rec[3]-rec[1]));
+			for(int y=rec[1];y<rec[3];++y)
+				for(int x=rec[0];x<rec[2];++x)
+					{
+					const Kinect::FrameSource::DepthCorrection::PixelCorrection& pc=pixelDepthCorrection[y*w+x];
+					corr.push_back(pc.scale);
+					corr.push_back(pc.offset);
+					}
+			if(gestoGravador.abre("/dev/shm",w,h,rec,gestoRet,mat,area,corr,gestoDetector.lim.texto(),agora))
+				{
+				gestoGravaAte=agora+gestoGravaPedido;
+				std::cout<<"Gesto: gravando "<<gestoGravaPedido<<" s em "<<gestoGravador.pasta
+				         <<(quer?"":" (sem bichos na areia: só grava e mede, nada cai)")<<std::endl;
+				}
+			else
+				std::cout<<"Gesto: não deu para gravar em /dev/shm"<<std::endl;
+			gestoGravaPedido=0.0f;
+			}
+		if(gestoGravador.gravando())
+			{
+			gestoGravador.quadro(agora,cru,fd,gestoMaos,p.viu,p.x,p.y);
+			if(agora>=gestoGravaAte||!gestoGravador.gravando())
+				{
+				int n=gestoGravador.fecha();
+				std::cout<<"Gesto: gravação pronta: "<<gestoGravador.pasta<<" ("<<n<<" quadros)"<<std::endl;
+				}
+			}
+		}
+	
+	if(p.soltouMao)
+		std::cout<<"Gesto: dedo solto (mao aberta)"<<std::endl;
+	if(quer)
+		gestoEvento(agora,p.ev);
+	else if(p.ev==Gesto::Rastro::CONFIRMOU)
+		std::cout<<"Gesto: (gravando, sem bichos) dedo visto em "<<rastro.x<<" "<<rastro.y<<std::endl;
+	else if(p.ev==Gesto::Rastro::SOLTOU)
+		std::cout<<"Gesto: (gravando, sem bichos) dedo solto"<<std::endl;
 	}
 
 void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
@@ -1424,7 +1376,7 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
 					continue;
 				}
 			
-			/* Projetor-LAOB: perto do dedo apontado para cima não chove (ele derruba comida; Gesto.cpp). O
+			/* Projetor-LAOB: perto do dedo apontado (para cima ou para a areia) não chove (ele derruba comida; Gesto.cpp). O
 			   HandExtractor nem vê o dedo apontado como mão: isto só garante. A mão aberta chove como sempre. */
 			if(gestoRastro.ativo)
 				{

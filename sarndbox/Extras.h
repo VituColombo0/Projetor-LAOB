@@ -195,7 +195,7 @@ class Extras
 	bool mundoRosto(const char* nome,float segundos=12.0f);
 	void armadilhasDoLabirinto(void); // peças P_PERIGO entre a nascente e o alvo
 	/* Comida na terra (painel, comando "comida", ou dedo apontado): os pássaros pousam em volta, os cachorros sentam do lado
-	   e quem passeia para um pouco para olhar.
+	   e quem passeia para um pouco para olhar; só vêm os que estão perto, no máximo COMEDORES de uma vez (19/11/2026).
 	   O shader desenha um pão com migalhas que somem conforme ela acaba (extrasComida). A mão aberta NÃO é seguida (18/11: só faz chover);
 	   o dedo apontado para cima derruba comida embaixo dele (jogarComidaEm, Gesto.cpp). */
 	struct Comida {float x,y,r; double ate,dura;}; // centro e raio (cm); até quando fica e quanto durava
@@ -265,6 +265,18 @@ class Extras
 	void passoRacao(float dt);
 	int racaoAlcance(int i,float vista,float boca) const; // bolinha mais perto que o bicho i alcança pela água (-1 nenhuma)
 	double belisca[MAX_AGENTES]; // até quando o bicho espera para beliscar de novo
+	/* Comida só para quem está perto (19/11/2026): na ração, cada bicho da água tem a sua bolinha (comeRacao,
+	   -1 nenhuma) e cada grupo de bolinhas recebe no máximo COMEDORES de uma vez, os mais perto; na terra, o pão
+	   chama no máximo COMEDORES (pássaros e cachorros) e OLHANDO pessoas, só dentro do alcance de cada um */
+	enum {COMEDORES=4,OLHANDO=3};
+	int comeRacao[MAX_AGENTES];
+	void escolheComedores(const int patoDaFrente[MAX_AGENTES]);
+	bool vagaNaComida(int i,float alcance) const; // o bicho i (pássaro, cachorro ou pessoa) pode ir até o pão agora?
+	/* Encostar sem travar (19/11/2026): cada bicho tem um corpo (raio, cm) e desvia dos outros antes de encostar;
+	   encostado, escorrega pelo lado em vez de empurrar (sem tremer e sem atravessar) */
+	float corpo(int i) const;
+	void escorrega(int i,bool naAgua,int ignora,float& mx,float& my) const; // tira do passo (mx, my) o que entra em outro corpo
+	float apertado[MAX_AGENTES]; // segundos nadando sem folga (poça pequena demais: renasce num lago de verdade)
 	void copiaNomes(const std::vector<std::string>& lista,int giro,int fotos); // nomes, cores e rostos dos membros (para o mundo)
 	};
 

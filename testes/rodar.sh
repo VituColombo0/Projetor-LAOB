@@ -32,12 +32,24 @@ done
 echo "== dedo apontado: classificação com mãos sintéticas (sarndbox/Gesto.cpp, sem Kinect)"
 if command -v g++ >/dev/null; then
   BIN=$(mktemp)
+  AN=$(mktemp)
+  GRAV=$(mktemp -d)
   if g++ -O2 -Wall -Wextra -Werror -I "$R/sarndbox" "$R/testes/teste_gesto.cpp" "$R/sarndbox/Gesto.cpp" -o "$BIN"; then
     "$BIN" | grep -vE '^        ponta' || falhas=1   # (as medidas de cada cena: rodar o teste_gesto sozinho)
+    # gravação sintética (o formato do gestoGrava) + a análise: para cima e para baixo confirmam, a mão aberta não
+    echo "== dedo apontado: gravação sintética e análise (testes/analisa_gesto.cpp)"
+    if g++ -O2 -Wall -Wextra -Werror -I "$R/sarndbox" "$R/testes/analisa_gesto.cpp" "$R/sarndbox/Gesto.cpp" -o "$AN" \
+       && "$BIN" --grava "$GRAV" >/dev/null && SAIDA=$("$AN" "$GRAV"/gesto-* --png 4); then
+      echo "$SAIDA" | grep -E '^(Resumo|Motivos|PNGs)'
+      echo "$SAIDA" | grep -q 'confirmou 2 vez' || { echo "  FALHA: a análise devia confirmar 2 vezes"; falhas=1; }
+      [ "$(ls "$GRAV"/gesto-*/analise/*.png 2>/dev/null | wc -l)" = 4 ] || { echo "  FALHA: faltam os PNGs da análise"; falhas=1; }
+    else
+      echo "  ERRO na gravação sintética ou na análise"; falhas=1
+    fi
   else
     echo "  ERRO ao compilar o teste do gesto"; falhas=1
   fi
-  rm -f "$BIN"
+  rm -rf "$BIN" "$AN" "$GRAV"
 else
   echo "  (g++ não instalado: pulei)"
 fi

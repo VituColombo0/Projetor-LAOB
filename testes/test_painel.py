@@ -104,10 +104,14 @@ class Painel(Ambiente):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.get_json()["som"]["volume"], 0)
 
-        for s in ("inicio", "vitoria", "tesouro", "splash", "alerta"):
-            r = self.post("/som/testar", json={"nome": s})
-            self.assertEqual(r.status_code, 200)
-            self.assertTrue(r.get_json()["ok"])
+        # os botões de testar cada efeito saíram (19/11/2026): o som é automático
+        self.assertEqual(self.post("/som/testar", json={"nome": "inicio"}).status_code, 404)
+        pagina = self.get("/").get_data(as_text=True)
+        for velho in ("Efeitos sonoros", "som-teste-sel", "som-testar-btn", "som-mudo-btn", "/som/testar"):
+            self.assertNotIn(velho, pagina)
+        cabecalho = pagina[pagina.index("<header>"):pagina.index("</header>")]
+        self.assertIn('id="som-top"', cabecalho)                      # mudo e volume ficam no cabeçalho
+        self.assertIn('id="som-vol"', cabecalho)
 
     def test_temas(self):
         j = self.get("/estado").get_json()
@@ -312,6 +316,292 @@ class Painel(Ambiente):
         self.assertEqual(self.post("/ajuste", json={"giro": 270}).status_code, 200)
         self.assertEqual(self.areia.estado()["giro"], 270)
         self.assertTrue(self.comandos()[-2].endswith(" 270 0"))
+
+
+class AmbienteDoSom(Ambiente):
+    """som.py: o fundo automático (tema, brincadeira e bichos), o fade do motor e o mudo (AREIA_SOM_FALSO)."""
+
+    def setUp(self):
+        super().setUp()
+        import som
+        self.som = importlib.reload(som)
+        self.log = os.path.join(self.D, "sandbox.log")
+
+    def escreve_log(self, texto):
+        with open(self.log, "w") as f:
+            f.write(texto)
+
+    def abre(self, qual="rosto", modo="original"):
+        with open(os.path.join(self.FALSO, "qual"), "w") as f:
+            f.write(qual + "\n")
+        self.areia._qual_cache[0] = 0.0   # o "qual" vale 1 s: pergunta de novo
+        e = self.areia.estado()
+        e["modo"] = modo
+        self.areia.salva(e)
+
+    def test_arquivos_de_som(self):
+        """Todo som citado nas tabelas existe, é 22,05 kHz mono 16 bits e tem menos de 1 MB."""
+        import wave
+        nomes = set()
+        for tabela in (self.som.AMBIENTE_TEMAS, self.som.AMBIENTE_BRINCADEIRAS):
+            for c in tabela.values():
+                nomes |= set(c["base"])
+                for variantes, *_ in c.get("pontuais", []):
+                    nomes |= set(variantes)
+        for variantes, _ in self.som.SONS_BICHOS.values():
+            nomes |= set(variantes)
+        for nome in sorted(nomes):
+            arq = os.path.join(self.som._dir_sons(), nome + ".wav")
+            self.assertLess(os.path.getsize(arq), 1024 * 1024, nome)
+            with wave.open(arq) as w:
+                self.assertEqual((w.getframerate(), w.getnchannels(), w.getsampwidth()), (22050, 1, 2), nome)
+            self.assertIsNotNone(self.som._carrega_som(nome), nome)
+        for tema in self.areia.NOMES_TEMAS:   # todo tema do painel tem o seu fundo
+            self.assertIn(tema, self.som.AMBIENTE_TEMAS)
+        for jogo in self.areia.JOGOS:          # e todo jogo de água a sua camada
+            self.assertIn(jogo, self.som.AMBIENTE_BRINCADEIRAS)
+
+    def test_laco_sem_emenda(self):
+        """O fim de cada fundo emenda no começo sem degrau (o laço não estala)."""
+        for c in list(self.som.AMBIENTE_TEMAS.values()) + list(self.som.AMBIENTE_BRINCADEIRAS.values()):
+            for nome in c["base"]:
+                d = self.som._carrega_som(nome).astype(float)
+                tipico = np.abs(np.diff(d)).mean()
+                self.assertLess(abs(d[0] - d[-1]), 8 * tipico + 50, nome)
+
+    def test_cena_por_tema_jogo_e_bichos(self):
+        m = self.som.monta_cena
+        self.assertEqual(list(m("inverno")["base"]), ["amb_inverno"])
+        self.assertIn("sino_neve_1", m("inverno")["pontuais"][0][0])
+        self.assertEqual(list(m("deserto")["base"]), ["amb_deserto"])
+        self.assertEqual(list(m("vulcao")["base"]), ["amb_vulcao"])
+        self.assertEqual(list(m("oceano")["base"]), ["amb_oceano"])
+        self.assertEqual(list(m("arco-iris")["base"]), ["amb_arcoiris"])
+        # jogo: camada própria por cima do tema mais baixo; os pontuais passam a ser os do jogo
+        v = m("inverno", "vila")
+        self.assertEqual(set(v["base"]), {"amb_inverno", "jogo_chuva"})
+        self.assertLess(v["base"]["amb_inverno"], m("inverno")["base"]["amb_inverno"])
+        self.assertEqual([p[0][0] for p in v["pontuais"]], ["trovao_1"])
+        self.assertEqual(set(m("classico", "labirinto")["base"]), {"amb_classico", "jogo_riacho"})
+        self.assertIn("jogo_correnteza", m("classico", "corrida")["base"])
+        self.assertIn("jogo_misterio", m("deserto", "fossil")["base"])
+        self.assertIn("jogo_atelie", m("marte", "copia")["base"])
+        self.assertEqual(set(m("inverno", "vulcao")["base"]), {"amb_vulcao", "jogo_tensao"})   # o vulcão é o mundo todo
+        # bichos: só quem está na areia e faz som
+        b = m("oceano", None, ["pato", "pessoa", "peixe"])["bichos"]
+        self.assertEqual([x[0] for x in b], ["pato", "peixe"])
+        self.assertEqual(m("classico", None, ["pessoa"])["bichos"], [])
+        self.assertEqual(m("tema-novo")["base"], {})   # tema sem som próprio: silêncio (sem erro)
+
+    def test_cena_pelo_que_esta_na_areia(self):
+        self.assertIsNone(self.som.cena_atual())                              # areia fechada
+        self.abre("original")
+        self.assertIsNone(self.som.cena_atual())                              # topografia de reserva
+        self.abre("rosto", "rosto")
+        self.assertIsNone(self.som.cena_atual())                              # foto no projetor
+        self.abre("rosto", "original")
+        self.assertEqual(list(self.som.cena_atual()["base"]), ["amb_classico"])
+        self.areia.escolhe_tema("inverno")
+        self.assertEqual(list(self.som.cena_atual()["base"]), ["amb_inverno"])
+        self.abre("rosto", "relevo")
+        self.escreve_log("Jogo pedido: vila (nível 2)\nJogo: salve a vila (4 casas)\n")
+        self.assertIn("jogo_chuva", self.som.cena_atual()["base"])
+        self.escreve_log("Jogo pedido: vila (nível 2)\nJogo desligado\nLabirinto: nascente em x 1 y 2, alvo em x 3 y 4 (dificuldade 1)\n")
+        self.assertIn("jogo_riacho", self.som.cena_atual()["base"])
+        self.escreve_log("Tesouro: escondendo a 4 cm\n")
+        self.assertIn("jogo_misterio", self.som.cena_atual()["base"])
+        e = self.areia.estado()
+        e["mar"] = {"pato": 2, "peixe": 3, "pessoa": 1}
+        self.areia.salva(e)
+        self.escreve_log("Tesouro: escondendo a 4 cm\nTesouro desligado\nAnimais: mar (6)\n")
+        c = self.som.cena_atual()
+        self.assertEqual(list(c["base"]), ["amb_inverno"])
+        self.assertEqual([b[0] for b in c["bichos"]], ["pato", "peixe"])
+        self.escreve_log("Animais: carros (5)\n")
+        self.assertEqual([b[0] for b in self.som.cena_atual()["bichos"]], ["carro"])
+
+    def test_ambiente_segue_a_areia_e_o_mudo(self):
+        s = self.som
+        s.atualiza_ambiente()
+        self.assertEqual(s._amb["enviada"], {})                               # areia fechada: nada toca
+        self.assertFalse(s._tem_som(s._amb["enviada"]))
+        self.abre("rosto", "original")
+        s.atualiza_ambiente()
+        self.assertEqual(list(s._amb["enviada"]["base"]), ["amb_classico"])
+        n = len(s._amb["historico"])
+        s.atualiza_ambiente()
+        self.assertEqual(len(s._amb["historico"]), n)                        # sem mudança, nada é reenviado
+
+        class Proc:   # um motor e um efeito "tocando"
+            mortos = []
+
+            def poll(self):
+                return None
+
+            def kill(self):
+                Proc.mortos.append(self)
+
+            def wait(self, timeout=None):
+                return 0
+        motor, efeito = Proc(), Proc()
+        s._amb["proc"] = motor
+        s._tocando.add(efeito)
+        s.definir_mudo(True)
+        self.assertEqual(Proc.mortos, [motor, efeito])                       # para tudo na hora, sem fade
+        self.assertIsNone(s._amb["proc"])
+        self.assertIsNone(s._amb["enviada"])
+        s.atualiza_ambiente()
+        self.assertIsNone(s._amb["enviada"])                                  # mudo: continua parado
+        s.definir_mudo(False)
+        s.atualiza_ambiente()
+        self.assertEqual(list(s._amb["enviada"]["base"]), ["amb_classico"])   # volta sozinho
+        s.definir_volume(0)
+        s.atualiza_ambiente()
+        self.assertIsNone(s._amb["enviada"])                                  # volume 0 = mudo
+        s.definir_volume(60)
+        self.abre("original")
+        s.atualiza_ambiente()
+        self.assertEqual(s._amb["enviada"], {})                               # reserva: some com fade
+
+    def test_motor_troca_com_fade(self):
+        nivel = {"a": 8000, "b": 16000}
+        carrega = lambda nome: np.full(44100, nivel[nome], np.int16) if nome in nivel else None
+        mix = self.som.Mistura(carrega)
+        taxa, bloco = self.som.TAXA, 1024
+
+        def anda(segundos):
+            ultimo = None
+            for _ in range(int(segundos * taxa / bloco)):
+                ultimo = mix.gera(bloco)
+            return ultimo
+        mix.cena({"base": {"a": 0.5}})
+        self.assertLess(float(mix.gera(bloco).max()), 0.02)                   # entra devagar, sem estalo
+        meio = anda(0.7)
+        self.assertTrue(0.03 < float(meio.mean()) < 0.10)                     # no meio do fade
+        cheio = anda(1.0)
+        self.assertAlmostEqual(float(cheio.mean()), 0.5 * 8000 / 32768, places=3)
+        mix.cena({"base": {"b": 0.5}})                                        # troca de tema
+        logo = mix.gera(bloco)
+        self.assertGreater(float(logo.mean()), 0.11)                          # o antigo ainda está lá...
+        self.assertEqual(len(mix.vozes), 2)
+        depois = anda(1.6)
+        self.assertEqual([v["chave"] for v in mix.vozes], ["b"])             # ...e sai sozinho
+        self.assertAlmostEqual(float(depois.mean()), 0.5 * 16000 / 32768, places=3)
+        mix.cena({})
+        anda(1.6)
+        self.assertFalse(mix.ativa())                                         # silêncio: o motor fecha o pacat
+
+    def test_bichos_um_de_cada_vez(self):
+        import random
+        curto = np.full(22050, 1000, np.int16)                               # 1 s cada
+        mix = self.som.Mistura(lambda nome: curto, random.Random(7))
+        mix.cena({"base": {}, "pontuais": [[["sino"], 0.1, 20, 40]],
+                  "bichos": [["pato", ["quack"], 0.2], ["passaro", ["piu"], 0.2]]})
+        inicios, juntos, um = [], 0, mix._um
+
+        def anota(chave, nome, ganho):
+            if chave.startswith("b:"):
+                inicios.append((mix.t, chave))
+            um(chave, nome, ganho)
+        mix._um = anota
+        for _ in range(int(600 * self.som.TAXA / 1024)):
+            mix.gera(1024)
+            juntos = max(juntos, sum(1 for v in mix.vozes if not v["laco"]))
+        self.assertEqual(juntos, 1)                                           # nunca dois ao mesmo tempo
+        self.assertLess(inicios[0][0], 31)                                    # o primeiro vem logo
+        intervalos = [b[0] - a[0] for a, b in zip(inicios, inicios[1:])]
+        self.assertGreaterEqual(min(intervalos), 14.9)                        # raros: 15 a 60 s
+        self.assertEqual({c for _, c in inicios}, {"b:pato", "b:passaro"})
+        mix.cena({"base": {}, "bichos": [["pato", ["quack"], 0.2]]})          # o pássaro saiu da areia
+        self.assertTrue(all(v["alvo"] == 0 for v in mix.vozes if v["chave"] == "b:passaro"))
+
+    def test_motor_sai_com_o_painel(self):
+        """python som.py motor --nulo (sem pacat): toca a cena e sai quando a entrada fecha."""
+        import json
+        import subprocess
+        import sys
+        import time
+        p = subprocess.Popen([sys.executable, os.path.join(self.som.__file__), "motor", "--nulo"],
+                             stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            p.stdin.write((json.dumps(self.som.monta_cena("oceano", None, ["pato"])) + "\n").encode())
+            p.stdin.flush()
+            time.sleep(1.0)
+            self.assertIsNone(p.poll())
+            p.stdin.close()                                                   # o painel morreu
+            self.assertEqual(p.wait(timeout=5), 0)
+        finally:
+            if p.poll() is None:
+                p.kill()
+            erros = p.stderr.read()
+            p.stderr.close()
+        self.assertEqual(erros, b"")
+
+    def test_motor_com_pacat_falso(self):
+        """O caminho de verdade com um pacat de mentira (sem som): recebe 22,05 kHz mono no ritmo do
+        relógio, fecha depois do fade quando a areia silencia e reabre sozinho se o pacat cair."""
+        import json
+        import subprocess
+        import sys
+        import time
+        pasta = os.path.join(self.tmp, "bin")
+        os.makedirs(pasta)
+        registro = os.path.join(self.tmp, "pacat.log")
+        with open(os.path.join(pasta, "pacat"), "w") as f:
+            f.write(f"""#!{sys.executable}
+import os, sys, time
+log = {registro!r}
+with open(log, "a") as f:
+    f.write(" ".join(sys.argv[1:]) + "\\n")
+if not os.path.exists(log + ".caiu"):   # o primeiro cai logo, como sem a saída combinada
+    open(log + ".caiu", "w").close()
+    sys.exit(1)
+total, t0 = 0, time.time()
+while True:
+    b = sys.stdin.buffer.read(4410)
+    if not b:
+        break
+    total += len(b)
+    adiante = total / 44100 - (time.time() - t0)
+    if adiante > 0:
+        time.sleep(adiante)
+with open(log + ".bytes", "w") as f:
+    f.write(str(total))
+""")
+        os.chmod(os.path.join(pasta, "pacat"), 0o755)
+        amb = dict(os.environ, PATH=pasta + os.pathsep + os.environ["PATH"])
+        p = subprocess.Popen([sys.executable, self.som.__file__, "motor"], stdin=subprocess.PIPE,
+                             stderr=subprocess.PIPE, env=amb)
+        try:
+            p.stdin.write((json.dumps(self.som.monta_cena("inverno")) + "\n").encode())
+            p.stdin.flush()
+            time.sleep(4.5)                                                   # cai, espera 2 s e reabre
+            p.stdin.write(b"{}\n")                                            # areia fechou: fade e fecha
+            p.stdin.flush()
+            for _ in range(40):
+                if os.path.exists(registro + ".bytes"):
+                    break
+                time.sleep(0.1)
+            self.assertIsNone(p.poll())                                       # o motor segue de pé, calado
+            p.stdin.close()
+            self.assertEqual(p.wait(timeout=5), 0)
+        finally:
+            if p.poll() is None:
+                p.kill()
+            erros = p.stderr.read().decode()
+            p.stderr.close()
+        with open(registro) as f:
+            chamadas = f.read().split("\n")[:-1]
+        self.assertEqual(len(chamadas), 2, chamadas)
+        for c in chamadas:
+            self.assertIn("--rate=22050", c)
+            self.assertIn("--channels=1", c)
+            self.assertIn("--device=combinado", c)
+        self.assertIn("parou", erros)
+        with open(registro + ".bytes") as f:
+            recebido = int(f.read()) / 44100                                  # segundos de som
+        self.assertGreater(recebido, 1.5)                                     # ~2 s tocando + 1,5 s de fade
+        self.assertLess(recebido, 6.0)
 
 
 if __name__ == "__main__":

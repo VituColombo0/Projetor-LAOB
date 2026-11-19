@@ -94,6 +94,8 @@ Extras::Extras(void)
 		voo[i]=escala[i]=1.0f;
 		acaoAte[i]=0.0;
 		belisca[i]=0.0;
+		comeRacao[i]=-1;
+		apertado[i]=0.0f;
 		}
 	jogo=SEM_JOGO;
 	jogoFase=0;
@@ -848,6 +850,8 @@ void Extras::nasce(int i)
 	acaoT[i]=0.0f;
 	voo[i]=1.0f;
 	acaoAte[i]=tempo+2.0; // acabou de chegar: não sai caçando na hora
+	comeRacao[i]=-1;
+	apertado[i]=0.0f;
 	if(modo!=MUNDO)
 		temAlvo[i]=false;
 	bool peixe=aquatico(tipo[i]);
@@ -965,6 +969,161 @@ static float difAng(float a) // ângulo em -pi..pi
 	return a;
 	}
 
+namespace {
+/* Os bichos são desenhados 12% maiores desde 19/11/2026 (TAM no shader, mais abaixo): o que depende do
+   tamanho do desenho (fila dos patinhos, boca de quem come) acompanha */
+const float TAM_BICHOS=1.12f;
+/* o escorrega não deixa entrar no miolo do corpo do outro (70% da soma dos raios); entre o miolo e a
+   beirada os dois se encostam e o empurrão suave separa. Medido no banco (19/11): com o corpo inteiro
+   (100%) os bichos se espremiam e tremiam em lugar apertado; com 70% eles se ajeitam e passam */
+const float NUCLEO=0.7f;
+/* boca (cm à frente do meio) de quem come a ração */
+inline float bocaDe(int esp,float esc)
+	{
+	return TAM_BICHOS*(esp==4?2.8f:esp==5?2.0f:esp==9?1.7f*esc:esp==1?1.5f:esp==6?0.6f:1.3f);
+	}
+}
+
+float Extras::corpo(int i) const
+	{
+	/* raio do corpo (cm) para encostar: um pouco menor que o desenho (uma cauda, um bico ou um braço do
+	   polvo podem passar por cima do outro, como de verdade) */
+	switch(int(tipo[i]))
+		{
+		case 1: return 1.9f;            // peixe
+		case 2: return 2.2f;            // carrinho
+		case 3: return 1.6f;            // pessoa
+		case 4: return 3.0f;            // tubarão
+		case 5: return 2.5f;            // tartaruga
+		case 6: return 1.6f;            // água-viva
+		case 7: return 2.1f;            // polvo
+		case 8: return 2.4f;            // arraia
+		case 9: return 1.6f*escala[i];  // pato (o patinho é menor)
+		case 10: return 2.0f;           // barquinho
+		case 12: return 1.5f;           // cachorro
+		default: return 1.0f;
+		}
+	}
+
+void Extras::escorrega(int i,bool naAgua,int ignora,float& mx,float& my) const
+	{
+	/* Encostado em alguém: a parte do passo que entraria no corpo dele é tirada e sobra o movimento de lado
+	   (escorrega em volta). Quase de frente, o lado preferido é a direita: dois que se encontram de frente
+	   vão cada um pela sua direita e passam. A troca entre "o lado que sobrou" e "a direita" é contínua
+	   (sem pulo de um lado para o outro quando o rumo balança). Antes o passo inteiro entrava e o
+	   empurrão desfazia: os dois ficavam se empurrando, tremendo, até um dar meia-volta. */
+	float m0=std::sqrt(mx*mx+my*my);
+	if(m0<1e-6f)
+		return;
+	const float ri=corpo(i),meio=0.5f*m0;
+	for(int j=0;j<quantos;++j)
+		{
+		if(j==i||j==ignora||vel[j]==0.0f||tipo[j]<0.5f||(naAgua?!aquatico(tipo[j]):!terrestre(tipo[j])))
+			continue;
+		float dx=ax[j]-ax[i],dy=ay[j]-ay[i],d2=dx*dx+dy*dy,junto=(ri+corpo(j))*NUCLEO;
+		if(d2>=junto*junto||d2<1e-6f)
+			continue;
+		float d=std::sqrt(d2),ux=dx/d,uy=dy/d,entra=mx*ux+my*uy;
+		if(entra<=0.0f)
+			continue; // já está saindo de perto
+		float dirX=uy,dirY=-ux;            // tangente para a direita de quem vai na direção dele
+		float tau=mx*dirX+my*dirY;         // o que sobra de lado (+ direita, - esquerda)
+		float vies=meio*std::max(0.0f,1.0f-std::abs(tau)/meio);
+		tau+=vies;                         // quase de frente: escorrega pela direita
+		mx=dirX*tau;
+		my=dirY*tau;
+		}
+	}
+
+bool Extras::vagaNaComida(int i,float alcance) const
+	{
+	/* O pão chama só quem está perto (até "alcance" cm da beira dele) e no máximo COMEDORES pássaros e
+	   cachorros (ou OLHANDO pessoas) de cada vez: quem já está lá fica; entre os de fora, os mais perto
+	   passam na frente. Os outros nem percebem e seguem passeando. */
+	float borda;
+	if(!comidaPerto(ax[i],ay[i],borda,0.0f)||borda>alcance)
+		return false;
+	const bool olhar=int(tipo[i])==3; // pessoa: só para e olha
+	int na=0;
+	for(int j=0;j<quantos;++j)
+		{
+		int t=int(tipo[j]);
+		if(j==i||vel[j]==0.0f||(olhar?t!=3:(t!=11&&t!=12)))
+			continue;
+		if(olhar?acao[j]==1:(acao[j]==1||acao[j]==3))
+			++na; // já está na comida (ou indo)
+		else
+			{
+			float bj;
+			if(comidaPerto(ax[j],ay[j],bj,0.0f)&&bj<borda&&bj<=(t==11?10.0f:t==12?8.0f:3.0f))
+				++na; // está mais perto e também pode vir
+			}
+		}
+	return na<(olhar?int(OLHANDO):int(COMEDORES));
+	}
+
+void Extras::escolheComedores(const int patoDaFrente[MAX_AGENTES])
+	{
+	/* Quem vem comer a ração: cada bicho da água que vê uma bolinha perto (e chega nela pela água) é
+	   candidato; quem já estava comendo fica com a vez e os outros entram pelo mais perto, até COMEDORES
+	   por grupo de bolinhas (as que estão a menos de 6 cm umas das outras). Os demais seguem a vida. */
+	int cand[MAX_AGENTES];
+	float chave[MAX_AGENTES];
+	int nc=0;
+	for(int i=0;i<quantos;++i)
+		{
+		int k=-1,esp=int(tipo[i]);
+		if(nRacao>0&&vel[i]!=0.0f&&aquatico(tipo[i])&&esp!=10) // o barquinho não come
+			{
+			bool cacando=false; // tubarão com fome e peixe por perto: vai caçar, não comer
+			if(esp==4&&acaoAte[i]<tempo)
+				for(int j=0;j<quantos&&!cacando;++j)
+					cacando=int(tipo[j])==1&&vel[j]!=0.0f&&(ax[j]-ax[i])*(ax[j]-ax[i])+(ay[j]-ay[i])*(ay[j]-ay[i])<25.0f*25.0f;
+			/* até onde cada um enxerga a ração (cm; antes 12 a 25 cm, o lago inteiro vinha) */
+			float vista=esp==1?12.0f:esp==5||esp==9?11.0f:esp==4?10.0f:esp==6?7.0f:9.0f;
+			if(esp==9&&patoDaFrente[i]>=0)
+				vista=6.0f; // patinho na fila: só se a ração passa do lado
+			bool jaComia=comeRacao[i]>=0;
+			if(jaComia)
+				vista*=1.4f; // quem já está comendo não larga porque a bolinha boiou um pouco
+			if(!cacando)
+				k=racaoAlcance(i,vista,bocaDe(esp,escala[i]));
+			if(k>=0)
+				{
+				float dx=racao[k].x-ax[i],dy=racao[k].y-ay[i];
+				chave[nc]=std::sqrt(dx*dx+dy*dy)-(jaComia?1000.0f:0.0f);
+				cand[nc++]=i;
+				}
+			}
+		comeRacao[i]=k;
+		}
+	/* pela ordem (quem já comia, depois o mais perto) */
+	for(int a=1;a<nc;++a)
+		for(int b=a;b>0&&chave[b]<chave[b-1];--b)
+			{
+			std::swap(chave[b],chave[b-1]);
+			std::swap(cand[b],cand[b-1]);
+			}
+	int aceitos[MAX_AGENTES];
+	int na=0;
+	for(int c=0;c<nc;++c)
+		{
+		int i=cand[c];
+		const Racao& r=racao[comeRacao[i]];
+		int grupo=0;
+		for(int a=0;a<na;++a)
+			{
+			const Racao& o=racao[comeRacao[aceitos[a]]];
+			if((o.x-r.x)*(o.x-r.x)+(o.y-r.y)*(o.y-r.y)<6.0f*6.0f)
+				++grupo;
+			}
+		if(grupo<COMEDORES)
+			aceitos[na++]=i;
+		else
+			comeRacao[i]=-1;
+		}
+	}
+
 void Extras::passo(float dt)
 	{
 	tempo+=dt;
@@ -1008,6 +1167,7 @@ void Extras::passo(float dt)
 			ultimoPato=i;
 			}
 		}
+	escolheComedores(patoDaFrente); // quem vai comer a ração (só os mais perto de cada grupo de bolinhas)
 	for(int i=0;i<quantos;++i)
 		{
 		if(tipo[i]<0.5f)
@@ -1096,10 +1256,11 @@ void Extras::passo(float dt)
 			const int esp=int(tipo[i]);
 			float susto=0.0f,fila=-1.0f;
 			bool cacando=false;
+			int presaT=-1; // o peixe que o tubarão está caçando
 			if(esp==9&&patoDaFrente[i]>=0)
 				{
 				int f=patoDaFrente[i];
-				float atras=1.75f*escala[f]+1.1f*escala[i]+0.3f; // logo atrás do rabo do pato da frente
+				float atras=(1.75f*escala[f]+1.1f*escala[i]+0.3f)*TAM_BICHOS; // logo atrás do rabo do pato da frente
 				float tx=ax[f]-std::cos(ang[f])*atras,ty=ay[f]-std::sin(ang[f])*atras;
 				float dx=tx-ax[i],dy=ty-ay[i];
 				fila=std::sqrt(dx*dx+dy*dy);
@@ -1124,9 +1285,10 @@ void Extras::passo(float dt)
 				if(alvo>=0)
 					{
 					cacando=true;
+					presaT=alvo;
 					vx+=(ax[alvo]-ax[i])/std::max(0.5f,melhor)*3.0f;
 					vy+=(ay[alvo]-ay[i])/std::max(0.5f,melhor)*3.0f;
-					float bx=ax[i]+c0*2.8f-ax[alvo],by=ay[i]+s0*2.8f-ay[alvo];
+					float bx=ax[i]+c0*2.8f*TAM_BICHOS-ax[alvo],by=ay[i]+s0*2.8f*TAM_BICHOS-ay[alvo];
 					if(bx*bx+by*by<1.8f*1.8f)
 						{
 						nasce(alvo); // pegou: outro peixe aparece em outro lugar
@@ -1135,20 +1297,20 @@ void Extras::passo(float dt)
 						}
 					}
 				}
-			/* Ração na água (dedo apontado ou painel): quem come vai até a bolinha mais perto que alcança pela
-			   água e belisca; os peixes chegam em cardume e ficam rodeando. O tubarão também come quando não
-			   está caçando (e os peixes continuam fugindo dele, logo abaixo). O barquinho não come. */
+			/* Ração na água (dedo apontado ou painel): quem está perto vai até a bolinha mais perto que alcança
+			   pela água e belisca; no máximo COMEDORES por grupo de bolinhas (escolheComedores), os outros seguem
+			   a vida. O tubarão também come quando não está caçando (e os peixes continuam fugindo dele, logo
+			   abaixo). O barquinho não come. */
 			bool comendo=false;
 			float pertoRacao=1e9f;
 			if(nRacao>0&&esp!=10&&!cacando)
 				{
-				/* vista (cm), boca (cm à frente do meio), força da virada e pressa de cada um */
-				float vista=esp==1?22.0f:esp==5||esp==9?25.0f:esp==4?14.0f:esp==6?12.0f:15.0f;
-				float boca=esp==4?2.8f:esp==5?2.0f:esp==9?1.7f*escala[i]:esp==1?1.5f:esp==6?0.6f:1.3f;
+				/* boca (cm à frente do meio), força da virada e pressa de cada um */
+				float boca=bocaDe(esp,escala[i]);
 				float puxa=esp==1?2.6f:esp==9?2.4f:esp==5?2.2f:esp==4?1.6f:esp==6?0.9f:1.3f;
-				if(fila>=0.0f)
-					vista=6.0f; // patinho na fila: só se a ração passa do lado
-				int k=racaoAlcance(i,vista,boca);
+				int k=comeRacao[i];
+				if(k>=0&&(racao[k].ate<tempo||racao[k].mordidas<=0))
+					k=-1; // outro comeu a última beliscada neste mesmo passo
 				if(k>=0)
 					{
 					comendo=true;
@@ -1167,7 +1329,7 @@ void Extras::passo(float dt)
 						vy+=dy/d*w;
 						}
 					float mx=ax[i]+c0*boca-r.x,my=ay[i]+s0*boca-r.y;
-					float alcance=esp==4||esp==5?1.5f:1.2f;
+					float alcance=(esp==4||esp==5?1.5f:1.2f)*TAM_BICHOS;
 					if(mx*mx+my*my<alcance*alcance&&belisca[i]<tempo)
 						{
 						/* beliscou: a bolinha diminui (peixe, patinho e água-viva levam duas beliscadas; os
@@ -1205,6 +1367,56 @@ void Extras::passo(float dt)
 						susto=std::max(susto,0.8f*f);
 						}
 					}
+			/* Espaço de cada um, entre todas as espécies da água (o cardume acima só cuida dos da mesma
+			   espécie): afasta de quem está quase encostando e, de quem está no caminho, desvia antes de bater,
+			   pelo lado livre (bem de frente, pela direita: os dois passam um pelo outro). O tubarão caçando
+			   não desvia da presa e o patinho não desvia do pato da frente da fila (mas não entra nele: o
+			   escorrega e o empurrão, mais abaixo, valem para ele também). */
+			const float ri=corpo(i);
+			const int ignora=cacando?presaT:-1;
+			const int ignoraDesvio=cacando?presaT:(fila>=0.0f?patoDaFrente[i]:-1);
+			for(int j=0;j<quantos;++j)
+				{
+				if(j==i||j==ignoraDesvio||!aquatico(tipo[j])||vel[j]==0.0f)
+					continue;
+				float dx=ax[j]-ax[i],dy=ay[j]-ay[i],d2=dx*dx+dy*dy,junto=ri+corpo(j);
+				if(d2>(junto+4.0f)*(junto+4.0f)||d2<1e-6f)
+					continue;
+				float d=std::sqrt(d2);
+				if(int(tipo[j])!=esp&&d<junto+1.0f)
+					{
+					float f=(junto+1.0f-d)/(junto+1.0f);
+					vx-=dx/d*f*1.6f;
+					vy-=dy/d*f*1.6f;
+					}
+				float adiante=dx*c0+dy*s0,lado=-dx*s0+dy*c0;
+				if(adiante>0.0f&&adiante<junto+3.5f&&std::abs(lado)<junto)
+					{
+					/* vai para o lado contrário ao dele, com preferência pela direita (só vai pela esquerda
+					   se ele já está bem à direita); a força cresce aos poucos com o lado (sem pulo) */
+					float w=1.2f*(1.0f-adiante/(junto+3.5f))*(1.0f-std::abs(lado)/junto);
+					float lad=-std::max(-1.0f,std::min(1.0f,(lado+0.5f*junto)/(0.3f*junto))); // +1 esquerda, -1 direita
+					vx-=lad*s0*w;
+					vy+=lad*c0*w;
+					}
+				}
+			if(!folgado&&fila<0.0f)
+				{
+				/* rente à margem: puxa para onde tem água em volta (para o meio do lago), em vez de seguir
+				   raspando nela até o "apertado" mandar renascer em outro lugar */
+				float wx=0.0f,wy=0.0f;
+				for(int k=0;k<8;++k)
+					{
+					float a=float(k)*PI/4.0f;
+					if(agua(ax[i]+std::cos(a)*(raioA+0.8f),ay[i]+std::sin(a)*(raioA+0.8f)))
+						{
+						wx+=std::cos(a);
+						wy+=std::sin(a);
+						}
+					}
+				vx+=0.5f*wx;
+				vy+=0.5f*wy;
+				}
 			/* Passeio: cada peixe vira devagar para um lado e para o outro */
 			float vaga=0.8f*std::sin(float(tempo)*0.6f+float(i)*1.7f)*dt;
 			float desejo=std::atan2(vy,vx)+vaga;
@@ -1217,7 +1429,7 @@ void Extras::passo(float dt)
 					float a=desejo+desvios[k];
 					float x1=ax[i]+std::cos(a)*1.5f,y1=ay[i]+std::sin(a)*1.5f;
 					float x3=ax[i]+std::cos(a)*3.5f,y3=ay[i]+std::sin(a)*3.5f;
-					if(passada==0?(aguaLarga(x3,y3,1.8f)&&aguaLarga(x1,y1,1.8f)):(agua(x3,y3)&&agua(x1,y1)))
+					if(passada==0?(aguaLarga(x3,y3,raioA)&&aguaLarga(x1,y1,raioA)):(agua(x3,y3)&&agua(x1,y1))) // (o tubarão confere o corpo dele, não o de um peixe)
 						{
 						desejo=a;
 						livre=true;
@@ -1246,25 +1458,47 @@ void Extras::passo(float dt)
 			const float leva=(esp==9||esp==10||esp==6)?0.9f:esp==4?0.15f:0.45f;
 			nx+=cvx*leva*dt;
 			ny+=cvy*leva*dt;
+			/* encostado em outro: escorrega pelo lado dele em vez de entrar */
+			float mx=nx-ax[i],my=ny-ay[i];
+			escorrega(i,true,ignora,mx,my);
+			nx=ax[i]+mx;
+			ny=ay[i]+my;
 			/* só avança se o corpo inteiro continuar na água (encostado na margem, qualquer água serve
-			   para ele conseguir sair dali) */
-			if(aguaLarga(nx,ny,raioA)||(!folgado&&agua(nx,ny)))
+			   para ele conseguir sair dali); a margem na frente: tenta seguir rente a ela antes de desistir */
+			bool cabe=aguaLarga(nx,ny,raioA)||(!folgado&&agua(nx,ny));
+			const float rots[]={0.5f,-0.5f,1.0f,-1.0f};
+			for(int q=0;q<4&&!cabe;++q)
+				{
+				float cr=std::cos(rots[q]),sr=std::sin(rots[q]);
+				float qx=ax[i]+(mx*cr-my*sr)*0.8f,qy=ay[i]+(mx*sr+my*cr)*0.8f;
+				if(aguaLarga(qx,qy,raioA)||(!folgado&&agua(qx,qy)))
+					{
+					nx=qx;
+					ny=qy;
+					cabe=true;
+					ang[i]=difAng(ang[i]+rots[q]*std::min(1.0f,2.0f*dt));
+					}
+				}
+			if(cabe)
 				{
 				ax[i]=nx;
 				ay[i]=ny;
-				parado[i]=folgado?0.0f:parado[i]+dt;
+				parado[i]=0.0f;
 				}
 			else
 				parado[i]+=dt;
-			/* Separação suave entre seres aquáticos ao encostarem (sem tremedeira) */
+			/* sem folga (poça mais estreita que ele) por muito tempo: vai para um lago de verdade. Antes
+			   isso somava ao "parado" mesmo nadando e quem passava uns segundos rente à margem (empurrado
+			   por outro, por exemplo) sumia e aparecia em outro lugar */
+			apertado[i]=folgado?0.0f:apertado[i]+dt;
+			/* Separação suave entre seres aquáticos ao encostarem (sem tremedeira): só corrige o que
+			   ainda sobrou de um dentro do outro (o escorrega acima já não deixa entrar) */
 			for(int j=0;j<quantos;++j)
 				{
-				if(j==i||!aquatico(tipo[j])||vel[j]==0.0f)
+				if(j==i||j==ignora||!aquatico(tipo[j])||vel[j]==0.0f)
 					continue;
 				float dx=ax[i]-ax[j],dy=ay[i]-ay[j],d2=dx*dx+dy*dy;
-				float raioI=(esp==4)?3.4f:(esp==9||esp==5?2.6f:2.0f);
-				float raioJ=(int(tipo[j])==4)?3.4f:(int(tipo[j])==9||int(tipo[j])==5?2.6f:2.0f);
-				float junto=raioI+raioJ;
+				float junto=ri+corpo(j);
 				if(d2<junto*junto&&d2>1e-4f)
 					{
 					float d=std::sqrt(d2);
@@ -1277,7 +1511,7 @@ void Extras::passo(float dt)
 						}
 					}
 				}
-			if(parado[i]>4.0f) // preso numa poça ou espremido na margem: aparece num lago de verdade
+			if(parado[i]>4.0f||apertado[i]>15.0f) // preso numa poça ou espremido na margem: aparece num lago de verdade
 				nasce(i);
 			}
 		else
@@ -1335,11 +1569,12 @@ void Extras::passo(float dt)
 				parado[i]=0.0f;
 				continue; // sentado do lado da comida, abanando o rabo
 				}
-			if(ehPessoa(tipo[i])&&modo!=MUNDO)
+			if(int(tipo[i])==3&&modo!=MUNDO) // (o cachorro tem a dele, logo acima)
 				{
-				/* quem passeia e passa do lado do pão para um pouco para olhar (no máximo a cada 20 s) e segue */
+				/* quem passeia e passa do lado do pão para um pouco para olhar (no máximo a cada 20 s, até OLHANDO
+				   pessoas de cada vez) e segue */
 				float bp;
-				if(acao[i]==0&&acaoAte[i]<tempo&&comidaPerto(ax[i],ay[i],bp,0.0f)&&bp>0.6f&&bp<3.0f)
+				if(acao[i]==0&&acaoAte[i]<tempo&&comidaPerto(ax[i],ay[i],bp,0.0f)&&bp>0.6f&&bp<3.0f&&vagaNaComida(i,3.0f))
 					{
 					acao[i]=1;
 					acaoAte[i]=tempo+1.5+1.5*aleatorio();
@@ -1363,14 +1598,26 @@ void Extras::passo(float dt)
 			   vai-e-vem de quem passeia */
 			const bool pessoa=ehPessoa(tipo[i]);
 			const float rc=pessoa?1.7f:2.2f,olha=pessoa?3.5f:4.0f,perto=pessoa?5.5f:7.0f;
+			const float ri=corpo(i);
+			/* alguém no caminho de agora? as direções para a direita ganham um pouco: dois que vêm de frente
+			   desviam cada um pela sua direita e passam um pelo outro (antes os dois escolhiam o mesmo lado) */
+			bool temFrente=false;
+			for(int j=0;j<quantos&&!temFrente;++j)
+				if(j!=i&&terrestre(tipo[j])&&vel[j]!=0.0f)
+					{
+					float dx=ax[j]-ax[i],dy=ay[j]-ay[i];
+					float adiante=dx*c0+dy*s0,lado=-dx*s0+dy*c0;
+					temFrente=adiante>0.0f&&adiante<perto&&std::abs(lado)<ri+corpo(j);
+					}
 			float melhor=1e9f,escolha=PI,hEscolha=h0;
 			for(int k=0;k<7;++k)
 				{
 				float a=ang[i]+desvios[k];
-				float px=ax[i]+std::cos(a)*olha,py=ay[i]+std::sin(a)*olha;
+				float ca=std::cos(a),sa=std::sin(a);
+				float px=ax[i]+ca*olha,py=ay[i]+sa*olha;
 				float h=altura(px,py);
 				/* à frente tem que caber o carrinho inteiro em chão firme, sem paredão nem barranco */
-				if(!chaoLivre(px,py,rc)||!chaoLivre(ax[i]+std::cos(a)*olha*0.5f,ay[i]+std::sin(a)*olha*0.5f,rc)
+				if(!chaoLivre(px,py,rc)||!chaoLivre(ax[i]+ca*olha*0.5f,ay[i]+sa*olha*0.5f,rc)
 				   ||h-h0>2.0f||h0-h>3.0f)
 					continue;
 				/* vale: baixo, mas sem despencar (segue a curva de nível); longe dos outros carros */
@@ -1384,39 +1631,28 @@ void Extras::passo(float dt)
 					rumo=std::max(-1.1f,std::min(1.1f,rumo));
 					nota=0.4f*std::abs(h-h0)+0.9f*std::abs(desvios[k]-rumo);
 					}
+				/* os outros no caminho (andando ou parados): pior quanto mais no meio dessa direção e mais
+				   perto. Antes só contava quem estava no ponto de chegada, e quem estava no meio do caminho
+				   ficava na frente */
 				for(int j=0;j<quantos;++j)
-					if(j!=i&&terrestre(tipo[j])&&vel[j]!=0.0f)
-						{
-						float d=std::sqrt((ax[j]-px)*(ax[j]-px)+(ay[j]-py)*(ay[j]-py));
-						if(d<perto)
-							nota+=2.5f*(1.0f-d/perto);
-						}
+					{
+					if(j==i||!terrestre(tipo[j])||vel[j]==0.0f)
+						continue;
+					float dx=ax[j]-ax[i],dy=ay[j]-ay[i],folga=ri+corpo(j)+0.5f;
+					float adiante=dx*ca+dy*sa;
+					if(adiante<-0.5f||adiante>perto+folga)
+						continue;
+					float lado=std::abs(-dx*sa+dy*ca);
+					if(lado<folga)
+						nota+=3.0f*(1.0f-lado/folga)*(1.0f-0.5f*std::max(0.0f,adiante)/(perto+folga));
+					}
+				if(temFrente&&desvios[k]>0.0f)
+					nota+=0.25f*desvios[k];
 				if(nota<melhor)
 					{
 					melhor=nota;
 					escolha=desvios[k];
 					hEscolha=h;
-					}
-				}
-			/* Outro carrinho logo à frente: freia e desvia para o lado (só para os de número menor:
-			   assim dois nunca ficam esperando um pelo outro) */
-			float frente=1e9f;
-			for(int j=0;j<i;++j)
-				{
-				if(!terrestre(tipo[j])||vel[j]==0.0f)
-					continue;
-				float dx=ax[j]-ax[i],dy=ay[j]-ay[i];
-				float adiante=dx*c0+dy*s0,lado=-dx*s0+dy*c0;
-				float larguraFaixa=pessoa?1.8f:3.0f;
-				if(adiante>0.0f&&adiante<perto&&std::abs(lado)<larguraFaixa)
-					{
-					frente=std::min(frente,adiante);
-					if(escolha!=PI)
-						{
-						float sinal=(lado>=0.0f)?-1.0f:1.0f;
-						float pesoDist=std::max(0.1f,(perto-adiante)/perto);
-						escolha+=sinal*0.35f*pesoDist;
-						}
 					}
 				}
 			if(escolha==PI) // sem saída: vira no lugar até achar caminho
@@ -1426,43 +1662,95 @@ void Extras::passo(float dt)
 				continue;
 				}
 			ang[i]=difAng(ang[i]+std::max(-1.8f*dt,std::min(1.8f*dt,escolha)));
-			/* Desce mais rápido, sobe devagar; curva e carro à frente freiam */
+			float c1=std::cos(ang[i]),s1=std::sin(ang[i]);
+			/* Desce mais rápido, sobe devagar; curva freia */
 			float rampa=h0>SEM+1.0f?(hEscolha-h0):0.0f;
 			float alvoVel=vb[i]*std::max(0.45f,std::min(1.35f,1.0f-0.25f*rampa))*(1.0f-0.3f*std::min(1.0f,std::abs(escolha)));
 			if(int(tipo[i])==12&&(acao[i]==3||acao[i]==4))
 				alvoVel*=acao[i]==4?1.8f:1.5f; // corre até a comida / atrás do pássaro
-			if(frente<perto)
-				alvoVel*=std::max(0.0f,(frente-perto*0.43f)/(perto*0.57f));
+			/* alguém logo à frente: chega devagar e, se ele vai para o mesmo lado, acompanha no passo dele;
+			   nunca para de vez (encostado, escorrega pelo lado, logo abaixo). Antes o de trás freava até
+			   parar e ficava esperando até dar meia-volta. */
+			float folgaFrente=1e9f,velFrente=0.0f;
+			for(int j=0;j<quantos;++j)
+				{
+				if(j==i||!terrestre(tipo[j])||vel[j]==0.0f)
+					continue;
+				float dx=ax[j]-ax[i],dy=ay[j]-ay[i],junto=ri+corpo(j);
+				float adiante=dx*c1+dy*s1,lado=std::abs(-dx*s1+dy*c1);
+				if(adiante<=0.0f||lado>=junto*0.9f)
+					continue;
+				float falta=adiante-std::sqrt(junto*junto-lado*lado); // quanto ainda anda até encostar
+				if(falta<folgaFrente)
+					{
+					folgaFrente=falta;
+					velFrente=vel[j]*std::cos(ang[j]-ang[i]);
+					}
+				}
+			if(folgaFrente>0.0f&&folgaFrente<2.0f) // (já encostado não freia mais: escorrega pelo lado)
+				alvoVel=std::min(alvoVel,std::max(vb[i]*(0.6f+0.2f*folgaFrente),velFrente));
 			vel[i]+=(alvoVel-vel[i])*std::min(1.0f,2.5f*dt);
 			vel[i]=std::max(vel[i],0.05f); // 0 é "escondido"
-			float nx=ax[i]+std::cos(ang[i])*vel[i]*dt,ny=ay[i]+std::sin(ang[i])*vel[i]*dt;
-			bool andou=chaoLivre(nx,ny,rc)||(!chaoLivre(ax[i],ay[i],rc)&&dentro(nx,ny,1.5f)&&!agua(nx,ny)&&altura(nx,ny)>SEM+1.0f);
+			float mx=c1*vel[i]*dt,my=s1*vel[i]*dt;
+			escorrega(i,false,-1,mx,my);
+			float nx=ax[i]+mx,ny=ay[i]+my;
+			const bool preso=!chaoLivre(ax[i],ay[i],rc); // (já está apertado: qualquer chão serve para sair)
+			bool andou=chaoLivre(nx,ny,rc)||(preso&&dentro(nx,ny,1.5f)&&!agua(nx,ny)&&altura(nx,ny)>SEM+1.0f);
+			const float rots[]={0.5f,-0.5f,1.0f,-1.0f};
+			for(int q=0;q<4&&!andou;++q)
+				{
+				/* o passo bate num barranco ou na água: tenta seguir rente antes de desistir */
+				float cr=std::cos(rots[q]),sr=std::sin(rots[q]);
+				float qx=ax[i]+(mx*cr-my*sr)*0.8f,qy=ay[i]+(mx*sr+my*cr)*0.8f;
+				if(chaoLivre(qx,qy,rc))
+					{
+					nx=qx;
+					ny=qy;
+					andou=true;
+					ang[i]=difAng(ang[i]+rots[q]*std::min(1.0f,2.0f*dt));
+					}
+				}
+			float avanco=0.0f;
 			if(andou)
 				{
+				avanco=std::sqrt((nx-ax[i])*(nx-ax[i])+(ny-ay[i])*(ny-ay[i]));
 				ax[i]=nx;
 				ay[i]=ny;
 				}
-			/* Carrinhos e seres terrestres encostando: afastamento elástico e suave, proporcional a dt (sem tremedeira) */
+			/* Carrinhos e seres terrestres encostando: afastamento elástico e suave, proporcional a dt (sem
+			   tremedeira); só corrige o que sobrou de um dentro do outro */
 			for(int j=0;j<quantos;++j)
 				{
 				if(j==i||!terrestre(tipo[j])||vel[j]==0.0f)
 					continue;
 				float dx=ax[i]-ax[j],dy=ay[i]-ay[j],d2=dx*dx+dy*dy;
-				float junto=(pessoa&&ehPessoa(tipo[j]))?3.2f:4.2f;
+				float junto=ri+corpo(j);
 				if(d2<junto*junto&&d2>1e-4f)
 					{
-					float d=std::sqrt(d2);
+					float d=std::sqrt(d2),ux=dx/d,uy=dy/d;
 					float empurra=(junto-d)*std::min(1.0f,4.0f*dt);
-					float px=ax[i]+dx/d*empurra,py=ay[i]+dy/d*empurra;
-					if(chaoLivre(px,py,rc))
+					/* O empurrão só vale se o corpo inteiro continua em chão firme (17/11: bicho de terra não
+					   pisa na água; aceitar 70% do corpo deixava carros e pessoas por cima da água desenhada).
+					   Rente à água: tenta o empurrão inteiro e depois a metade; se nem assim couber, os dois
+					   ficam encostados (o escorrega já não deixa ninguém entrar no miolo do outro, e o outro
+					   empurra para o lado dele). Medido no banco (19/11): empurrar de viés ou empurrar o outro
+					   fazia tremer mais na beira da água; inteiro+metade ficou com menos tremidas que antes
+					   e com o corpo sempre fora da água */
+					for(int q=0;q<2;++q)
 						{
-						ax[i]=px;
-						ay[i]=py;
+						float e=q==0?empurra:0.5f*empurra;
+						float px=ax[i]+ux*e,py=ay[i]+uy*e;
+						if(chaoLivre(px,py,rc))
+							{
+							ax[i]=px;
+							ay[i]=py;
+							break;
+							}
 						}
 					}
 				}
-						/* Travado (devagar ou sem andar) por 3 s: dá meia-volta */
-			parado[i]=(!andou||vel[i]<0.3f*vb[i])?parado[i]+dt:0.0f;
+			/* Travado (quase sem sair do lugar) por 3 s: dá meia-volta; andando de novo, esquece aos poucos */
+			parado[i]=avanco<0.2f*vb[i]*dt?parado[i]+dt:std::max(0.0f,parado[i]-2.0f*dt);
 			if(parado[i]>3.0f)
 				{
 				ang[i]=difAng(ang[i]+PI*(0.75f+0.5f*aleatorio()));
@@ -1621,7 +1909,7 @@ void Extras::passaro(int i,float dt)
 	else
 		{
 		voo[i]=std::min(1.0f,voo[i]+dt);
-		if(tem&&acaoAte[i]<tempo&&lugarDePouso(i))
+		if(tem&&acaoAte[i]<tempo&&vagaNaComida(i,10.0f)&&lugarDePouso(i)) // só quem passa perto (até 10 cm do pão)
 			{
 			acao[i]=3;
 			acaoT[i]=0.0f;
@@ -1670,7 +1958,8 @@ bool Extras::cachorro(int i,float dt)
 	   vez em quando corre atrás de um pássaro (o pousado sai voando). true = está sentado. */
 	acaoT[i]+=dt;
 	float borda;
-	if(comidaPerto(ax[i],ay[i],borda,(acao[i]==1||acao[i]==3)?2.0f:0.6f))
+	/* só quem já está lá ou está perto (até 8 cm do pão) e tem vaga: os outros nem percebem */
+	if(comidaPerto(ax[i],ay[i],borda,(acao[i]==1||acao[i]==3)?2.0f:0.6f)&&(acao[i]==1||acao[i]==3||vagaNaComida(i,8.0f)))
 		{
 		const Comida& h=comida;
 		float dx=ax[i]-h.x,dy=ay[i]-h.y,d=std::max(0.1f,std::sqrt(dx*dx+dy*dy));
@@ -2529,19 +2818,23 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			}
 		}
 	/* Peixes e carrinhos (vistos de cima, com sombra): */
+	float tamBichos=extrasMundo.w>0.5?1.0:1.12; // 19/11/2026: bichos 12% maiores (os bonecos do laboratório não); TAM_BICHOS no passo()
 	for(int i=0;i<32;++i)
 		{
 		vec4 a=extrasAg[i];
 		if(a.w<0.5)
 			continue;
-		vec2 r=ep.xy-a.xy;
+		vec2 r=(ep.xy-a.xy)/tamBichos;                                 // (o desenho é feito em "cm do bicho")
 		if(dot(r,r)>49.0)
 			continue;
+		float marcaAntes=extrasMarca;                                  // para saber o que ESTE bicho pintou (realce no fim)
+		extrasMarca=0.0;
+		bool esteira=false;                                            // rastro e respingo: não levam o realce do corpo
 		float c=cos(a.z);
 		float s=sin(a.z);
 		vec2 l=vec2(c*r.x+s*r.y,-s*r.x+c*r.y);
 		float hue=fract(a.w);
-		vec3 cor=vec3(0.55)+0.45*cos(6.2832*(vec3(hue)+vec3(0.0,0.33,0.67)));
+		vec3 cor=vec3(0.5)+0.5*cos(6.2832*(vec3(hue)+vec3(0.0,0.33,0.67)));   // (antes 0,55 + 0,45: cores mais vivas)
 		/* Realce adaptativo de contraste dos seres vivos contra os temas */
 		float temaClaro=(ef>1.5&&ef<2.5)?1.0:((ef>3.5&&ef<4.5)?0.6:0.0);
 		float temaEscuro=(extrasEfeito.w>0.5||(ef>0.5&&ef<1.5))?1.0:0.0;
@@ -2549,7 +2842,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			cor=mix(cor,vec3(cor.b,cor.g*1.15,cor.r*0.65+0.35),0.45); // Marte: destaca da poeira vermelha
 		if(ef>1.5&&ef<2.5)
 			cor=mix(cor,cor*0.82+vec3(0.06,0.12,0.22),0.35);          // Inverno: saturação e contraste na neve
-		vec2 rs=r-vec2(0.35,-0.35);                                   // sombra: luz vinda do canto, igual para todos
+		vec2 rs=r-vec2(0.4,-0.4);                                     // sombra: luz vinda do canto, igual para todos
 		vec2 ls=vec2(c*rs.x+s*rs.y,-s*rs.x+c*rs.y);
 		if(a.w<2.0)
 			{
@@ -2575,7 +2868,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					pc+=vec3(0.35)*smoothstep(0.35,0.0,distance(f,vec2(0.9,0.25))); // brilho
 					pc*=0.9+0.16*smoothstep(0.25,0.5,abs(fract(f.x*2.6+0.5*step(0.5,fract(f.y*2.2)))-0.5))*step(f.x,0.9); // escamas
 					pc=mix(pc,vec3(1.0),0.25*smoothstep(0.55,0.95,abs(f.y))*step(-1.2,f.x));                          // barriga clara
-					pc*=mix(1.0,temaClaro>0.5?0.35:0.55,smoothstep(0.8,1.0,corpo));               // contorno
+					pc*=mix(1.0,temaClaro>0.5?0.28:0.42,smoothstep(0.72,1.0,corpo));              // contorno (mais firme desde 19/11)
 					pc+=vec3(0.22)*temaEscuro*smoothstep(0.75,0.98,corpo);
 					vec2 olho=vec2(1.45,0.42*sign(f.y));
 					float dOlho=distance(f,olho);
@@ -2583,13 +2876,13 @@ const char* Extras::glslFragmentMain=R"GLSL(
 						pc=dOlho<0.12?vec3(0.03):vec3(0.97);
 					}
 				else
-					pc=cor*0.75+vec3(0.08);                                       // cauda e nadadeiras
+					pc=cor*0.7+vec3(0.05);                                        // cauda e nadadeiras
 				baseColor=vec4(pc,1.0);
 				}
 			else
 				{
 				if(sombra<1.0)
-					baseColor.rgb*=0.72;
+					baseColor.rgb*=0.6;
 				/* rastro em V atrás da cauda e bolhinhas que saem da boca e somem */
 				float rastro=smoothstep(0.2,0.0,abs(abs(l.y)-(-l.x-3.2)*0.42))*smoothstep(-6.4,-3.6,l.x)*step(l.x,-3.4)
 				             *(0.5+0.5*sin(l.x*3.0+et*8.0+fase));
@@ -2632,13 +2925,13 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					cb=vec3(1.0,0.6,0.1);
 				else if(cabP<1.0)
 					{
-					cb=corH*mix(1.15,0.8,cabP);
+					cb=corH*mix(1.15,0.8,cabP)*mix(1.0,0.55,smoothstep(0.8,1.0,cabP));                  // (com contorno)
 					if(distance(p,vec2(1.3,0.24*sign(p.y)))<0.08)
 						cb=vec3(0.02);
 					}
 				else if(corpoP<1.0)
 					{
-					cb=corC*mix(1.15,0.72,corpoP);
+					cb=corC*mix(1.15,0.72,corpoP)*mix(1.0,0.55,smoothstep(0.85,1.0,corpoP));            // (com contorno)
 					if(abs(abs(p.y)-0.45)<0.2&&p.x<0.6&&p.x>-0.95)
 						cb*=0.8;                                                                         // asas dobradas
 					if(!branco&&abs(p.x-0.72)<0.07)
@@ -2650,6 +2943,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					{
 					float v=smoothstep(0.12,0.0,abs(abs(p.y)-(-p.x-1.6)*0.5))*step(p.x,-1.6)*smoothstep(-5.0,-1.7,p.x)
 					        *(0.5+0.5*sin(p.x*3.0+et*6.0));
+					esteira=true;
 					if(v>0.05)
 						cb=mix(cb,vec3(0.92,0.97,1.0),v*0.6);
 					else
@@ -2668,8 +2962,8 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				else if(casco)
 					{
 					cb=mix(vec3(0.58,0.38,0.2),vec3(0.75,0.52,0.3),step(0.5,fract(p.y*3.2)));
-					if(abs(p.y)>meia-0.14)
-						cb=vec3(0.32,0.2,0.1);                                                           // borda
+					if(abs(p.y)>meia-0.16)
+						cb=vec3(0.24,0.14,0.07);                                                           // borda
 					if(fract(a.w)>0.5&&abs(p.y)>meia-0.3&&abs(p.y)<=meia-0.14)
 						cb=vec3(0.75,0.15,0.15);                                                         // faixa colorida
 					}
@@ -2677,6 +2971,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					{
 					float v=smoothstep(0.13,0.0,abs(abs(p.y)-(-p.x-1.6)*0.45))*step(p.x,-1.6)*smoothstep(-6.0,-1.7,p.x)
 					        *(0.5+0.5*sin(p.x*2.6+et*5.0));
+					esteira=true;
 					if(v>0.05)
 						cb=mix(cb,vec3(0.92,0.97,1.0),v*0.65);
 					else
@@ -2718,7 +3013,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					else if(caudaP)
 						cb=asaA*0.9;
 					else if(length(ls/vec2(1.3,0.6))<1.0)
-						cb*=0.72;
+						cb*=0.6;
 					else
 						desenhou=false;
 					if(desenhou&&(corpoP<1.0||cab<0.25)&&(corpoP>0.82&&cab>0.19))
@@ -2736,13 +3031,14 @@ const char* Extras::glslFragmentMain=R"GLSL(
 						cb=vec3(0.9,0.5,0.35);                                                           // peito
 					}
 				else if(exPassaro(lsb/tam,abre)>0.5)
-					cb*=0.75;
+					cb*=0.64;
 				else if(mergulho&&e2.w>0.45)
 					{
 					/* tocou a água: respingo e ondinhas */
 					float t2=(e2.w-0.45)/0.55;
 					float onda=smoothstep(0.18,0.0,abs(length(r)-(0.4+t2*2.6)))*(1.0-t2)
 					          +smoothstep(0.15,0.0,abs(length(r)-(0.2+t2*1.5)))*(1.0-t2)*0.7;
+					esteira=true;
 					if(onda>0.05)
 						cb=mix(cb,vec3(0.92,0.97,1.0),clamp(onda,0.0,1.0));
 					else
@@ -2774,7 +3070,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					cb=distance(p,vec2(1.67,0.0))<0.09?vec3(0.03):pelo*0.85;
 				else if(cabD<0.42)
 					{
-					cb=pelo*mix(1.12,0.85,cabD/0.42);
+					cb=pelo*mix(1.12,0.85,cabD/0.42)*mix(1.0,0.6,smoothstep(0.34,0.42,cabD));              // (com contorno)
 					if(distance(p,vec2(1.2,0.17*sign(p.y)))<0.07)
 						cb=vec3(0.02);
 					}
@@ -2782,7 +3078,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					cb=pelo*0.65;
 				else if(corpoD<1.0)
 					{
-					cb=pelo*mix(1.12,0.75,corpoD);
+					cb=pelo*mix(1.12,0.75,corpoD)*mix(1.0,0.6,smoothstep(0.84,1.0,corpoD));                // (com contorno)
 					if(tom>=0.6&&tom<0.8&&exPontos(p*2.2+vec2(fase),0.3,0.45)>0.5)
 						cb=vec3(0.15);                                                                   // manchas
 					}
@@ -2791,7 +3087,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				else if(pata<0.15)
 					cb=pelo*0.7;
 				else if(length(sl/vec2(1.15,0.55))<1.0)
-					cb*=0.72;                                                                            // sombra
+					cb*=0.6;                                                                            // sombra
 				else
 					desenhou=false;
 				}
@@ -2825,11 +3121,11 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					cb+=vec3(0.22)*smoothstep(0.5,0.0,distance(f,vec2(1.0,0.2)));                           // brilho molhado
 					if(distance(f,vec2(2.5,0.5*sign(f.y)))<0.13)
 						cb=vec3(0.02);                                                                      // olhos
-					cb*=mix(1.0,temaClaro>0.5?0.4:0.6,smoothstep(0.82,1.0,corpoT));
+					cb*=mix(1.0,temaClaro>0.5?0.32:0.46,smoothstep(0.74,1.0,corpoT));
 					cb+=vec3(0.2)*temaEscuro*smoothstep(0.75,0.98,corpoT);
 					}
 				else if(caudaT||peitoral)
-					cb=vec3(0.26,0.32,0.4);
+					cb=vec3(0.2,0.26,0.34);
 				else
 					desenhou=false;
 				}
@@ -2852,7 +3148,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					cb*=mix(0.5,1.0,smoothstep(0.0,0.1,0.5-max(abs(gomo.x),abs(gomo.y))));                    // sulcos
 					cb=mix(cb,vec3(0.72,0.66,0.38),smoothstep(0.84,0.93,casco));                             // borda clara
 					cb*=mix(1.2,0.75,smoothstep(0.2,1.0,casco))+0.25*smoothstep(0.6,0.0,distance(l,vec2(0.5,0.4)));
-					cb*=mix(1.0,temaClaro>0.5?0.38:0.6,smoothstep(0.95,1.0,casco));
+					cb*=mix(1.0,temaClaro>0.5?0.3:0.45,smoothstep(0.92,1.0,casco));
 					cb+=vec3(0.2)*temaEscuro*smoothstep(0.9,0.98,casco);
 					}
 				else if(cabecaT<1.0)
@@ -2878,16 +3174,18 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					}
 				if(dAv<1.0)
 					{
-					cb=mix(cb,corAv+vec3(0.3)*smoothstep(1.0,0.2,dAv),0.55+0.3*smoothstep(0.75,1.0,dAv));
+					cb=mix(cb,corAv+vec3(0.3)*smoothstep(1.0,0.2,dAv),0.68+0.3*smoothstep(0.75,1.0,dAv));
+					cb=mix(cb,corAv*0.55,smoothstep(0.86,1.0,dAv));                                       // beirada da sombrinha
 					cb+=vec3(0.35)*smoothstep(0.22,0.0,abs(dAv-0.55))*(0.5+0.5*sin(atan(l.y,l.x)*8.0));     // desenho em trevo dentro da sombrinha
 					}
 				else if(dAv<1.5)
 					{
-					cb=mix(cb,corAv,0.25*smoothstep(1.5,1.0,dAv)*(0.6+0.4*sin(et*2.6+fase)));               // brilho em volta
+					cb=mix(cb,corAv,0.25*smoothstep(1.5,1.0,dAv)*(0.6+0.4*sin(et*2.6+fase)));
+					esteira=true;                                                                        // (o brilho em volta é o fundo: sem realce)
 					desenhou=fio>0.05||dAv<1.5;
 					}
 				else if(fio>0.05)
-					cb=mix(cb,corAv,fio*0.7);
+					cb=mix(cb,corAv*0.85,fio*0.85);
 				else
 					desenhou=false;
 				}
@@ -2907,7 +3205,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					}
 				if(dP<1.0)
 					{
-					cb=corP*mix(1.2,0.7,smoothstep(0.2,1.0,dP));
+					cb=corP*mix(1.2,0.7,smoothstep(0.2,1.0,dP))*mix(1.0,0.6,smoothstep(0.86,1.0,dP));     // (com contorno)
 					if(distance(l,vec2(0.55,0.42*sign(l.y)))<0.2)
 						cb=distance(l,vec2(0.62,0.42*sign(l.y)))<0.1?vec3(0.02):vec3(0.97);
 					}
@@ -2927,7 +3225,8 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					{
 					vec3 lombo=mix(vec3(0.5,0.45,0.36),vec3(0.24,0.3,0.42),fract(a.w));
 					cb=mix(lombo*1.25,lombo*0.7,smoothstep(0.1,1.0,losango));
-					cb=mix(cb,vec3(0.85,0.87,0.85),smoothstep(0.88,0.98,losango)*0.7);                       // beirada clara
+					cb=mix(cb,vec3(0.85,0.87,0.85),smoothstep(0.86,0.94,losango)*0.7);                       // beirada clara
+					cb=mix(cb,vec3(0.12,0.12,0.16),smoothstep(0.95,1.0,losango));                            // e o contorno escuro por fora
 					cb+=vec3(0.3)*exPontos(f*1.5+vec2(fase),0.22,0.55)*0.5;                                  // pintas
 					cb*=0.9+0.2*smoothstep(0.0,2.0,abs(f.y))*bate*2.0;                                       // a asa que sobe pega luz
 					if(abs(f.y)<0.14&&f.x<1.2&&f.x>-1.5)
@@ -2998,7 +3297,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			else if(peE<1.0||peD<1.0)
 				baseColor=vec4(fract(jeito*23.0)<0.5?vec3(0.12,0.1,0.1):mix(vec3(0.95),vec3(0.8,0.15,0.15),step(0.75,fract(jeito*23.0))),1.0);  // sapato preto ou tênis
 			else if(sombra<1.0)
-				baseColor.rgb*=0.72;
+				baseColor.rgb*=0.6;
 			}
 		else
 			{
@@ -3065,7 +3364,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				if(abs(l.x-0.05)<0.03&&abs(l.y)>tam.y*0.55)
 					cc*=0.65;                                                                    // vão das portas
 				cc+=vec3(0.3)*smoothstep(0.22,0.0,abs(l.y-0.35-l.x*0.12))*smoothstep(tam.x,0.0,abs(l.x))*0.6;   // reflexo da lataria
-				cc*=mix(1.0,temaClaro>0.5?0.4:0.6,smoothstep(-0.12,0.0,carro));                    // contorno
+				cc*=mix(1.0,temaClaro>0.5?0.32:0.48,smoothstep(-0.16,0.0,carro));                    // contorno
 				cc+=vec3(0.22)*temaEscuro*smoothstep(-0.08,0.0,carro);
 				baseColor=vec4(cc,1.0);
 				}
@@ -3074,7 +3373,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			else
 				{
 				if(sombra<0.0)
-					baseColor.rgb*=0.7;
+					baseColor.rgb*=0.58;
 				baseColor.rgb+=vec3(1.0,0.95,0.6)*facho*0.35;
 				/* poeira levantada atrás: três nuvenzinhas que crescem e somem */
 				float poeira=0.0;
@@ -3088,6 +3387,22 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				baseColor.rgb=mix(baseColor.rgb,vec3(0.9,0.85,0.74),poeira*0.5);
 				}
 			}
+		if(extrasMarca>0.5&&!esteira)
+			{
+			/* Realce (19/11/2026): o corpo do bicho um pouco mais saturado; e o da água já vem "contra" o azul
+			   que a água ainda passa por cima dele (25% da água, no SurfaceAddWaterColor: a cor estimada da água
+			   funda de cada tema é descontada antes), para não ficar lavado */
+			vec3 cr=baseColor.rgb;
+			cr=clamp(mix(vec3(dot(cr,vec3(0.3,0.59,0.11))),cr,1.2),0.0,1.0);
+			if(a.w<2.0||(a.w>=4.0&&a.w<11.0))
+				{
+				vec3 aguaEst=extrasEfeito.w>0.5?vec3(0.82,0.24,0.06):(ef>1.5&&ef<2.5)?vec3(0.11,0.38,0.74):(ef>2.5&&ef<3.5)?vec3(0.11,0.45,0.58):
+				             (ef>3.5&&ef<4.5)?vec3(0.08,0.51,0.63):(ef>5.5&&ef<6.5)?vec3(0.38):vec3(0.07,0.23,0.55);
+				cr=clamp((cr-0.21*aguaEst)/0.79,0.0,1.0);
+				}
+			baseColor.rgb=cr;
+			}
+		extrasMarca=max(extrasMarca,marcaAntes);
 		}
 	/* Ração na água (dedo apontado ou painel, 18/11/2026): bolinhas marrons boiando, com contorno escuro e
 	   um halo claro fino (lê em todos os temas, por cima da água e dos bichos que comem embaixo); ao cair, um

@@ -41,6 +41,16 @@ def valida_rede():
         abort(403)
 
 
+@app.after_request
+def acorda_o_som(resp):
+    """Depois de cada comando (tema, jogo, bichos, foto...) o ambiente se ajusta logo, sem esperar a
+    próxima olhada; duas vezes porque o SARndbox leva um instante para anotar no registro."""
+    if request.method == "POST" and request.path != "/som":
+        som.acorda_ambiente(1.0)
+        som.acorda_ambiente(3.0)
+    return resp
+
+
 def resposta(fn):
     with trava:
         try:
@@ -247,19 +257,14 @@ def mar():
 
 @app.post("/som")
 def ajustar_som():
+    """Volume e mudo do cabeçalho: valem para tudo (ambiente automático e efeitos). Os botões de testar
+    cada efeito saíram em 19/11/2026: o som é automático (pedido do Victor)."""
     dados = request.get_json(silent=True) or {}
     if "volume" in dados:
         som.definir_volume(dados["volume"])
     if "mudo" in dados:
         som.definir_mudo(dados["mudo"])
     return jsonify(ok=True, som=som.estado())
-
-
-@app.post("/som/testar")
-def testar_som():
-    nome = (request.get_json(silent=True) or {}).get("nome", "inicio")
-    som.tocar(nome)
-    return jsonify(ok=True, msg="Som testado")
 
 
 @app.post("/chuva")
@@ -573,6 +578,16 @@ input[type=file] { display: none; }
 .seg button { min-height: 34px; padding: 6px 12px; border: 0; background: transparent; font-size: .84rem; border-radius: 8px; }
 .seg button.active { background: var(--accent); color: var(--accent-fg); }
 
+/* som no cabeçalho: mudo (um toque) e volume; valem para o ambiente e os efeitos */
+.som { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
+.som .btn-som { width: 44px; min-height: 44px; padding: 0; font-size: 1.15rem; border-radius: 11px; }
+.som .btn-som.mudo { background: var(--danger-bg); border-color: var(--danger-border); }
+.som input[type=range] { width: 110px; accent-color: var(--accent); cursor: pointer; }
+.som.mudo input[type=range] { opacity: .45; }
+.som span { font-size: .8rem; font-weight: 700; color: var(--muted); min-width: 34px; font-variant-numeric: tabular-nums; }
+@media (max-width: 520px) { .som input[type=range] { width: 76px; } .som span { display: none; } }
+@media (min-width: 900px) { header:has(.mini-vivo:not([hidden])) .som { margin-right: 168px; } }
+
 /* miniatura ao vivo do projetor no cabeçalho (só em tela larga) */
 .mini-vivo { position: absolute; right: 16px; top: 10px; padding: 0; min-height: 0; border-radius: 10px; overflow: hidden;
   width: 156px; aspect-ratio: 4 / 3; background: #000; border: 1px solid var(--border-strong); z-index: 1; }
@@ -780,7 +795,11 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
         <h1>Caixa de Areia</h1>
         <div class="sub">Laboratório LAOB · painel do projetor</div>
       </div>
-      <button class="btn-som" id="som-top" title="Ativar ou silenciar som" style="margin-left:auto; width:44px; min-height:44px; font-size:1.2rem; padding:0; border-radius:10px">🔊</button>
+      <div class="som" title="Som da areia (ambiente e efeitos)">
+        <button class="btn-som" id="som-top" aria-label="Silenciar o som">🔊</button>
+        <input type="range" id="som-vol" min="0" max="100" value="80" aria-label="Volume do som">
+        <span id="som-vol-val">80%</span>
+      </div>
       <button class="mini-vivo" id="mini-vivo" hidden title="O que o projetor mostra agora (toque para a chuva)">
         <img id="mini-img" alt="Imagem do projetor agora"><span>● ao vivo</span>
       </button>
@@ -894,31 +913,6 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
     <div class="grid">
       <button data-w="ligar">Ligar</button>
       <button data-w="desligar">Desligar</button>
-    </div>
-  </section>
-
-  <section class="card" data-aba="projetor">
-    <h2>Efeitos sonoros</h2>
-    <p class="hint">Sons da água, seres vivos e comemorações nas caixas de som e no projetor.</p>
-    <div class="grid" style="grid-template-columns: 1fr 1fr">
-      <button id="som-mudo-btn">🔊 Som ligado</button>
-      <div style="display:flex; gap:6px">
-        <select id="som-teste-sel" style="flex:1; border-radius:11px; border:1px solid var(--border); background:var(--surface2); color:var(--fg); padding:4px 8px; font-size:0.85rem">
-          <option value="inicio">🎮 Início</option>
-          <option value="vitoria">🏆 Vitória</option>
-          <option value="tesouro">💎 Tesouro</option>
-          <option value="splash">💧 Água/Splash</option>
-          <option value="passaro">🐦 Pássaro</option>
-          <option value="cachorro">🐶 Cachorro</option>
-          <option value="alerta">⚠️ Alerta</option>
-        </select>
-        <button id="som-testar-btn" style="min-width:44px; padding:0 12px" title="Tocar som escolhido">▶</button>
-      </div>
-    </div>
-    <div style="display:flex; align-items:center; gap:12px; margin-top:12px">
-      <span style="font-size:0.85rem; color:var(--muted)">Volume</span>
-      <input type="range" id="som-vol-range" min="0" max="100" value="80" style="flex:1">
-      <span id="som-vol-val" style="font-size:0.85rem; font-weight:700; min-width:36px">80%</span>
     </div>
   </section>
 
@@ -1105,17 +1099,7 @@ async function carrega() {
     }
     pl.style.display = txt ? 'block' : 'none';
 
-    if (E.som) {
-      $('#som-mudo-btn').textContent = E.som.mudo ? '🔇 Som mutado' : '🔊 Som ligado';
-      $('#som-mudo-btn').classList.toggle('active', !E.som.mudo);
-      $('#som-vol-range').value = E.som.volume;
-      $('#som-vol-val').textContent = E.som.volume + '%';
-      if ($('#som-top')) {
-        $('#som-top').textContent = E.som.mudo ? '🔇' : '🔊';
-        $('#som-top').title = E.som.mudo ? 'Som silenciado (toque para ativar)' : 'Som ativo (toque para silenciar)';
-        $('#som-top').classList.toggle('active', !E.som.mudo);
-      }
-    }
+    if (E.som) mostraSom(E.som);
     montaMar();
     const M = $('#moradores');
     const mundo = E.mundo || [];
@@ -1384,15 +1368,27 @@ $$('[data-b]').forEach(b => b.onclick = () => post('/brincar', {acao: b.dataset.
 $$('[data-w]').forEach(b => b.onclick = () => post('/willbert', {acao: b.dataset.w}));
 $$('[data-m]').forEach(b => b.onclick = () => post('/modo', {modo: b.dataset.m}));
 $('#reabrir').onclick = () => post('/reabrir', {});
-$('#som-mudo-btn').onclick = () => post('/som', {mudo: !E.som?.mudo});
-if ($('#som-top')) $('#som-top').onclick = () => post('/som', {mudo: !E.som?.mudo});
-$('#som-vol-range').oninput = () => { $('#som-vol-val').textContent = $('#som-vol-range').value + '%'; };
-$('#som-vol-range').onchange = () => post('/som', {volume: $('#som-vol-range').value});
-$('#som-testar-btn').onclick = () => {
-  const sel = $('#som-teste-sel');
-  const nome = sel ? sel.value : 'inicio';
-  post('/som/testar', {nome});
-};
+// som (cabeçalho): mudo e volume valem para o ambiente automático e para os efeitos
+let SOM_MEXENDO = false;   // enquanto o dedo está no volume, o /estado não puxa a barra de volta
+function mostraSom(s) {
+  const b = $('#som-top');
+  b.textContent = s.mudo ? '🔇' : '🔊';
+  b.setAttribute('aria-label', s.mudo ? 'Ligar o som' : 'Silenciar o som');
+  b.title = s.mudo ? 'Som desligado (toque para ligar)' : 'Toque para silenciar';
+  b.classList.toggle('mudo', !!s.mudo);
+  $('.som').classList.toggle('mudo', !!s.mudo);
+  if (!SOM_MEXENDO) { $('#som-vol').value = s.volume; $('#som-vol-val').textContent = s.volume + '%'; }
+}
+async function mandaSom(dados) {
+  try {
+    const r = await fetch('/som', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(dados)});
+    const j = await r.json();
+    if (j.som) { E.som = j.som; mostraSom(j.som); }
+  } catch (e) { /* sem rede: o próximo /estado acerta o botão */ }
+}
+$('#som-top').onclick = () => mandaSom({mudo: !(E.som && E.som.mudo)});
+$('#som-vol').oninput = () => { SOM_MEXENDO = true; $('#som-vol-val').textContent = $('#som-vol').value + '%'; };
+$('#som-vol').onchange = () => { SOM_MEXENDO = false; mandaSom({volume: +$('#som-vol').value}); };
 $('#laob-ligar').onclick = () => post('/brincar', {acao: 'mundo'});
 $('#mar-soltar').onclick = () => post('/mar', MAR || {});
 $('#quadro-chuva').onclick = chove;
@@ -1430,6 +1426,7 @@ def _vigia_membros():
 
 if __name__ == "__main__":
     threading.Thread(target=_vigia_membros, daemon=True, name="membros").start()
+    som.iniciar_ambiente()   # fundo automático pelo que está na areia (tema, brincadeira, bichos)
     _limpa_capturas_velhas()   # de um painel anterior (antes da correção, ou se ele foi morto à força)
     threading.Thread(target=_desliga_ao_vivo_parado, daemon=True, name="ao-vivo").start()
     try:  # papel de parede com o endereço do painel (o timer atualizar-papel-parede repete a cada minuto)
