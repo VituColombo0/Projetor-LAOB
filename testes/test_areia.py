@@ -629,28 +629,58 @@ class MarEChuva(Ambiente):
                 f(*args)
         self.assertEqual(self.cmds(), [])
 
-    def test_comida_so_com_passaros_ou_cachorros(self):
+    def test_comida_so_com_quem_come(self):
+        """Terra: pão (pássaros e cachorros); água: ração (bichos da água). O SARndbox decide pelo ponto e
+        responde no registro; sem bichos que comam aquilo, o comando leva "terra" ou "agua" e nada cai."""
         log = os.path.join(self.D, "sandbox.log")
-        self.areia.mar({"peixe": 6, "tartaruga": 2})                         # só bichos da água: ninguém vem comer
-        escreve(log, "Animais: mar (8)\n")
+        self.areia.ESPERA_COMIDA = 0.05                                      # o projetor falso não responde
+        self.areia.mar({"carro": 2, "pessoa": 3})                            # ninguém come
+        escreve(log, "Animais: mar (5)\n")
         n = len(self.cmds())
-        with self.assertRaisesRegex(self.areia.Erro, "pássaros nem cachorros.*aba Vida"):
+        with self.assertRaisesRegex(self.areia.Erro, "não há bichos que comam.*aba Vida"):
             self.areia.comida(0.5, 0.5)
         self.assertEqual(len(self.cmds()), n)                                # nada foi mandado
-        self.areia.mar({"peixe": 2, "passaro": 3, "cachorro": 1})
-        escreve(log, "Animais: mar (6)\n")
-        self.assertEqual(self.areia.comida(0.4, "0.6"), {"passaro": 3, "cachorro": 1})
-        self.assertEqual(self.cmds()[-1], "cmd comida 0.400 0.600 20")
-        self.assertEqual(self.areia.comida(0, 1, 5), {"passaro": 3, "cachorro": 1})
+        self.areia.mar({"peixe": 2, "passaro": 3, "cachorro": 1, "barco": 1})
+        escreve(log, "Animais: mar (7)\n")
+        self.assertEqual(self.areia.comida(0.4, "0.6"),                      # sem resposta: todos que comem
+                         {"onde": None, "comem": {"passaro": 3, "cachorro": 1, "peixe": 2}})
+        self.assertEqual(self.cmds()[-1], "cmd comida 0.400 0.600 20")       # os dois comem: sem restrição
+        self.assertEqual(self.areia.comida(0, 1, 5)["onde"], None)
         self.assertEqual(self.cmds()[-1], "cmd comida 0.000 1.000 5")
         for ruim in ((1.2, 0.5), (0.5, -0.1), ("x", 0.5), (None, 0.5), (0.5, 0.5, 500)):
             with self.assertRaises(self.areia.Erro):
                 self.areia.comida(*ruim)
-        self.areia.mar({"cachorro": 1})                                      # um cachorro só também vale
+        # o SARndbox responde: a resposta só vale se veio depois do comando
+        responde = []
+        comando = self.areia._comando
+
+        def com_resposta(*linhas):
+            comando(*linhas)
+            with open(log, "a") as f:
+                f.write(responde[0] + "\n")
+        self.areia._comando = com_resposta
+        escreve(log, "Animais: mar (7)\nComida em x 1 y 2 por 20 s (terra)\n")
+        responde[:] = ["Comida em x -3.5 y 2 por 20 s (agua)"]
+        self.assertEqual(self.areia.comida(0.5, 0.5), {"onde": "agua", "comem": {"peixe": 2}})
+        responde[:] = ["Comida em x 3 y 2 por 20 s (terra)"]
+        self.assertEqual(self.areia.comida(0.5, 0.5), {"onde": "terra", "comem": {"passaro": 3, "cachorro": 1}})
+        self.areia.mar({"cachorro": 1})                                      # um cachorro só: só pão
         escreve(log, "Animais: mar (1)\n")
-        self.assertEqual(self.areia.comida(0.5, 0.5), {"cachorro": 1})
-        escreve(log, "Animais: mar (1)\nTesouro: escondendo a 4 cm\n")       # outra brincadeira tirou os bichos
-        with self.assertRaisesRegex(self.areia.Erro, "pássaros nem cachorros"):
+        responde[:] = ["Comida: nada caiu (agua)"]
+        with self.assertRaisesRegex(self.areia.Erro, "aí é água.*Toque na terra"):
+            self.areia.comida(0.5, 0.5)
+        self.assertEqual(self.cmds()[-1], "cmd comida 0.500 0.500 20 terra")
+        self.areia.mar({"tartaruga": 1, "pato": 2})                          # só bichos da água: só ração
+        escreve(log, "Animais: mar (3)\n")
+        responde[:] = ["Comida: nada caiu (terra)"]
+        with self.assertRaisesRegex(self.areia.Erro, "aí é terra.*Toque na água"):
+            self.areia.comida(0.5, 0.5)
+        self.assertEqual(self.cmds()[-1], "cmd comida 0.500 0.500 20 agua")
+        responde[:] = ["Comida em x -3.5 y 2 por 20 s (agua)"]
+        self.assertEqual(self.areia.comida(0.5, 0.5), {"onde": "agua", "comem": {"tartaruga": 1, "pato": 2}})
+        self.areia._comando = comando
+        escreve(log, "Animais: mar (3)\nTesouro: escondendo a 4 cm\n")       # outra brincadeira tirou os bichos
+        with self.assertRaisesRegex(self.areia.Erro, "não há bichos que comam"):
             self.areia.comida(0.5, 0.5)
 
 

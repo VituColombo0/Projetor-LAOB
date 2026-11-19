@@ -278,15 +278,24 @@ def chuva():
 def comida():
     def faz():
         d = request.get_json(silent=True) or {}
-        return "Comida jogada: " + quem_vem_comer(areia.comida(d.get("x"), d.get("y")))
+        c = areia.comida(d.get("x"), d.get("y"))
+        o_que = {"agua": "Ração na água", "terra": "Pão na areia"}.get(c["onde"], "Comida jogada")
+        return o_que + ": " + quem_vem_comer(c["comem"])
     return resposta(faz)
 
 
 def quem_vem_comer(comem):
-    """{"passaro": 3, "cachorro": 1} -> "os pássaros e o cachorro vêm comer" (só o que está na areia)."""
-    partes = [("o " + areia.SINGULAR[k]) if n == 1 else ("os " + areia.ESPECIES[k][0].lower())
+    """{"passaro": 3, "cachorro": 1} -> "os pássaros e o cachorro vêm comer" (só o que está na areia);
+    com três ou mais: "os peixes, a tartaruga e o pato vêm comer"."""
+    artigo = {"tartaruga": "a", "aguaviva": "a", "arraia": "a"}
+    plural = {"tartaruga": "as", "aguaviva": "as", "arraia": "as"}
+    partes = [(artigo.get(k, "o") + " " + areia.SINGULAR[k]) if n == 1
+              else (plural.get(k, "os") + " " + areia.ESPECIES[k][0].lower())
               for k, n in comem.items() if n]
-    return " e ".join(partes) + (" vem comer" if sum(comem.values()) == 1 else " vêm comer")
+    if not partes:
+        return "nenhum bicho vem comer"
+    lista = partes[0] if len(partes) == 1 else ", ".join(partes[:-1]) + " e " + partes[-1]
+    return lista + (" vem comer" if sum(comem.values()) == 1 else " vêm comer")
 
 
 # Imagem do projetor ao vivo (quadro da chuva): um ffmpeg captura a saída do projetor 6x por segundo
@@ -829,9 +838,10 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
     </div>
     <div class="quadro-chuva" id="quadro-comida" role="button" tabindex="0" aria-label="Tocar onde jogar comida" style="margin-top:12px">
       <img id="ao-vivo-comida" alt="" hidden>
-      <span class="aviso-vivo" id="aviso-comida">🍞 toque para jogar comida</span>
+      <span class="aviso-vivo" id="aviso-comida">🍞 toque para jogar comida (na água: ração)</span>
       <span class="selo-vivo" id="selo-comida" hidden>● ao vivo</span>
     </div>
+    <p class="hint">Na água cai ração para os peixes, tartarugas e patos; na terra, pão para os pássaros e cachorros. Ou aponte com o indicador para cima e os outros dedos fechados: cai comida embaixo do dedo.</p>
   </section>
 
   <section class="card" data-aba="chuva">
@@ -1325,14 +1335,17 @@ async function jogaComida(ev) {
   const p = ev.touches ? ev.touches[0] : ev;
   const x = Math.min(1, Math.max(0, (p.clientX - r.left) / r.width));
   const y = Math.min(1, Math.max(0, (p.clientY - r.top) / r.height));
-  q.querySelectorAll('.pao').forEach(e => e.remove());   // o SARndbox guarda uma comida só: um pão só no quadro
   const m = document.createElement('span');
   m.textContent = '🍞'; m.className = 'aviso-vivo pao';
   m.style.cssText = `left:${x*100}%;top:${y*100}%;transform:translate(-50%,-50%);position:absolute`;
   q.appendChild(m);
   const tira = setTimeout(() => m.remove(), 20000);
   const j = await post('/comida', {x: x, y: 1 - y});
-  if (!j || !j.ok) { clearTimeout(tira); m.remove(); }   // não caiu comida (sem pássaros/cachorros, erro...)
+  if (!j || !j.ok) { clearTimeout(tira); m.remove(); return; }   // não caiu comida (sem bichos que comam ali, erro...)
+  /* o SARndbox guarda um pão só (um pão só no quadro); a ração na água é outra comida, ao mesmo tempo */
+  const racao = (j.msg || '').startsWith('Ração');
+  if (racao) { m.textContent = '🟤'; m.className = 'aviso-vivo racao'; }
+  q.querySelectorAll(racao ? '.racao' : '.pao').forEach(e => { if (e !== m) e.remove(); });
 }
 
 function abre(aba) {

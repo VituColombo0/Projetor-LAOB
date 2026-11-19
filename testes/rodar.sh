@@ -29,6 +29,18 @@ for u in "$R"/sistema/areia-vigia.service "$R"/sistema/sandbox-painel.service; d
   grep -q "^KillMode=process" "$u" || { echo "  falta KillMode=process em $u (o systemd mataria a areia)"; falhas=1; }
   grep -q "^Nice=" "$u" && { echo "  Nice em $u: a areia herdaria a prioridade menor"; falhas=1; }
 done
+echo "== dedo apontado: classificação com mãos sintéticas (sarndbox/Gesto.cpp, sem Kinect)"
+if command -v g++ >/dev/null; then
+  BIN=$(mktemp)
+  if g++ -O2 -Wall -Wextra -Werror -I "$R/sarndbox" "$R/testes/teste_gesto.cpp" "$R/sarndbox/Gesto.cpp" -o "$BIN"; then
+    "$BIN" | grep -vE '^        ponta' || falhas=1   # (as medidas de cada cena: rodar o teste_gesto sozinho)
+  else
+    echo "  ERRO ao compilar o teste do gesto"; falhas=1
+  fi
+  rm -f "$BIN"
+else
+  echo "  (g++ não instalado: pulei)"
+fi
 echo "== testes Python ($PY)"
 ( cd "$R/testes" && "$PY" -m unittest -v test_rosto test_areia test_painel ) || falhas=1
 "$PY" -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$R/areia/atualizar_papel_parede.py" || falhas=1

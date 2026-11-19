@@ -665,22 +665,61 @@ def chuva(fx, fy, segundos=8):
     _comando(f"chuva {fx:.3f} {fy:.3f} {segundos:g}")
 
 
-COMEM = ("passaro", "cachorro")   # só eles vêm à comida (Extras.cpp: comidaPerto em passaro() e cachorro())
+COMEM = ("passaro", "cachorro")   # vêm à comida de terra, o pão (Extras.cpp: comidaPerto em passaro() e cachorro())
+COMEM_RACAO = ("peixe", "tubarao", "tartaruga", "aguaviva", "polvo", "arraia", "pato")   # vêm à ração na água (o barco não)
+ESPERA_COMIDA = 1.5   # segundos esperando o SARndbox dizer onde a comida caiu (ele lê o comando a cada quadro)
+
+
+def _resposta_comida(pos, espera):
+    """A linha "Comida em ... (terra|agua)" ou "Comida: nada caiu (...)" que o SARndbox escreve no registro
+    depois do comando (lida a partir de pos, o tamanho do registro antes de mandar). None se não veio."""
+    fim = time.monotonic() + espera
+    arq = os.path.join(D, "sandbox.log")
+    while True:
+        try:
+            with open(arq, "rb") as f:
+                if os.fstat(f.fileno()).st_size >= pos:
+                    f.seek(pos)
+                for l in f.read().decode("utf-8", "replace").splitlines():
+                    if l.startswith(("Comida em x", "Comida: nada caiu")):
+                        return l
+        except OSError:
+            pass
+        if time.monotonic() >= fim:
+            return None
+        time.sleep(0.05)
 
 
 def comida(fx, fy, segundos=20):
-    """Joga comida no ponto (fx, fy) da área iluminada: os pássaros pousam em volta e os cachorros
-    sentam do lado (a mão de verdade só faz chover). Só vale com pássaros ou cachorros na areia
-    (eles só nascem pelo "mar", a Vida na areia do painel). Devolve {"passaro": n, "cachorro": n}."""
+    """Joga comida no ponto (fx, fy) da área iluminada. O SARndbox decide pelo ponto: na água cai ração
+    (peixes, tartarugas, patos... vêm comer); na terra, pão (os pássaros pousam em volta e os cachorros
+    sentam do lado). A mão aberta só faz chover. Só vale com algum bicho que coma na areia (eles só
+    nascem pelo "mar", a Vida na areia do painel); havendo só bichos que comem um dos dois, o ponto do
+    outro jeito não recebe nada e o erro diz por quê. Devolve {"onde": "terra" | "agua" | None (o
+    SARndbox não respondeu), "comem": {"passaro": n, ...}} (só quem vem comer o que caiu)."""
     fx, fy, segundos = _ponto(fx, fy, segundos)
     _exige_rosto("comida")
-    sel = mar_escolhido()
-    comem = {k: sel.get(k, 0) for k in COMEM if sel.get(k, 0)}
-    if animais_situacao() != "mar" or not comem:
-        raise Erro("não há pássaros nem cachorros na areia, e só eles vêm comer: "
+    sel = mar_escolhido() if animais_situacao() == "mar" else {}
+    terra = {k: sel[k] for k in COMEM if sel.get(k)}
+    agua = {k: sel[k] for k in COMEM_RACAO if sel.get(k)}
+    if not terra and not agua:
+        raise Erro("não há bichos que comam na areia (pássaros, cachorros, peixes, tartarugas, patos...): "
                    "solte alguns na aba Vida (Soltar na areia) e jogue de novo")
-    _comando(f"comida {fx:.3f} {fy:.3f} {segundos:g}")
-    return comem
+    so = "" if terra and agua else (" terra" if terra else " agua")
+    try:
+        pos = os.path.getsize(os.path.join(D, "sandbox.log"))
+    except OSError:
+        pos = 0
+    _comando(f"comida {fx:.3f} {fy:.3f} {segundos:g}{so}")
+    l = _resposta_comida(pos, ESPERA_COMIDA) or ""
+    if l.startswith("Comida: nada caiu"):
+        if "(agua)" in l:
+            raise Erro("aí é água, e só os bichos da água comem a ração: não há nenhum na areia. "
+                       "Toque na terra (pão para os pássaros e cachorros) ou solte peixes na aba Vida")
+        raise Erro("aí é terra, e só os pássaros e cachorros comem o pão: não há nenhum na areia. "
+                   "Toque na água (ração para os bichos da água) ou solte pássaros na aba Vida")
+    onde = "agua" if l.endswith("(agua)") else "terra" if l.endswith("(terra)") else None
+    return {"onde": onde, "comem": agua if onde == "agua" else terra if onde == "terra" else {**terra, **agua}}
 
 
 def secar():

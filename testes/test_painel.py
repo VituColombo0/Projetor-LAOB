@@ -206,13 +206,14 @@ class Painel(Ambiente):
 
     def test_comida_pelo_painel(self):
         log = os.path.join(self.D, "sandbox.log")
+        self.painel.areia.ESPERA_COMIDA = 0.05                           # o projetor falso não responde
         self.assertEqual(self.post("/comida", json={"x": 0.4, "y": 0.6}).status_code, 400)   # areia fechada
-        self.assertEqual(self.post("/mar", json={"peixe": 3}).status_code, 200)
+        self.assertEqual(self.post("/mar", json={"carro": 3}).status_code, 200)
         with open(log, "w") as f:
             f.write("Animais: mar (3)\n")
         r = self.post("/comida", json={"x": 0.4, "y": 0.6})
-        self.assertEqual(r.status_code, 400)                             # só peixes: ninguém vem comer
-        self.assertIn("pássaros nem cachorros", r.get_json()["msg"])
+        self.assertEqual(r.status_code, 400)                             # só carrinhos: ninguém vem comer
+        self.assertIn("não há bichos que comam", r.get_json()["msg"])
         self.assertNotIn("cmd comida", " ".join(self.comandos()))
         self.assertEqual(self.post("/mar", json={"passaro": 3, "cachorro": 1}).status_code, 200)
         with open(log, "w") as f:
@@ -220,14 +221,32 @@ class Painel(Ambiente):
         r = self.post("/comida", json={"x": 0.4, "y": 0.6})
         self.assertEqual(r.status_code, 200, r.get_json())
         self.assertEqual(r.get_json()["msg"], "Comida jogada: os pássaros e o cachorro vêm comer")
-        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd comida 0.400 0.600 20")
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd comida 0.400 0.600 20 terra")
+        # a resposta do SARndbox diz o que caiu
+        comando = self.painel.areia._comando
+
+        def com_resposta(*linhas):
+            comando(*linhas)
+            with open(log, "a") as f:
+                f.write("Comida em x -3 y 2 por 20 s (agua)\n")
+        self.painel.areia._comando = com_resposta
+        try:
+            self.assertEqual(self.post("/mar", json={"peixe": 6, "tartaruga": 1, "pato": 2, "passaro": 1}).status_code, 200)
+            with open(log, "w") as f:
+                f.write("Animais: mar (10)\n")
+            r = self.post("/comida", json={"x": 0.2, "y": 0.3})
+            self.assertEqual(r.get_json()["msg"], "Ração na água: os peixes, a tartaruga e os patos vêm comer")
+        finally:
+            self.painel.areia._comando = comando
         for ruim in ({"x": 3, "y": 0.6}, {"y": 0.6}, {}):
             self.assertEqual(self.post("/comida", json=ruim).status_code, 400, ruim)
         self.assertEqual(self.painel.quem_vem_comer({"passaro": 1}), "o pássaro vem comer")
         self.assertEqual(self.painel.quem_vem_comer({"cachorro": 2}), "os cachorros vêm comer")
+        self.assertEqual(self.painel.quem_vem_comer({"arraia": 2}), "as arraias vêm comer")
         pagina = self.get("/").get_data(as_text=True)
         self.assertIn('id="selo-comida"', pagina)                        # selo "ao vivo" também na comida
         self.assertIn("m.remove()", pagina)                              # o pão sai se o pedido não deu certo
+        self.assertIn("'.racao'", pagina)                                # ração e pão são marcas separadas no quadro
 
     def test_versao_da_pagina(self):
         """A página aberta recarrega sozinha quando o painel é atualizado (versão no /estado)."""

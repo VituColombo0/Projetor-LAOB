@@ -74,6 +74,18 @@ Extras::Extras(void)
 	comida.x=comida.y=comida.r=0.0f;
 	comida.ate=-100.0;
 	comida.dura=0.0;
+	for(int k=0;k<MAX_RACAO;++k)
+		{
+		Racao& r=racao[k];
+		r.x=r.y=r.vx=r.vy=r.seco=0.0f;
+		r.desde=r.ate=-100.0;
+		r.mordida=-100.0;
+		r.mordidas=0;
+		}
+	nRacao=0;
+	racaoUltima=-100.0;
+	racaoUltX=racaoUltY=0.0f;
+	vidaRacaoAnuncio=-100.0;
 	for(int i=0;i<MAX_AGENTES;++i)
 		{
 		acao[i]=0;
@@ -81,6 +93,7 @@ Extras::Extras(void)
 		acaoT[i]=0.0f;
 		voo[i]=escala[i]=1.0f;
 		acaoAte[i]=0.0;
+		belisca[i]=0.0;
 		}
 	jogo=SEM_JOGO;
 	jogoFase=0;
@@ -176,7 +189,7 @@ float Extras::altura(float x,float y) const
 	return peso>1e-4f?soma/peso:alt[cy*gw+cx];
 	}
 
-/* ------------------------------- comida (jogada pelo painel; a mão de verdade só faz chover) */
+/* ------------------------------- comida (jogada pelo painel ou embaixo do dedo apontado; a mão aberta só faz chover) */
 
 bool Extras::comidaPerto(float x,float y,float& borda,float folga) const
 	{
@@ -189,13 +202,204 @@ bool Extras::comidaPerto(float x,float y,float& borda,float folga) const
 	return true;
 	}
 
-void Extras::jogarComida(float fx,float fy,float segundos)
+bool Extras::jogarComidaEm(float x,float y,float segundos,int onde,int quantas)
 	{
-	comida.x=bmin[0]+std::max(0.0f,std::min(1.0f,fx))*(bmax[0]-bmin[0]);
-	comida.y=bmin[1]+std::max(0.0f,std::min(1.0f,fy))*(bmax[1]-bmin[1]);
+	/* comida num ponto (dedo apontado ou painel): ração na água, pão na terra */
+	x=std::max(bmin[0],std::min(bmax[0],x));
+	y=std::max(bmin[1],std::min(bmax[1],y));
+	float s=std::max(0.0f,std::min(120.0f,segundos));
+	bool naAgua=onde<0?aguaNoPonto(x,y):onde==1;
+	if(naAgua&&!aguaNoPonto(x,y))
+		{
+		/* pedida na água, mas ali secou (ou a mão parada já entrou no relevo e tirou a água de baixo dela):
+		   cai na água mais perto, até 6 cm; sem água por perto, vira comida de terra */
+		naAgua=false;
+		for(int r=1;r<=4&&!naAgua;++r)
+			for(int k=0;k<12&&!naAgua;++k)
+				{
+				float a=float(k)*PI/6.0f+0.26f*float(r),d=1.5f*float(r);
+				float px=x+std::cos(a)*d,py=y+std::sin(a)*d;
+				if(aguaNoPonto(px,py))
+					{
+					x=px;
+					y=py;
+					naAgua=true;
+					}
+				}
+		}
+	if(naAgua)
+		{
+		/* ração: a primeira vez num lugar cai um punhado; o dedo parado no mesmo lugar vai soltando mais */
+		bool mesmo=tempo-racaoUltima<1.5&&(racaoUltX-x)*(racaoUltX-x)+(racaoUltY-y)*(racaoUltY-y)<4.0f*4.0f;
+		int n=quantas>0?quantas:(mesmo?2:5);
+		jogarRacao(x,y,n,mesmo?1.5f:2.0f,s);
+		racaoUltima=tempo;
+		racaoUltX=x;
+		racaoUltY=y;
+		return true;
+		}
+	/* terra: a comida do painel; perto do mesmo lugar (2,5 cm) só renova, o pão fica onde está */
+	bool mesma=tempo<comida.ate&&(comida.x-x)*(comida.x-x)+(comida.y-y)*(comida.y-y)<2.5f*2.5f;
+	if(!mesma)
+		{
+		comida.x=x;
+		comida.y=y;
+		}
 	comida.r=4.5f;
-	comida.dura=std::max(0.0f,std::min(120.0f,segundos));
-	comida.ate=tempo+comida.dura;
+	comida.dura=s;
+	comida.ate=tempo+s;
+	return false;
+	}
+
+int Extras::jogarRacao(float x,float y,int n,float espalha,float segundos)
+	{
+	/* n bolinhas espalhadas num círculo de raio "espalha"; cada uma dura um pouco diferente (somem uma a
+	   uma). Sem vaga, a mais velha dá lugar (o dedo continua soltando onde está apontando). */
+	int caiu=0;
+	for(int q=0;q<n;++q)
+		{
+		int vaga=-1;
+		double velha=1e30;
+		for(int k=0;k<MAX_RACAO;++k)
+			{
+			if(racao[k].ate<tempo)
+				{
+				vaga=k;
+				break;
+				}
+			if(racao[k].desde<velha)
+				{
+				velha=racao[k].desde;
+				vaga=k;
+				}
+			}
+		float a=aleatorio()*2.0f*PI,d=espalha*std::sqrt(aleatorio());
+		float px=x+std::cos(a)*d,py=y+std::sin(a)*d;
+		if(!aguaNoPonto(px,py)) // espalhou para a margem: cai no meio
+			{
+			px=x;
+			py=y;
+			}
+		Racao& r=racao[vaga];
+		r.x=px;
+		r.y=py;
+		r.vx=r.vy=r.seco=0.0f;
+		r.desde=tempo+0.05*q; // (o respingo de cada uma sai um pouquinho depois do da outra)
+		r.ate=tempo+std::max(5.0f,segundos*(0.65f+0.35f*aleatorio()));
+		r.mordida=-100.0;
+		r.mordidas=2;
+		++caiu;
+		}
+	return caiu;
+	}
+
+void Extras::passoRacao(float dt)
+	{
+	/* cada bolinha boia: vai com a correnteza (como o pato), se afasta devagar das vizinhas e encosta na
+	   margem sem subir na areia; se a água some embaixo dela, procura a água mais perto e, sem achar, some */
+	nRacao=0;
+	for(int k=0;k<MAX_RACAO;++k)
+		{
+		Racao& r=racao[k];
+		if(r.ate<tempo||r.mordidas<=0)
+			continue;
+		if(aguaSim.empty()||!dentro(r.x,r.y,0.5f))
+			{
+			r.ate=tempo-1.0; // sem água medida (os bichos da água saíram) ou fora da área: some
+			continue;
+			}
+		float cvx,cvy;
+		correnteza(r.x,r.y,cvx,cvy);
+		float tx=cvx*0.9f+0.15f*std::sin(float(tempo)*0.7f+float(k)*2.1f),ty=cvy*0.9f+0.15f*std::cos(float(tempo)*0.6f+float(k)*1.3f);
+		for(int j=0;j<MAX_RACAO;++j)
+			{
+			const Racao& o=racao[j];
+			if(j==k||o.ate<tempo||o.mordidas<=0)
+				continue;
+			float dx=r.x-o.x,dy=r.y-o.y,d2=dx*dx+dy*dy;
+			if(d2<1.1f*1.1f&&d2>1e-6f)
+				{
+				float d=std::sqrt(d2);
+				tx+=dx/d*0.5f*(1.1f-d);
+				ty+=dy/d*0.5f*(1.1f-d);
+				}
+			}
+		float p0=profAgua(r.x,r.y);
+		if(p0<0.12f)
+			{
+			/* secou embaixo: vai para onde está mais fundo; some se ficar 1,5 s sem achar água */
+			r.seco+=dt;
+			float melhor=p0;
+			int k0=-1;
+			for(int q=0;q<8;++q)
+				{
+				float pq=profAgua(r.x+std::cos(q*PI/4.0f)*2.0f,r.y+std::sin(q*PI/4.0f)*2.0f);
+				if(pq>melhor+0.02f)
+					{
+					melhor=pq;
+					k0=q;
+					}
+				}
+			if(r.seco>1.5f||(k0<0&&p0<0.03f&&r.seco>0.5f))
+				{
+				r.ate=tempo-1.0;
+				continue;
+				}
+			if(k0>=0)
+				{
+				tx=std::cos(k0*PI/4.0f)*3.0f;
+				ty=std::sin(k0*PI/4.0f)*3.0f;
+				}
+			}
+		else
+			r.seco=0.0f;
+		r.vx+=(tx-r.vx)*std::min(1.0f,2.0f*dt);
+		r.vy+=(ty-r.vy)*std::min(1.0f,2.0f*dt);
+		float nx=r.x+r.vx*dt,ny=r.y+r.vy*dt;
+		if(p0<0.12f||profAgua(nx,ny)>=0.12f)
+			{
+			r.x=nx;
+			r.y=ny;
+			}
+		else
+			r.vx=r.vy=0.0f; // encostou na margem: fica boiando ali
+		++nRacao;
+		}
+	}
+
+int Extras::racaoAlcance(int i,float vista,float boca) const
+	{
+	/* a bolinha mais perto (até "vista" cm) que o bicho alcança nadando em linha reta pela água: um bicho
+	   de outro lago, ou do outro lado de uma ilha, não vem */
+	float bx=ax[i]+std::cos(ang[i])*boca*0.5f,by=ay[i]+std::sin(ang[i])*boca*0.5f;
+	float jaVisto=0.0f;
+	for(int tenta=0;tenta<3;++tenta)
+		{
+		int melhor=-1;
+		float dm=vista*vista;
+		for(int k=0;k<MAX_RACAO;++k)
+			{
+			const Racao& r=racao[k];
+			if(r.ate<tempo||r.mordidas<=0)
+				continue;
+			float d2=(r.x-bx)*(r.x-bx)+(r.y-by)*(r.y-by);
+			if(d2<dm&&d2>jaVisto)
+				{
+				dm=d2;
+				melhor=k;
+				}
+			}
+		if(melhor<0)
+			return -1;
+		float d=std::sqrt(dm),dx=(racao[melhor].x-bx)/std::max(d,1e-3f),dy=(racao[melhor].y-by)/std::max(d,1e-3f);
+		bool alcanca=true;
+		for(float t=2.0f;t<d-1.2f&&alcanca;t+=2.0f)
+			alcanca=agua(bx+dx*t,by+dy*t);
+		if(alcanca)
+			return melhor;
+		jaVisto=dm+1e-4f; // essa não dá: tenta a próxima mais perto
+		}
+	return -1;
 	}
 
 bool Extras::dentro(float x,float y,float margem) const
@@ -788,6 +992,7 @@ void Extras::passo(float dt)
 		mundoPasso(dt); // o laboratório tem rotina própria (Mundo.cpp): não usa o movimento pelo relevo
 		return;
 		}
+	passoRacao(dt);
 	/* Patos: o primeiro é a mãe; os outros são patinhos, em fila atrás dela (cada um atrás do da frente) */
 	int patoDaFrente[MAX_AGENTES];
 	int ultimoPato=-1;
@@ -930,6 +1135,59 @@ void Extras::passo(float dt)
 						}
 					}
 				}
+			/* Ração na água (dedo apontado ou painel): quem come vai até a bolinha mais perto que alcança pela
+			   água e belisca; os peixes chegam em cardume e ficam rodeando. O tubarão também come quando não
+			   está caçando (e os peixes continuam fugindo dele, logo abaixo). O barquinho não come. */
+			bool comendo=false;
+			float pertoRacao=1e9f;
+			if(nRacao>0&&esp!=10&&!cacando)
+				{
+				/* vista (cm), boca (cm à frente do meio), força da virada e pressa de cada um */
+				float vista=esp==1?22.0f:esp==5||esp==9?25.0f:esp==4?14.0f:esp==6?12.0f:15.0f;
+				float boca=esp==4?2.8f:esp==5?2.0f:esp==9?1.7f*escala[i]:esp==1?1.5f:esp==6?0.6f:1.3f;
+				float puxa=esp==1?2.6f:esp==9?2.4f:esp==5?2.2f:esp==4?1.6f:esp==6?0.9f:1.3f;
+				if(fila>=0.0f)
+					vista=6.0f; // patinho na fila: só se a ração passa do lado
+				int k=racaoAlcance(i,vista,boca);
+				if(k>=0)
+					{
+					comendo=true;
+					const Racao& r=racao[k];
+					float dx=r.x-ax[i],dy=r.y-ay[i],d=std::max(0.4f,std::sqrt(dx*dx+dy*dy));
+					pertoRacao=d;
+					float w=puxa*(d<3.0f?0.7f:1.0f);
+					if(fila>=0.0f) // o patinho sai da fila para pegar: a vontade dele manda
+						{
+						vx=0.5f*vx+dx/d*2.0f;
+						vy=0.5f*vy+dy/d*2.0f;
+						}
+					else
+						{
+						vx+=dx/d*w;
+						vy+=dy/d*w;
+						}
+					float mx=ax[i]+c0*boca-r.x,my=ay[i]+s0*boca-r.y;
+					float alcance=esp==4||esp==5?1.5f:1.2f;
+					if(mx*mx+my*my<alcance*alcance&&belisca[i]<tempo)
+						{
+						/* beliscou: a bolinha diminui (peixe, patinho e água-viva levam duas beliscadas; os
+						   grandes, uma) e o bicho se afasta um pouco antes da próxima */
+						Racao& rr=racao[k];
+						rr.mordidas-=(esp==1||esp==6||(esp==9&&escala[i]<0.9f))?1:2;
+						rr.mordida=tempo;
+						if(rr.mordidas<=0)
+							rr.ate=tempo+0.6; // comida: só o respingo da beliscada ainda aparece
+						belisca[i]=tempo+0.6+0.6*aleatorio();
+						ang[i]=difAng(ang[i]+(aleatorio()<0.5f?0.7f:-0.7f));
+						if(tempo-vidaRacaoAnuncio>10.0)
+							{
+							vidaRacaoAnuncio=tempo;
+							anuncia(std::string("Vida: ")+(esp==1?"os peixes":esp==4?"o tubarao":esp==5?"a tartaruga":esp==6?"a agua-viva":
+							        esp==7?"o polvo":esp==8?"a arraia":"o pato")+" comendo a racao");
+							}
+						}
+					}
+				}
 			/* a mão NÃO espanta os bichos da água (Victor, 17/11/2026: tirar o espantar) */
 			if(esp==1||esp==9||esp==5)
 				for(int j=0;j<quantos;++j)
@@ -975,6 +1233,8 @@ void Extras::passo(float dt)
 				alvoVel=std::max(0.5f,std::min(4.5f,vel[patoDaFrente[i]]*0.9f+1.4f*fila));
 			if(cacando)
 				alvoVel=vb[i]*1.6f;
+			else if(comendo) // vem depressa; chegando, devagar (rodeia a ração e belisca)
+				alvoVel=pertoRacao<3.0f?vb[i]*0.55f:std::max(alvoVel,vb[i]*(esp==6||esp==7||esp==8?1.0f:1.3f));
 			alvoVel*=1.0f+0.9f*susto;
 			vel[i]+=(alvoVel-vel[i])*std::min(1.0f,2.0f*dt);
 			vel[i]=std::max(vel[i],0.5f);
@@ -1074,6 +1334,29 @@ void Extras::passo(float dt)
 				vel[i]=std::max(0.05f,vel[i]*(1.0f-std::min(1.0f,4.0f*dt)));
 				parado[i]=0.0f;
 				continue; // sentado do lado da comida, abanando o rabo
+				}
+			if(ehPessoa(tipo[i])&&modo!=MUNDO)
+				{
+				/* quem passeia e passa do lado do pão para um pouco para olhar (no máximo a cada 20 s) e segue */
+				float bp;
+				if(acao[i]==0&&acaoAte[i]<tempo&&comidaPerto(ax[i],ay[i],bp,0.0f)&&bp>0.6f&&bp<3.0f)
+					{
+					acao[i]=1;
+					acaoAte[i]=tempo+1.5+1.5*aleatorio();
+					}
+				if(acao[i]==1)
+					{
+					if(tempo<acaoAte[i]&&comidaPerto(ax[i],ay[i],bp,0.0f))
+						{
+						float olha=std::atan2(comida.y-ay[i],comida.x-ax[i]);
+						ang[i]=difAng(ang[i]+std::max(-2.5f*dt,std::min(2.5f*dt,difAng(olha-ang[i]))));
+						vel[i]=std::max(0.05f,vel[i]*(1.0f-std::min(1.0f,5.0f*dt)));
+						parado[i]=0.0f;
+						continue;
+						}
+					acao[i]=0;
+					acaoAte[i]=tempo+20.0;
+					}
 				}
 			const float desvios[]={0.0f,0.35f,-0.35f,0.7f,-0.7f,1.1f,-1.1f};
 			/* Pessoa (tipo 3): mesmo jeito de andar do carrinho, com corpo menor, passo curto e um
@@ -1473,7 +1756,7 @@ bool Extras::cachorro(int i,float dt)
 
 const char* Extras::nomesUniforms[NUM_UNIFORMS]={"extrasCaixa","extrasAg","extrasTesouro","extrasInfo","extrasEfeito",
 	"extrasLab","extrasLab2","extrasJogo","extrasJogoInfo","extrasNomes","extrasNomesCfg","extrasRostos","extrasMundo","extrasMundo2","extrasChuva","extrasCopiaInfo",
-	"extrasAg2","extrasComida"};
+	"extrasAg2","extrasComida","extrasRacao"};
 
 const char* Extras::glslVertexUniforms=R"GLSL(
 uniform mat4 extrasCaixa; // espaço da câmera -> caixa (cm)
@@ -1498,6 +1781,9 @@ uniform vec4 extrasNomesCfg;  // quantos nomes, giro do texto (quartos de volta)
 uniform vec4 extrasCopiaInfo;   // ligado, folga (cm), altura de referência (cm), nota (+1000 = conseguiu)
 uniform vec4 extrasChuva[4]; // nuvens de chuva do painel: x, y (cm), força 0..1 (chega e vai aos poucos), segundos desde o começo
 uniform vec4 extrasComida;  // comida do painel: x, y, raio (cm), fração do tempo que falta (0 = sem comida)
+uniform vec4 extrasRacao[25]; // [0] caixa que envolve a ração (min x, min y, max x, max y; vazia = nenhuma);
+                              // [1..24] bolinhas: x, y (cm), segundos desde que caiu (<0 = vaga),
+                              // tamanho*20 (parte inteira) + segundos desde a última beliscada (fração)
 uniform vec4 extrasAg2[32];  // por bicho: estado (0 normal, 1 pousado/sentado, 2 mergulho, 3 indo, 4 caçando), altura do voo (0-1), tamanho, andamento do mergulho (0-1)
 float extrasMarca;          // 1 onde há um animal marinho (o shader da água o deixa à vista)
 uniform vec4 extrasMundo;   // laboratório (Mundo.cpp): -, largura e altura da caixa, ligado (1)
@@ -2669,7 +2955,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			float porte=(jeito<0.2?1.25:(jeito>0.85?1.85:1.6));                 // criança, adulto alto ou médio
 			vec2 pl=l/porte;
 			vec2 pls=ls/porte;
-			float passo=sin(et*7.0+float(i)*1.3);
+			float passo=extrasAg2[i].x>0.5&&extrasAg2[i].x<1.5?0.0:sin(et*7.0+float(i)*1.3); // parada olhando o pão: pés juntos
 			vec3 pele=mix(vec3(0.97,0.82,0.68),vec3(0.42,0.27,0.17),fract(hue*7.3));
 			float tomCabelo=fract(hue*3.7);
 			vec3 cabelo=tomCabelo<0.3?vec3(0.08,0.06,0.05):(tomCabelo<0.6?vec3(0.36,0.22,0.1):(tomCabelo<0.8?vec3(0.78,0.6,0.25):(tomCabelo<0.92?vec3(0.6,0.2,0.1):vec3(0.75))));
@@ -2800,6 +3086,63 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					poeira=max(poeira,smoothstep(rp,rp*0.3,distance(l,pp))*(1.0-ph));
 					}
 				baseColor.rgb=mix(baseColor.rgb,vec3(0.9,0.85,0.74),poeira*0.5);
+				}
+			}
+		}
+	/* Ração na água (dedo apontado ou painel, 18/11/2026): bolinhas marrons boiando, com contorno escuro e
+	   um halo claro fino (lê em todos os temas, por cima da água e dos bichos que comem embaixo); ao cair, um
+	   respingo; a cada beliscada, uma ondinha e a bolinha encolhe. Fora da caixa que envolve todas elas
+	   não faz conta nenhuma. */
+	vec4 rcx=extrasRacao[0];
+	if(ep.x>rcx.x&&ep.y>rcx.y&&ep.x<rcx.z&&ep.y<rcx.w)
+		{
+		float dB=1e3,anel=0.0;
+		vec2 qB=vec2(0.0);
+		for(int k=1;k<25;++k)
+			{
+			vec4 r=extrasRacao[k];
+			if(r.z<0.0)
+				continue;
+			vec2 q=ep.xy-r.xy;
+			if(dot(q,q)>4.0) // 2 cm: o maior respingo
+				continue;
+			float d=length(q);
+			float tam=floor(r.w)/20.0;                                   // 1 inteira .. 0 acabou (comida ou desmanchou)
+			float mord=fract(r.w);                                       // segundos desde a beliscada (0,99 = nenhuma)
+			if(r.z<0.7)
+				anel=max(anel,smoothstep(0.13,0.0,abs(d-0.3-1.5*r.z/0.7))*(1.0-r.z/0.7));        // respingo ao cair
+			if(mord<0.5)
+				anel=max(anel,0.85*smoothstep(0.1,0.0,abs(d-0.3-0.9*mord/0.5))*(1.0-mord/0.5)); // ondinha da beliscada
+			if(tam<=0.0)
+				continue;
+			float fk=float(k);
+			vec2 bob=0.06*vec2(sin(et*2.1+fk*1.7),cos(et*1.7+fk*2.3));     // balança de leve na água
+			float rb=0.4*tam*(mord<0.2?0.8+mord:1.0)*min(1.0,0.6+r.z*2.0); // encolhe na beliscada; cresce ao cair
+			float db=length(q-bob)-rb;
+			if(db<dB)
+				{
+				dB=db;
+				qB=(q-bob)/rb;
+				}
+			}
+		if(anel>0.3) // anel nítido de espuma (a água por cima deixaria um anel fraco da cor da areia)
+			{
+			baseColor.rgb=mix(vec3(0.7,0.86,1.0),vec3(1.0),smoothstep(0.3,1.0,anel));
+			extrasMarca=1.0;
+			}
+		if(dB<0.08)
+			{
+			extrasMarca=1.0;
+			if(dB>0.0)
+				baseColor.rgb=vec3(0.96,0.93,0.84);                                          // halo (temas escuros)
+			else if(dB>-0.08)
+				baseColor.rgb=vec3(0.2,0.1,0.03);                                            // contorno
+			else
+				{
+				/* ração: marrom, mais clara no alto (luz do mesmo canto dos bichos), com um brilho */
+				vec3 rc=mix(vec3(0.84,0.58,0.3),vec3(0.46,0.26,0.1),smoothstep(0.0,1.3,length(qB-vec2(-0.35,0.35))));
+				rc+=vec3(0.3,0.26,0.2)*smoothstep(0.3,0.0,length(qB-vec2(-0.35,0.38)));
+				baseColor.rgb=rc;
 				}
 			}
 		}
@@ -3022,6 +3365,29 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 	/* comida: só enquanto não acabou (o desenho some sozinho com a fração que falta) */
 	float resta=(querComida()&&comida.dura>0.0&&tempo<comida.ate)?float((comida.ate-tempo)/comida.dura):0.0f;
 	glUniform4fARB(locations[17],comida.x,comida.y,comida.r,resta);
+	/* ração: só as bolinhas que já caíram e ainda aparecem (comidas mostram a ondinha por mais 0,6 s) */
+	GLfloat rr[(MAX_RACAO+1)*4];
+	float rx0=1e9f,ry0=1e9f,rx1=-1e9f,ry1=-1e9f;
+	for(int k=0;k<MAX_RACAO;++k)
+		{
+		const Racao& r=racao[k];
+		GLfloat* v=rr+(k+1)*4;
+		v[0]=r.x;
+		v[1]=r.y;
+		v[2]=-1.0f;
+		v[3]=0.0f;
+		if(!querComida()||tempo<r.desde||tempo>=r.ate)
+			continue;
+		float tam=r.mordidas<=0?0.0f:std::min(1.0f,float(r.ate-tempo)/2.0f)*(r.mordidas==1?0.75f:1.0f); // desmancha nos últimos 2 s
+		v[2]=GLfloat(std::min(9.0,tempo-r.desde));
+		v[3]=GLfloat(std::floor(tam*20.0f+0.5f)+std::min(0.99,std::max(0.0,tempo-r.mordida)));
+		rx0=std::min(rx0,r.x-2.1f);
+		ry0=std::min(ry0,r.y-2.1f);
+		rx1=std::max(rx1,r.x+2.1f);
+		ry1=std::max(ry1,r.y+2.1f);
+		}
+	rr[0]=rx0; rr[1]=ry0; rr[2]=rx1; rr[3]=ry1; // sem nenhuma: caixa vazia (min > max), o shader nem olha
+	glUniform4fvARB(locations[18],MAX_RACAO+1,rr);
 	/* painel de rostos na unidade de textura 6 (a 5 é a foto do modo Foto). O número da unidade vai
 	   sempre: um sampler2D deixado na unidade 0 (das texturas retangulares) invalidaria o desenho. */
 	glUniform1iARB(locations[11],6);

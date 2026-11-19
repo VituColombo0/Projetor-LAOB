@@ -24,7 +24,7 @@ class Extras
 	public:
 	enum {MAX_AGENTES=32};
 	enum Modo {NADA=0,PEIXES=1,CARROS=2,TODOS=3,PESSOAS=4,MUNDO=6}; // TODOS = peixes, carrinhos e pessoas; MUNDO: o laboratório (Mundo.cpp); 5 era o modo membros (tirado em 18/11/2026)
-	enum {NUM_UNIFORMS=18}; // cabe em heightMapShaderUniforms[48] do SurfaceRenderer (static_assert no patch_surface.py)
+	enum {NUM_UNIFORMS=19}; // cabe em heightMapShaderUniforms[48] do SurfaceRenderer (static_assert no patch_surface.py)
 	enum {MAX_NOMES=8,MAX_LETRAS=8}; // membros do laboratório (Mundo), com o nome em cima
 	/* Efeito animado de cada tema de cor: */
 	enum Efeito {SEM_EFEITO=0,LAVA=1,NEVE=2,POEIRA=3,AREIA=4,ONDAS=5,BRILHO=6}; // (a chuva fina do clássico saiu em 13/11)
@@ -194,14 +194,44 @@ class Extras
 	void mundoPasso(float dt);
 	bool mundoRosto(const char* nome,float segundos=12.0f);
 	void armadilhasDoLabirinto(void); // peças P_PERIGO entre a nascente e o alvo
-	/* Comida jogada pelo painel (comando "comida"): os pássaros pousam em volta e os cachorros sentam do lado.
-	   O shader desenha um pão com migalhas que somem conforme ela acaba (extrasComida). A mão de verdade NÃO é seguida (18/11: só faz chover). */
+	/* Comida na terra (painel, comando "comida", ou dedo apontado): os pássaros pousam em volta, os cachorros sentam do lado
+	   e quem passeia para um pouco para olhar.
+	   O shader desenha um pão com migalhas que somem conforme ela acaba (extrasComida). A mão aberta NÃO é seguida (18/11: só faz chover);
+	   o dedo apontado para cima derruba comida embaixo dele (jogarComidaEm, Gesto.cpp). */
 	struct Comida {float x,y,r; double ate,dura;}; // centro e raio (cm); até quando fica e quanto durava
 	Comida comida;
 	bool querComida(void) const {return mapaOk&&modo!=NADA&&modo!=MUNDO;}
 	bool comidaPerto(float x,float y,float& borda,float folga=0.6f) const; // comida na areia (ou acabada há menos de "folga" s); borda = cm até a beira dela
-	void jogarComida(float fx,float fy,float segundos); // fx, fy = 0..1 na área iluminada
-	/* Estado de cada bicho: 0 normal, 1 pousado/sentado, 2 mergulhando, 3 indo pousar/indo até a comida, 4 perseguindo */
+	/* Comida num ponto (dedo apontado para cima, Gesto.cpp, e painel; 18/11/2026): x, y em cm no espaço da caixa.
+	   onde: -1 = decide pela água no ponto (aguaNoPonto), 0 = terra, 1 = água (cai na água mais perto, até 6 cm;
+	   sem água por perto, secou: vira comida de terra). Devolve true se caiu na água.
+	   Na terra é a mesma comida do painel (pão com migalhas): chamar de novo perto do mesmo lugar só renova,
+	   o pão não muda de lugar nem recomeça. Na água caem bolinhas de ração (quantas; 0 = 5 na primeira vez
+	   e 2 enquanto o dedo continua ali). As duas comidas são independentes e podem estar na areia juntas. */
+	bool jogarComidaEm(float x,float y,float segundos,int onde=-1,int quantas=0);
+	bool comem(bool naAgua) const // há na areia quem coma aquilo? água: peixe, tubarão, tartaruga, água-viva, polvo, arraia, pato; terra: pássaro, cachorro
+		{
+		for(int j=0;j<quantos;++j)
+			{
+			int t=int(tipo[j]);
+			if(vel[j]!=0.0f&&(naAgua?(t==1||(t>=4&&t<=9)):(t==11||t==12)))
+				return true;
+			}
+		return false;
+		}
+	bool aguaNoPonto(float x,float y) const {return agua(x,y);} // água funda o bastante para os bichos da água
+	/* Ração na água: bolinhas que boiam, vão com a correnteza de verdade (aguaVx/Vy), se espalham devagar e
+	   somem uma a uma (comidas ou no fim do tempo; se a água some embaixo, procuram água e, sem achar, somem).
+	   Peixes, tartarugas, patos, polvos, arraias, águas-vivas e o tubarão (quando não está caçando) vêm
+	   comer, só pela água. O shader desenha as bolinhas, o respingo ao cair e a beliscada (extrasRacao). */
+	enum {MAX_RACAO=24};
+	struct Racao {float x,y,vx,vy,seco; double desde,ate,mordida; int mordidas;}; // mordidas<=0: comida (só o respingo da última beliscada)
+	Racao racao[MAX_RACAO];
+	int nRacao; // bolinhas ainda boiando (contadas a cada passo)
+	double racaoUltima; float racaoUltX,racaoUltY; // onde e quando caiu a última (o dedo parado solta menos)
+	double vidaRacaoAnuncio; // "Vida: ... comendo a racao" no máximo a cada 10 s
+	int jogarRacao(float x,float y,int n,float espalha,float segundos); // devolve quantas caíram
+	/* Estado de cada bicho: 0 normal, 1 pousado/sentado/parado olhando, 2 mergulhando, 3 indo pousar/indo até a comida, 4 perseguindo */
 	int acao[MAX_AGENTES],presa[MAX_AGENTES]; float acaoT[MAX_AGENTES],voo[MAX_AGENTES],escala[MAX_AGENTES]; double acaoAte[MAX_AGENTES];
  // relógios dos jogos e passo dos bichos
 	void passo(float dt);
@@ -232,6 +262,9 @@ class Extras
 	void passaro(int i,float dt);
 	bool cachorro(int i,float dt); // true = sentado do lado da comida
 	bool lugarDePouso(int i);
+	void passoRacao(float dt);
+	int racaoAlcance(int i,float vista,float boca) const; // bolinha mais perto que o bicho i alcança pela água (-1 nenhuma)
+	double belisca[MAX_AGENTES]; // até quando o bicho espera para beliscar de novo
 	void copiaNomes(const std::vector<std::string>& lista,int giro,int fotos); // nomes, cores e rostos dos membros (para o mundo)
 	};
 
