@@ -55,6 +55,15 @@ qual() {
   else echo nenhum; fi
 }
 
+# Sem protetor de tela enquanto a areia está aberta: o GNOME do laob apagava as telas após 15 min sem
+# mexer no mouse (idle-delay, que alguém volta a ligar nas Configurações; 19/11/2026) e a areia caía para
+# 1 quadro/s. O SARndbox roda "segurando" o ocioso da sessão, como um player de vídeo; ao fechar, solta.
+ACORDADO=()
+if command -v gnome-session-inhibit >/dev/null 2>&1; then
+  [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] || { [ -S "/run/user/$(id -u)/bus" ] && export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"; }
+  [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] && ACORDADO=(gnome-session-inhibit --inhibit idle --reason "caixa de areia no projetor")
+fi
+
 parar() {
   pkill -f "^($ORIG|$ROSTO)" 2>/dev/null
   for _ in $(seq 1 20); do [ "$(qual)" = nenhum ] && return 0; sleep 0.25; done
@@ -64,7 +73,7 @@ parar() {
 iniciar_original() {
   tela
   fifo "$FIFO_TOPO"
-  ( cd "$HOME" && exec setsid nohup "$ORIG" "${TELA[@]}" "${CORES[@]}" -fpv -cp "$FIFO_TOPO" ) >/dev/null 2>&1 < /dev/null &
+  ( cd "$HOME" && exec setsid nohup "${ACORDADO[@]}" "$ORIG" "${TELA[@]}" "${CORES[@]}" -fpv -cp "$FIFO_TOPO" ) >/dev/null 2>&1 < /dev/null &
 }
 
 espera() {  # $1 = qual esperar, $2 = segundos
@@ -87,7 +96,7 @@ case "${1:-estado}" in
     fifo "$FIFO"
     tela
     parar
-    ( cd "$HOME" && exec setsid nohup "$ROSTO" "${TELA[@]}" "${CORES[@]}" -wts $GRADE_AGUA -ws 1.0 "$PASSOS_AGUA" -fpv -cp "$FIFO" ) > "$LOG" 2>&1 < /dev/null &
+    ( cd "$HOME" && exec setsid nohup "${ACORDADO[@]}" "$ROSTO" "${TELA[@]}" "${CORES[@]}" -wts $GRADE_AGUA -ws 1.0 "$PASSOS_AGUA" -fpv -cp "$FIFO" ) > "$LOG" 2>&1 < /dev/null &
     sleep 8  # o Kinect e a janela levam uns segundos para ficar prontos para comandos
     if [ "$(qual)" != rosto ]; then
       echo "a versão com Foto não subiu (veja $LOG); voltando à topografia"

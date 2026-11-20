@@ -192,7 +192,7 @@ void SurfaceRenderer::setDemDistScale(""")
 				/* Modulate the base color by contour line color: */\\n\\
 				addContourLines(gl_FragCoord.xy,baseColor);\\n\\
 				\\n";
-""", """			if(extras!=0)
+""", """			if(extras!=0&&dem==0&&elevationColorMap!=0) // só onde as declarações dos extras entram (no Esculpir, com o DEM, não: 19/11/2026)
 				fragmentMain+="\\
 				if(extrasMundo.w<0.5)\\n\\
 					{\\n\\
