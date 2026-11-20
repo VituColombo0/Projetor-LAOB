@@ -67,7 +67,8 @@ if [ "$N" -gt 0 ]; then
     && ok "print do projetor em /tmp/integracao-foto.png"
   GIRO0=$(grep -o '"giro": [0-9]*' "$D/estado.json")
   confere "girar 4 vezes volta ao começo ($GIRO0)" "for i in 1 2 3 4; do areia-foto girar >/dev/null || exit 1; done; grep -q '$GIRO0' '$D/estado.json'"
-  confere "esculpir" "areia-foto esculpir >/dev/null && sleep 1 && tem 'Modo Esculpir:'"
+  # (a 1ª troca depois de instalar compila o shader de novo, até ~4 s com o Mundo de 19/11/2026)
+  confere "esculpir" "areia-foto esculpir >/dev/null && ( for _ in \$(seq 1 16); do tem 'Modo Esculpir:' && exit 0; sleep 0.5; done; exit 1 )"
   confere "segunda vez sai do cache (< 15 s)" "s=\$(date +%s); areia-foto 1 >/dev/null; [ \$((\$(date +%s) - s)) -lt 15 ]"
 else
   echo "(pasta Areia vazia: pulei o modo foto)"

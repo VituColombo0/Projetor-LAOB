@@ -26,7 +26,7 @@ done
 
 echo "[2/8] modo Foto: patches e compilação"
 PROGRAMA_ANTES=$(md5sum "$DEST/bin/SARndbox" 2>/dev/null | cut -d" " -f1 || true)
-cp "$REPO"/sarndbox/{FaceImage.h,FaceImage.cpp,Gesto.h,Gesto.cpp,Extras.h,Extras.cpp,Jogos.cpp,Mundo.cpp,patch_surface.py,patch_sandbox.py,patch_agua.py,projetor.cfg} "$DEST/"
+cp "$REPO"/sarndbox/{FaceImage.h,FaceImage.cpp,Gesto.h,Gesto.cpp,Extras.h,Extras.cpp,Jogos.cpp,Mundo.cpp,MundoPlanta.h,patch_surface.py,patch_sandbox.py,patch_agua.py,projetor.cfg} "$DEST/"
 for S in share/SARndbox-2.8/Shaders/SurfaceAddWaterColor.fs share/SARndbox-2.8/Shaders/Water2WaterUpdateShader.fs; do
   mkdir -p "$DEST/$(dirname "$S")" && cp "$ORIG/$S" "$DEST/$S"   # sempre do original, antes do patch
 done

@@ -567,6 +567,28 @@ class MundoLaob(ComMembros):
         self.assertFalse(self.areia.membros_atualiza())
         self.assertIsNone(self.areia._membros_mandados[0])
 
+    def test_textos_das_tres_salas_que_o_painel_entende(self):
+        """19/11/2026 (três salas): toda frase que o Mundo.cpp põe no log depois do nome ("foi ver a urna
+        eletrônica", "está no cluster", "foi assistir o Gazziro no miniauditório"...) começa com foi/está/
+        entrou/saiu, que é o que o painel (mundo_situacao) reconhece; e o painel mostra a mais nova."""
+        import re
+        R = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "sarndbox")
+        fonte = open(os.path.join(R, "MundoPlanta.h"), encoding="utf-8").read() + open(os.path.join(R, "Mundo.cpp"), encoding="utf-8").read()
+        frases = set(re.findall(r'"((?:foi|está|entrou|saiu|passou|ficou|vai)[^"]*)"', fonte))
+        frases |= set(re.findall(r'\{[0-9.f,\- ]+"([^"]+)"\}', fonte))      # textos da tabela de pontos
+        self.assertGreater(len(frases), 30)
+        for f in frases:
+            self.assertRegex(f, r"^(foi|está|entrou|saiu) ", f)
+        self.fotos_de_membros()
+        self.status([])
+        self.areia.mundo()
+        escreve(os.path.join(self.D, "sandbox.log"), "Animais: mundo (2)\nMundo: laboratório montado\n"
+                "Mundo: GAZZIRO está no miniauditório\nMundo: VICTOR foi ver a urna eletrônica\n"
+                "Mundo: GAZZIRO foi revisar os papéis na forense\nMundo: VICTOR foi assistir o Gazziro no miniauditório\n")
+        self.assertEqual(self.areia.mundo_situacao(), [
+            {"nome": "Gazziro", "fazendo": "foi revisar os papéis na forense", "presente": False},
+            {"nome": "Victor", "fazendo": "foi assistir o Gazziro no miniauditório", "presente": False}])
+
     def test_vigia_sem_o_mundo_nao_abre_processo(self):
         """Sem o mundo ligado, o vigia de 5 s do painel nem pergunta ao sandbox.sh (antes: 17 mil vezes por dia)."""
         self.areia.mar({"peixe": 3})

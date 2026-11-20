@@ -53,6 +53,18 @@ if command -v g++ >/dev/null; then
 else
   echo "  (g++ não instalado: pulei)"
 fi
+echo "== Mundo LAOB: planta e rotas (sarndbox/MundoPlanta.h, sem OpenGL)"
+if command -v g++ >/dev/null; then
+  BIN=$(mktemp)
+  if g++ -O2 -Wall -Wextra -Werror -I "$R/sarndbox" "$R/testes/teste_mundo.cpp" -o "$BIN"; then
+    "$BIN" || falhas=1
+  else
+    echo "  ERRO ao compilar o teste do mundo"; falhas=1
+  fi
+  rm -f "$BIN"
+else
+  echo "  (g++ não instalado: pulei)"
+fi
 echo "== testes Python ($PY)"
 ( cd "$R/testes" && "$PY" -m unittest -v test_rosto test_areia test_painel ) || falhas=1
 "$PY" -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$R/areia/atualizar_papel_parede.py" || falhas=1

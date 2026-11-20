@@ -3,6 +3,7 @@ Extras - caça ao tesouro, peixes e carrinhos sobre o relevo (Projetor-LAOB).
 ***********************************************************************/
 
 #include "Extras.h"
+#include "MundoPlanta.h"
 
 #include <cmath>
 #include <cstring>
@@ -61,7 +62,15 @@ Extras::Extras(void)
 		alvoX[i]=alvoY[i]=mAte[i]=mTroca[i]=0.0f;
 		temAlvo[i]=escondido[i]=false;
 		mEstado[i]=0;
+		nRota[i]=kRota[i]=0;
+		mDest[i]=-1;
+		mVaga[i]=0;
+		mAlvoAng[i]=0.0f;
+		mChegou[i]=-1.0;
+		mSocial[i]=-1;
 		}
+	mundoArcoAte=mundoMusicaAte=mundoTVAte=-100.0;
+	mundoBits=0.0f;
 	for(int i=0;i<MAX_NOMES;++i)
 		rostoAte[i]=0.0;
 	atlasNovo=false;
@@ -2094,7 +2103,7 @@ float exDifCor(vec3 a,vec3 b)
 	vec3 d=a-b;
 	return length(vec3(dot(d,vec3(0.3,0.59,0.11))*2.2,(d.r-d.g)*0.9,((d.r+d.g)*0.5-d.b)*0.5));
 	}
-uniform vec4 extrasMundo;   // laboratório (Mundo.cpp): -, largura e altura da caixa, ligado (1)
+uniform vec4 extrasMundo;   // laboratório (Mundo.cpp): estado (bits; mundoEstado), largura e altura da área iluminada, ligado (1)
 uniform vec4 extrasMundo2;  // canto da caixa (x, y) e a hora local (0-24)
 uniform sampler2D extrasRostos; // painel de rostos dos membros (8 quadros lado a lado, com transparência)
 float exCaixa(vec2 p,vec2 metade,float raio)
@@ -2171,6 +2180,1586 @@ float exPontos(vec2 p,float tamanho,float chance)
 		return 0.0;
 	vec2 centro=vec2(exHash(c+vec2(3.1,7.7)),exHash(c+vec2(9.2,1.3)))*0.7+0.15;
 	return smoothstep(tamanho,tamanho*0.3,length(fract(p)-centro));
+	}
+)GLSL"
+MP_GLSL R"GLSL(
+/* ------------------------------------------------------------------ Mundo LAOB
+   O laboratório visto de cima (19/11/2026, pedido do Victor: "deixar o mapa com mais coisas: o scanner,
+   as câmeras, o cluster..." e, com as 15 fotos, "a sala principal e outras duas, uma de forense e outra
+   um auditório, com o máximo de detalhes em cada lugar"). Três salas e o corredor:
+   - PRINCIPAL (Fx 0,275-0,980): quadro verde e armário do escudo na parede C; bancada H com osciloscópio,
+     torso de RCP e a câmera do Willbert; cena do scanner (plataforma girando com o manequim, torre, laser)
+     no xadrez; arco branco no outro xadrez; cluster de PCs deitados com cabos azuis, LEDs, roteador,
+     switch e as câmeras do trilho; caixa de areia; ilhas de mesas (a do Victor com teclado RGB).
+   - FORENSE (atrás da parede F, embaixo): armários, urna eletrônica com as 3 teclas, mesas redondas com
+     papéis e com o tabuleiro de calibração, TV com webcam, PC aberto, pôster.
+   - MINIAUDITÓRIO (atrás da parede F, em cima): espuma acústica com rodapé branco, painel com o slide
+     trocando, mesa de vidro, sofás pretos, longarinas e cadeiras embrulhadas, ventilador.
+   As posições vêm de MundoPlanta.h (as mesmas do Mundo.cpp). Tamanhos em "cm da planta" (100 = largura
+   da área iluminada). Cor final = mG * luz da sala + mE (luz própria: LEDs, telas, a areia; não escurece
+   à noite). MUNDO_NIVEL 3 = tudo; 2 tira os detalhes de prioridade 3; 1 deixa só o que identifica. */
+#define MUNDO_NIVEL 3
+vec3 mG;        // cor (recebe a luz da sala)
+vec3 mE;        // luz própria
+vec2 mF;        // fração da área iluminada
+vec2 mC;        // cm da planta
+vec2 mK;        // cm da planta por unidade de F
+float mT;       // tempo (s)
+float mBits;    // estado vindo do Mundo.cpp (bits; extrasMundo.x)
+float mDia;     // 1 de dia, 0 de noite
+vec2 exGira(vec2 p,float a)
+	{
+	float c=cos(a),s=sin(a);
+	return vec2(c*p.x+s*p.y,-s*p.x+c*p.y);
+	}
+float mBit(float k)
+	{
+	return mod(floor(mBits/exp2(k)),2.0);
+	}
+vec2 mL(vec2 cF)
+	{
+	return mC-cF*mK;                                                    // posição local (cm) em volta de um ponto F
+	}
+float mRet(vec4 r)
+	{
+	/* distância (cm) até um retângulo dado em F (Fx0, Fx1, Fy0, Fy1); < 0 dentro */
+	vec2 c=vec2(r.x+r.y,r.z+r.w)*0.5*mK;
+	vec2 h=vec2(r.y-r.x,r.w-r.z)*0.5*mK;
+	vec2 q=abs(mC-c)-h;
+	return length(max(q,0.0))+min(max(q.x,q.y),0.0);
+	}
+bool mEm(vec4 r,float folga)
+	{
+	return mF.x>r.x-folga&&mF.x<r.y+folga&&mF.y>r.z-folga&&mF.y<r.w+folga;
+	}
+void mPoe(vec3 c)
+	{
+	mG=c;
+	mE=vec3(0.0);                                                       // o que está por cima tapa a luz de baixo
+	}
+void mPinta(float d,vec3 c)
+	{
+	if(d<0.0)
+		mPoe(c);
+	}
+void mClaro(float d,vec3 c)
+	{
+	/* objeto claro: contorno escuro de 0,25 cm por fora (sem ele, branco some no piso claro da areia) */
+	if(d<0.0)
+		mPoe(c);
+	else if(d<0.25)
+		mG*=0.55;
+	}
+float mSeg(vec2 p,vec2 a,vec2 b)
+	{
+	vec2 pa=p-a,ba=b-a;
+	return length(pa-ba*clamp(dot(pa,ba)/dot(ba,ba),0.0,1.0));
+	}
+void mLed(vec2 cF,vec3 cor,float liga)
+	{
+	/* LED de r 0,18 cm com halo de 0,5 cm; apagado, só o pontinho escuro */
+	float d=length(mL(cF));
+	if(d>0.5)
+		return;
+	if(liga>0.5)
+		{
+		if(d<0.18)
+			mPoe(cor*0.5);
+		mE+=cor*(d<0.18?0.6:0.3*smoothstep(0.5,0.18,d));
+		}
+	else if(d<0.18)
+		mPoe(cor*0.22);
+	}
+void mCone(vec2 cF,float a,float abre,float alc,vec3 cor)
+	{
+	/* luz de câmera: cone a partir de cF, para o ângulo a, meia-abertura "abre" (tangente), alcance em cm */
+	vec2 q=exGira(mL(cF),a);
+	if(q.x>0.3&&q.x<alc&&abs(q.y)<q.x*abre)
+		mE+=cor*(1.0-q.x/alc)*smoothstep(q.x*abre,q.x*abre*0.6,abs(q.y));
+	}
+void mCadeira(vec2 cF,float a,vec3 cor)
+	{
+	/* cadeira de escritório vista de cima (sem atan): assento, encosto atrás e o anel dos pés;
+	   a = para onde olha quem senta */
+	vec2 q=mL(cF);
+	float r2=dot(q,q);
+	if(r2>1.9)
+		return;
+	q=exGira(q,a);
+	if(exCaixa(q-vec2(-0.95,0.0),vec2(0.22,0.9),0.18)<0.0)
+		mPoe(cor*0.65);
+	else if(exCaixa(q,vec2(0.95),0.35)<0.0)
+		mPoe(cor*(1.0+0.25*smoothstep(0.9,0.0,length(q-vec2(0.3,0.3)))));
+	else
+		{
+		float r=sqrt(r2);
+		if(r>1.0&&r<1.35)
+			mG=mix(mG,vec3(0.1,0.1,0.11),0.55);
+		}
+	}
+void mPlastico(vec2 cF,vec3 cor)
+	{
+	/* cadeira de plástico (laranja, amarela): só o assento, com os 4 pés nos cantos */
+	vec2 q=mL(cF);
+	if(dot(q,q)>2.0)
+		return;
+	if(length(abs(q)-vec2(0.75))<0.18)
+		mPoe(vec3(0.06));
+	else
+		mClaro(exCaixa(q,vec2(0.9),0.2),cor*(1.0+0.15*smoothstep(0.8,0.0,length(q-vec2(0.3,0.3)))));
+	}
+void mEmbrulhada(vec2 cF,float a,vec3 cor)
+	{
+	/* cadeira embrulhada em plástico (miniauditório, carteado): assento escuro, encosto, reflexo do
+	   plástico e borda clara */
+	vec2 q=mL(cF);
+	if(dot(q,q)>2.7)
+		return;
+	q=exGira(q,a);
+	float ds=exCaixa(q,vec2(0.95),0.3);
+	float de=exCaixa(q-vec2(-0.95,0.0),vec2(0.25,1.0),0.2);
+	float d=min(ds,de);
+	if(d<0.0)
+		{
+		vec3 c=de<0.0?cor*0.7:cor;
+		if(fract((q.x+q.y)*0.8)<0.15)
+			c=mix(c,vec3(1.0),0.3);
+		if(d>-0.15)
+			c=mix(c,vec3(0.85),0.6);
+		mPoe(c);
+		}
+	}
+void mMonitor(vec2 cF,float a,float liga)
+	{
+	/* monitor visto de cima: barra preta de 2,2 x 0,35 cm, de frente para quem olha no ângulo a;
+	   ligado = filete de tela azul do lado de quem senta; desligado = LED laranja de espera */
+	vec2 q=exGira(mL(cF),a);
+	if(abs(q.x)>0.3||abs(q.y)>1.25)
+		return;
+	if(exCaixa(q,vec2(0.175,1.1),0.08)<0.0)
+		{
+		mPoe(vec3(0.06,0.065,0.08));
+		if(liga>0.5&&q.x<-0.03&&abs(q.y)<0.98)
+			mE=vec3(0.2,0.45,0.85)*0.8;
+		}
+	else if(liga<0.5)
+		mLed(cF+exGira(vec2(-0.25,0.9),-a)/mK,vec3(1.0,0.55,0.1),1.0);
+	}
+void mTeclado(vec2 cF,float a,vec3 cor)
+	{
+	vec2 q=exGira(mL(cF),a);
+	if(abs(q.x)<0.35&&abs(q.y)<1.1)
+		mPoe(cor*(0.9+0.2*step(0.5,fract(q.y*2.5))*step(0.1,abs(q.x))));
+	}
+float mDentroDaFolha(vec2 dob,vec2 dir,float comp)
+	{
+	/* folha de porta aberta (0,35 cm de espessura) a partir da dobradiça dob (F), na direção dir */
+	return mSeg(mC,dob*mK,dob*mK+dir*comp)-0.175;
+	}
+void mFolha(vec2 dob,vec2 dirAberta,vec2 dirFechada,float comp)
+	{
+	/* porta aberta: folha azul-marinho perpendicular à parede e o arco de abertura (0,2 cm) */
+	vec2 q=mL(dob);
+	float r=length(q);
+	if(r>comp+0.4)
+		return;
+	if(dot(q,dirAberta)>0.0&&dot(q,dirFechada)>0.0&&abs(r-comp)<0.1)
+		mG*=0.93;
+	float d=mDentroDaFolha(dob,dirAberta,comp);
+	if(d<0.0)
+		mPoe(abs(dot(q,dirAberta)-comp*0.5)<0.15*comp?vec3(0.55,0.65,0.75)*0.8:vec3(0.10,0.18,0.42));
+	else if(d<0.2)
+		mG*=0.6;
+	}
+
+/* ---------------------------------------------------------- corredor (Fy 0 a 0,120) */
+void mCorredor()
+	{
+	vec3 c=mF.y<0.008?vec3(0.78,0.72,0.60):vec3(0.86,0.80,0.68);   // piso bege; faixa da parede oposta
+	vec2 j=abs(fract(mC/3.2+0.5)-0.5)*3.2;
+	if(min(j.x,j.y)<0.08)
+		c*=0.93;                                                       // juntas
+	c+=vec3(0.05)*smoothstep(7.0,0.0,length(vec2(mod(mC.x,20.0)-10.0,mC.y-0.06*mK.y))); // luzes do corredor
+	mPoe(c);
+	vec2 q=mL(vec2(0.955,0.112));
+	if(abs(q.x)<0.5&&abs(q.y)<0.2)
+		mPoe(vec3(0.15,0.15,0.17));                                   // plaquinha do número da sala
+#if MUNDO_NIVEL>=3
+	/* parede oposta do corredor: portas de outras salas (sem plaquinha), bebedouro e extintor */
+	if(mF.y<0.02)
+		{
+		float xp=fract(mF.x/0.25+0.4);
+		if(abs(xp-0.5)*25.0<1.8&&mF.y<0.010)
+			mPoe(abs(xp-0.5)*25.0>1.55?vec3(0.6):vec3(0.10,0.18,0.42));
+		vec2 b=mL(vec2(0.580,0.014));
+		if(abs(b.x)<0.6&&abs(b.y)<0.45)
+			mClaro(-0.01,length(b-vec2(0.0,0.1))<0.25?vec3(0.45,0.5,0.55):vec3(0.78,0.8,0.82));  // bebedouro
+		if(length(mL(vec2(0.330,0.012)))<0.6)
+			mPoe(vec3(0.85,0.1,0.1));                                 // extintor
+		}
+#endif
+	if(mBit(5.0)>0.5)
+		mFolha(vec2(MP_PORTA_ENT_0,MP_CORREDOR_Y),vec2(0.0,-1.0),vec2(1.0,0.0),(MP_PORTA_ENT_1-MP_PORTA_ENT_0)*mK.x);
+	}
+
+/* ---------------------------------------------------------- paredes, vãos e o que está pendurado nelas */
+void mParede()
+	{
+	float x=mF.x,y=mF.y;
+	float df=1e3;                                                       // distância até a face mais perto (cm)
+	bool espuma=false;
+	if(y<MP_PAREDE_H_Y)
+		{
+		/* parede H; o vão da entrada */
+		if(x>MP_PORTA_ENT_0&&x<MP_PORTA_ENT_1)
+			{
+			mPoe(vec3(0.70,0.71,0.70));
+			if(min(x-MP_PORTA_ENT_0,MP_PORTA_ENT_1-x)*mK.x<0.3)
+				mPoe(vec3(0.6));                                       // batente
+			if(mBit(5.0)<0.5&&abs(y-0.1335)*mK.y<0.175)
+				mPoe(abs(x-0.927)*mK.x<0.15?vec3(0.55,0.65,0.75)*0.8:vec3(0.10,0.18,0.42)); // porta azul fechada, com o vidro
+			return;
+			}
+		df=min(y-MP_CORREDOR_Y,MP_PAREDE_H_Y-y)*mK.y;
+		}
+	else if(y>MP_PAREDE_B_Y)
+		df=(y-MP_PAREDE_B_Y)*mK.y;
+	else if(x<MP_EXTERNA_X)
+		{
+		df=(MP_EXTERNA_X-x)*mK.x;
+		espuma=y>MP_DIVISORIA_Y1;
+		}
+	else if(x>MP_PAREDE_C_X)
+		df=(x-MP_PAREDE_C_X)*mK.x;
+	else if(x<MP_PAREDE_F_X0)
+		{
+		df=min(y-MP_DIVISORIA_Y0,MP_DIVISORIA_Y1-y)*mK.y;
+		espuma=y>0.5*(MP_DIVISORIA_Y0+MP_DIVISORIA_Y1);               // lado do miniauditório
+		}
+	else
+		{
+		/* parede F: os vãos da forense e do miniauditório */
+		bool vaoF=y>MP_PORTA_FOR_0&&y<MP_PORTA_FOR_1;
+		bool vaoM=y>MP_PORTA_MINI_0&&y<MP_PORTA_MINI_1;
+		if(vaoF||vaoM)
+			{
+			float y0=vaoF?MP_PORTA_FOR_0:MP_PORTA_MINI_0,y1=vaoF?MP_PORTA_FOR_1:MP_PORTA_MINI_1;
+			mPoe(vec3(0.70,0.71,0.70));
+			if(min(y-y0,y1-y)*mK.y<0.3)
+				mPoe(vec3(0.6));
+			if(mBit(vaoF?6.0:7.0)<0.5&&abs(x-0.265)*mK.x<0.175)
+				mPoe(vec3(0.10,0.18,0.42));                            // porta fechada
+			return;
+			}
+		df=min(x-MP_PAREDE_F_X0,MP_PAREDE_F_X1-x)*mK.x;
+		espuma=x<0.265&&y>MP_DIVISORIA_Y1;
+		}
+	vec3 c=vec3(0.16,0.17,0.19);                                        // miolo
+	if(df<0.4)
+		c=espuma?vec3(0.2,0.2,0.22):vec3(0.90,0.90,0.88);               // face (no miniauditório, espuma)
+	mPoe(c);
+	/* o que está pendurado na face da parede H, do lado de dentro */
+	if(y>0.1375&&y<MP_PAREDE_H_Y)
+		{
+		if(x>0.649&&x<0.684)
+			{
+			mPoe(x<0.6665?vec3(0.80,0.15,0.15):vec3(0.6,0.8,0.95));   // cartaz de RCP
+			vec2 h=mL(vec2(0.6665,0.1425));
+			if(length(vec2(abs(h.x)-0.18,h.y-0.08))<0.22||(h.y<0.05&&abs(h.x)<0.35+h.y*1.2&&h.y>-0.3))
+				mPoe(vec3(0.97));                                      // coração
+			}
+		else if(x>0.588&&x<0.610)
+			mPoe(min(x-0.588,0.610-x)*mK.x<0.25||(y-0.1375)*mK.y<0.2?vec3(0.08):vec3(0.85,0.78,0.6)); // papiro com moldura
+		else if(x>0.529&&x<0.564)
+			mPoe(fract((x-0.529)*mK.x/1.2)<0.35?vec3(0.2,0.6,0.3):vec3(0.95)); // banner de iniciação científica
+		else if(x>0.053&&x<0.086)
+			mPoe(vec3(0.12,0.14,0.22));                                // forense: roll-up escuro
+		else if(x>0.086&&x<0.185)
+			mPoe(exHash(floor(mC*1.6))>0.8?vec3(0.35,0.55,0.5):vec3(0.95)); // banner do congresso de linguística forense
+#if MUNDO_NIVEL>=3
+		vec2 q=mL(vec2(0.955,0.143));
+		if(abs(q.x)<0.25&&abs(q.y)<0.3)
+			{mPoe(vec3(0.85,0.1,0.1)); mE=vec3(0.15,0.0,0.0);}          // alarme de incêndio
+		q=mL(vec2(0.900,0.143));
+		if(abs(q.x)<0.4&&abs(q.y)<0.25)
+			mPoe(vec3(0.05));                                          // porta-chaves
+#endif
+		}
+	/* parede F, face da forense: banner da urna e crucifixo */
+	if(x>MP_PAREDE_F_X0&&x<MP_PAREDE_F_X0+0.007&&y<MP_DIVISORIA_Y0)
+		{
+		if(y>0.178&&y<0.269)
+			mPoe(vec3(0.7,0.85,0.95));
+#if MUNDO_NIVEL>=3
+		vec2 q=mL(vec2(0.2585,0.275));
+		if((abs(q.x)<0.15&&abs(q.y)<0.45)||(abs(q.y-0.12)<0.1&&abs(q.x)<0.3))
+			mPoe(vec3(0.05));                                          // crucifixo
+#endif
+		}
+	/* parede externa, face da forense: mural preto com folhas e alfinetes; cartaz-calendário */
+	if(x>MP_EXTERNA_X-0.007&&x<MP_EXTERNA_X&&y<MP_DIVISORIA_Y0)
+		{
+		if(y>0.242&&y<0.357)
+			{
+			mPoe(vec3(0.06));
+			vec2 r=vec2(mC.y-0.242*mK.y,0.0);
+			float k=floor(r.x/2.1);
+			if(k<4.0&&fract(r.x/2.1)>0.4)
+				mPoe(vec3(0.95));                                      // folhas
+			if(exHash(floor(mC*3.0))>0.93)
+				mPoe(vec3(0.95,0.25,0.2));                             // alfinetes
+			}
+#if MUNDO_NIVEL>=3
+		if(y>0.360&&y<0.380)
+			{
+			mPoe(vec3(0.95));
+			if(fract(mC.y/0.47)<0.6&&abs(x-0.0165)*mK.x<0.15)
+				mPoe(0.5+0.5*cos(6.283*(exHash(vec2(floor(mC.y/0.47),3.0))+vec3(0.0,0.33,0.67))));
+			}
+#endif
+		}
+	}
+
+/* ---------------------------------------------------------- FORENSE (Fx 0,020-0,255, Fy 0,147-0,529) */
+void mForense()
+	{
+	mPoe(vec3(0.70,0.71,0.70));
+#if MUNDO_NIVEL>=3
+	if(mBit(1.0)>0.5)
+		mG+=vec3(0.04)*(smoothstep(6.0,0.0,length(mL(vec2(0.161,0.300))))+smoothstep(6.0,0.0,length(mL(vec2(0.102,0.319)))));
+#endif
+	/* TV ligada: brilho no chão na frente dela */
+	if(mBit(11.0)>0.5&&mF.y>0.46&&mF.y<0.49&&mF.x>0.12&&mF.x<0.21)
+		mE+=vec3(0.15,0.25,0.4)*(0.8+0.2*sin(mT*1.3))*smoothstep(0.46,0.49,mF.y);
+	if(mF.y<0.215)
+		{
+		/* parede H: 5 armários altos, tripés, cofre com o porquinho, pôster e tubo */
+		if(mEm(MP_F_ARM,0.004))
+			{
+			float d=mRet(MP_F_ARM);
+			mClaro(d,vec3(0.84,0.82,0.74));
+			if(d<0.0)
+				{
+				float u=fract((mF.x-MP_F_ARM.x)/0.0348);
+				if(min(u,1.0-u)*3.48<0.1)
+					mPoe(vec3(0.6));                                   // divisórias
+				else if(abs(u-0.5)*3.48<0.075)
+					mG*=0.8;                                           // vão das portas
+				}
+			}
+		if(mF.x>0.120&&mF.x<0.200&&mF.y<0.18)
+			{
+			for(int k=0;k<2;++k)
+				{
+				vec2 a=vec2(0.126,k==0?0.158:0.168)*mK,b=vec2(0.184,k==0?0.158:0.168)*mK;
+				if(mSeg(mC,a,b)<0.125)
+					mPoe(vec3(0.15));                                  // tripé deitado
+				for(int p=0;p<3;++p)
+					{
+					float an=-0.6+0.6*float(p);
+					if(mSeg(mC,b,b+vec2(cos(an),sin(an))*0.8)<0.1)
+						mPoe(vec3(0.15));
+					}
+				}
+			}
+		if(mEm(MP_F_COFRE,0.004))
+			{
+			mClaro(mRet(MP_F_COFRE),vec3(0.95));
+			vec2 q=mL(vec2(0.034,0.163));
+			if(abs(q.x)<0.25&&abs(q.y)<0.25)
+				mPoe(vec3(0.05));                                      // teclado do cofre
+			float dp=length(mL(vec2(0.044,0.157))/vec2(1.0,0.8))-0.5;
+			if(dp<0.0)
+				mPoe(vec3(0.85,0.18,0.2)*(1.15-0.4*smoothstep(-0.5,0.0,dp)));   // porquinho
+			}
+		vec2 q=mL(vec2(0.026,0.183));
+		if(abs(q.x)<0.4&&abs(q.y)<1.8)
+			mPoe(abs(q.x)>0.25||abs(q.y)>1.6?vec3(0.95):vec3(0.12,0.14,0.24)); // pôster Minority Report (roll-up)
+		if(length(mL(vec2(0.230,0.160)))<0.35)
+			mPoe(vec3(0.95));                                          // tubo de pôster
+		}
+	if(mF.x<0.06)
+		{
+		/* parede externa: coluna, mesa 1 (2 monitores, CPU, teclados), gaveteiro com a caixa de som, mesa 2 com o PC aberto */
+		if(length(mL(vec2(0.026,0.220)))<0.7)
+			mPoe(vec3(0.55));
+		if(mEm(MP_F_MESA1,0.004))
+			{
+			mClaro(mRet(MP_F_MESA1),vec3(0.92,0.91,0.88));
+			mMonitor(vec2(0.027,0.262),3.1416,mBit(1.0));
+			mMonitor(vec2(0.027,0.296),3.1416,mBit(1.0));
+			vec2 q=mL(vec2(0.030,0.322));
+			if(abs(q.x)<0.5&&abs(q.y)<0.8)
+				mPoe(vec3(0.08));                                      // CPU
+			mTeclado(vec2(0.041,0.262),3.1416,vec3(0.22));
+			mTeclado(vec2(0.041,0.296),3.1416,vec3(0.22));
+			}
+		if(mEm(MP_F_GAV,0.012))
+			{
+			mClaro(mRet(MP_F_GAV),vec3(0.92,0.91,0.88));
+			float r=length(mL(vec2(0.032,0.348)));
+			float pulso=mBit(10.0)>0.5?1.0+0.1*sin(mT*12.0):1.0;
+			if(r<1.0*pulso)
+				mPoe(r>0.7*pulso?vec3(0.8,0.1,0.1):vec3(0.06));       // caixa de som com o anel vermelho
+			if(mBit(10.0)>0.5&&r>1.1&&mF.x>0.032)
+				for(int k=0;k<2;++k)
+					{
+					float rr=1.2+2.0*fract(mT+0.5*float(k));
+					if(abs(r-rr)<0.1)
+						mE+=vec3(0.5,0.6,1.0)*0.5*(1.0-fract(mT+0.5*float(k)));   // música: ondas
+					}
+			}
+		if(mEm(MP_F_MESA2,0.004))
+			{
+			mClaro(mRet(MP_F_MESA2),vec3(0.92,0.91,0.88));
+			mMonitor(vec2(0.027,0.385),3.1416,mBit(1.0));
+			mMonitor(vec2(0.027,0.415),3.1416,mBit(1.0));
+			mMonitor(vec2(0.029,0.440),3.1416-0.44,mBit(1.0));
+			vec2 q=mL(vec2(0.034,0.468));
+			if(abs(q.x)<0.8&&abs(q.y)<0.6)
+				{
+				mPoe(vec3(0.22,0.23,0.25));                           // PC aberto
+				if(abs(q.x+0.15)<0.5&&abs(q.y)<0.4)
+					mPoe(vec3(0.2,0.45,0.25));                         // placa-mãe
+				if(abs(fract(q.x/0.35+0.5)-0.5)*0.35<0.15&&abs(q.y-0.12)<0.15&&q.x<0.3)
+					mPoe(vec3(0.85,0.7,0.25));                         // chips
+				if(abs(length(q-vec2(0.5,-0.2))-0.25)<0.08)
+					mPoe(vec3(0.6));                                   // ventoinha
+				}
+			}
+		}
+	/* cadeiras pretas das mesas da parede */
+	mCadeira(vec2(0.067,0.262),3.1416,vec3(0.13));
+	mCadeira(vec2(0.069,0.315),3.1416,vec3(0.13));
+	mCadeira(vec2(0.067,0.414),3.1416,vec3(0.13));
+	/* mesa dos papéis e mesa do tabuleiro de calibração */
+	vec2 qp=mL(MP_F_PAPEIS.xy);
+	if(dot(qp,qp)<16.0)
+		{
+		mCadeira(MP_F_PAPEIS.xy+vec2(-0.039,0.0),0.0,vec3(0.13));
+		mCadeira(MP_F_PAPEIS.xy+vec2(0.039,0.0),3.1416,vec3(0.13));
+		mCadeira(MP_F_PAPEIS.xy+vec2(0.0,-0.052),1.5708,vec3(0.13));
+		mCadeira(MP_F_PAPEIS.xy+vec2(0.0,0.052),-1.5708,vec3(0.13));
+		mClaro(length(qp)-MP_F_PAPEIS.z,vec3(0.90,0.88,0.82));
+		for(int k=0;k<3;++k)
+			{
+			float fk=float(k);
+			vec2 c=vec2(cos(fk*2.1+0.4),sin(fk*2.1+0.4))*1.2;
+			vec2 q=exGira(qp-c,exHash(vec2(fk,7.0))*3.0);
+			if(abs(q.x)<0.7&&abs(q.y)<0.5)
+				{
+				mPoe(vec3(0.97));                                     // folha
+				if(fract(q.y*5.0)<0.3&&abs(q.x)<0.55)
+					mPoe(vec3(0.5,0.6,0.7));                           // linhas
+				if(q.x>0.35&&q.y>0.25)
+					mPoe(k==1?vec3(0.2,0.75,0.3):vec3(0.95,0.55,0.15)); // bloquinhos
+				}
+			}
+		vec2 q=exGira(qp-vec2(-0.6,-1.4),0.5);
+		if(abs(q.x)<0.4&&abs(q.y)<0.15)
+			mPoe(q.x>0.0?vec3(0.95,0.8,0.1):vec3(0.06));               // ferramenta amarela e preta
+		}
+	vec2 qt=mL(MP_F_TABULEIRO.xy);
+	if(dot(qt,qt)<16.0)
+		{
+		mCadeira(MP_F_TABULEIRO.xy+vec2(0.039,0.0),3.1416,vec3(0.13));
+		mCadeira(MP_F_TABULEIRO.xy+vec2(0.0,0.052),-1.5708,vec3(0.13));
+		mCadeira(MP_F_TABULEIRO.xy+vec2(-0.039,0.0),0.0,vec3(0.13));
+		mClaro(length(qt)-MP_F_TABULEIRO.z,vec3(0.90,0.88,0.82));
+		vec2 q=exGira(qt,0.26);
+		if(abs(q.x)<1.8&&abs(q.y)<1.2)
+			mPoe(mod(floor(q.x/0.6)+floor(q.y/0.6),2.0)<0.5?vec3(0.06):vec3(0.95)); // tabuleiro 6 x 4
+		}
+	/* parede da porta: armários baixos com a urna eletrônica, terminal do mesário, cabos, terceiro armário */
+	if(mF.x>0.20)
+		{
+		if(mEm(MP_F_ARMB,0.004))
+			{
+			float d=mRet(MP_F_ARMB);
+			mClaro(d,vec3(0.93,0.92,0.89));
+			if(d<0.0&&abs(mF.y-0.247)*mK.y<0.08)
+				mPoe(vec3(0.6));                                      // emenda
+			vec2 q=mL(vec2(0.244,0.262));
+			if(abs(q.x)<1.0&&abs(q.y)<1.4)
+				{
+				mPoe(vec3(0.06));                                     // suporte
+				if(abs(q.x)<0.8&&abs(q.y)<1.2)
+					{
+					mPoe(vec3(0.90,0.88,0.82));                        // urna
+					if(q.y>0.1&&q.y<1.0&&abs(q.x)<0.6)
+						mPoe(vec3(0.35,0.38,0.40));                    // telinha
+					if(q.y<-0.1&&q.y>-1.0&&abs(q.x)<0.4)
+						{
+						mPoe(vec3(0.3));                               // teclado
+						float t=q.y+0.75;
+						if(length(vec2(q.x+0.2,t))<0.18) mPoe(vec3(0.95));            // branca
+						if(length(vec2(q.x,t))<0.18) mPoe(vec3(0.95,0.55,0.15));      // laranja (corrige)
+						if(length(vec2(q.x-0.2,t))<0.18) mPoe(vec3(0.2,0.75,0.3));    // verde (confirma)
+						if(t>0.25&&fract(q.y*3.3)<0.4&&fract(q.x*3.3)<0.5) mPoe(vec3(0.75)); // números
+						}
+					}
+				}
+			if(length(mL(vec2(0.243,0.300))/vec2(0.6,0.4))<1.0)
+				mPoe(vec3(0.3,0.2,0.15));                              // terminal do mesário
+			if(mF.y<0.21&&abs(mC.x-0.243*mK.x-0.3*sin(mC.y*3.0))<0.15)
+				mPoe(vec3(0.95));                                      // cabos brancos
+			}
+		if(mEm(MP_F_ARM3,0.004))
+			{
+			mClaro(mRet(MP_F_ARM3),vec3(0.93,0.92,0.89));
+			if(length(mL(vec2(0.244,0.369)))<0.45)
+				mPoe(vec3(0.97));                                      // caixinha redonda
+			vec2 q=mL(vec2(0.244,0.355));
+			if(abs(q.x)<0.5&&abs(q.y)<0.3)
+				mPoe(vec3(0.15,0.17,0.25));                            // pasta
+			}
+		}
+	/* TV na divisória, com a webcam; rack com teclado, controle, mini-PC e tubo */
+	if(mF.y>0.48)
+		{
+		if(mEm(MP_F_RACK,0.004))
+			{
+			mClaro(mRet(MP_F_RACK),vec3(0.93,0.92,0.89));
+			if(mF.x<0.133&&abs(mF.x-0.1235)*mK.x<0.06)
+				mG*=0.8;
+			vec2 q=mL(vec2(0.175,0.505));
+			if(abs(q.x)<1.0&&abs(q.y)<0.35)
+				mPoe(vec3(0.15));                                     // teclado
+			q=mL(vec2(0.152,0.503));
+			if(abs(q.x)<0.4&&abs(q.y)<0.15)
+				mPoe(vec3(0.08));                                     // controle
+			q=mL(vec2(0.141,0.512));
+			if(abs(q.x)<0.5&&abs(q.y)<0.5)
+				mPoe(vec3(0.12));                                     // mini-PC
+			mLed(vec2(0.141,0.512),vec3(0.2,0.5,1.0),step(0.5,fract(mT*0.3)));
+			if(mSeg(mC,vec2(0.195,0.495)*mK,vec2(0.160,0.516)*mK)<0.15)
+				mPoe(vec3(0.95));                                      // tubo
+			}
+		if(mF.y>0.522&&mF.x>0.133&&mF.x<0.196)
+			{
+			mPoe(vec3(0.03));                                         // TV
+			if(mBit(11.0)>0.5&&mF.y<0.5245)
+				mE=vec3(0.3,0.45,0.7)*(0.8+0.2*sin(mT*1.3));
+			}
+		if(length(mL(vec2(0.166,0.520)))<0.35)
+			mPoe(vec3(0.05));                                         // webcam
+		mCone(vec2(0.166,0.520),-1.5708,0.5,6.0,vec3(0.03,0.04,0.05));
+#if MUNDO_NIVEL>=3
+		if(mF.y>0.522&&mF.x>0.095&&mF.x<0.126)
+			mPoe(length(mL(vec2(0.110,0.5255)))<0.3?vec3(0.9,0.75,0.2):vec3(0.1,0.12,0.2)); // banner da universidade
+#endif
+		}
+	/* porta da forense aberta (dobradiça no lado do miniauditório, abre para dentro) */
+	if(mBit(6.0)>0.5)
+		mFolha(vec2(MP_PAREDE_F_X0,MP_PORTA_FOR_1),vec2(-1.0,0.0),vec2(0.0,-1.0),(MP_PORTA_FOR_1-MP_PORTA_FOR_0)*mK.y*0.8);
+	}
+
+/* ---------------------------------------------------------- MINIAUDITÓRIO (Fx 0,020-0,255, Fy 0,556-0,973) */
+void mMini()
+	{
+	vec3 piso=vec3(0.70,0.71,0.70);
+	float dl=(mF.y-MP_DIVISORIA_Y1)*mK.y;                              // até a parede L (divisória)
+	float dsx=(MP_PAREDE_F_X0-mF.x)*mK.x;                              // até a parede S (porta)
+	float ddx=(mF.x-MP_EXTERNA_X)*mK.x;                                // até a parede D (tela)
+	float db=(MP_PAREDE_B_Y-mF.y)*mK.y;                                // até a parede B (cortinas)
+	if(min(min(dl,dsx),min(ddx,db))<3.0)
+		piso*=0.92;
+	mPoe(piso);
+	/* tela ligada: luz no chão na frente dela */
+	if(mBit(3.0)>0.5&&mF.x<0.080&&mF.y>0.689&&mF.y<0.848)
+		mE+=vec3(0.85,0.9,1.0)*0.18*smoothstep(0.080,0.036,mF.x);
+#if MUNDO_NIVEL>=3
+	if(mBit(2.0)>0.5)
+		{
+		vec2 g=vec2(fract((mF.x-0.020)/0.1175),fract((mF.y-0.556)/0.139));
+		mG+=vec3(0.035)*smoothstep(0.35,0.0,length(g-0.5));          // luminárias
+		}
+#endif
+	/* espuma acústica (com rodapé branco) nas paredes L, S e D; faixa de espuma embaixo das cortinas */
+	bool vaoM=mF.y>MP_PORTA_MINI_0&&mF.y<MP_PORTA_MINI_1;
+	float dEsp=min(dl,min(vaoM?1e3:dsx,ddx));
+	if(dEsp<0.8)
+		{
+		vec3 e=vec3(0.17,0.17,0.19)*(0.78+0.4*sin(mC.x*8.0)*sin(mC.y*8.0));   // espuma "caixa de ovo"
+		if(ddx<0.8&&exHash(floor(mC/2.5))>0.8)
+			e*=1.15;
+		mPoe(e);
+		}
+	else if(dEsp<1.15)
+		mPoe(vec3(0.88));                                             // rodapé
+	if(db<0.4+0.78)
+		{
+		if(db<0.78)
+			{
+			/* cortinas (de dia claras, à noite cinza-azuladas) com as emendas */
+			vec3 c=mix(vec3(0.35,0.37,0.42),vec3(0.93,0.93,0.90),mDia);
+			if(mF.x<0.032||mF.x>0.236)
+				c=vec3(0.90,0.90,0.88);
+			else if(abs(mF.x-0.100)*mK.x<0.15||abs(mF.x-0.168)*mK.x<0.15)
+				c*=0.8;
+			mPoe(c*(0.92+0.08*sin(mC.x*5.0)));
+			}
+		else
+			mPoe(vec3(0.17,0.17,0.19));
+		}
+	if(mF.x<0.06)
+		{
+		/* parede D: tela (painel), câmera PTZ, ventilador, cano, gaveteiro com o PC RGB */
+		if(mF.y>0.689&&mF.y<0.848)
+			{
+			float t=(mF.y-0.689)/0.159;
+			if(mF.x<0.026)
+				mPoe(vec3(0.05));
+			else if(mF.x<0.036)
+				{
+				mPoe(vec3(0.06));
+				if(mBit(3.0)>0.5)
+					{
+					float per=mBit(4.0)>0.5?5.0:8.0;
+					float s=floor(mT/per);
+					vec3 c=vec3(0.92,0.94,0.97);
+					if(t<0.12)
+						c=vec3(0.80,0.82,0.86);                        // barra lateral do slide
+					else if(abs(t-(0.35+0.3*exHash(vec2(s,1.0))))<0.12+0.08*exHash(vec2(s,2.0)))
+						c=vec3(0.18,0.2,0.24);                         // o quadro escuro do slide
+					else if(fract(t*14.0)<0.3&&mF.x>0.030)
+						c=vec3(0.6,0.62,0.68);                         // linhas de texto
+					c+=0.3*smoothstep(0.06,0.0,fract(mT/per));          // a troca de slide pisca
+					mE=c*0.95;
+					mG=vec3(0.0);
+					}
+				}
+			}
+		float r=length(mL(vec2(0.022,0.905)));
+		if(r<0.45)
+			mPoe(vec3(0.05));                                         // câmera PTZ
+		mLed(vec2(0.022,0.898),vec3(0.2,1.0,0.3),step(0.5,fract(mT*0.5)));
+		mCone(vec2(0.022,0.905),0.0,0.55,8.0,vec3(0.04));
+		vec2 q=mL(MP_M_VENT.xy);
+		r=length(q);
+		if(r<1.0)
+			{
+			mPoe(vec3(0.25));                                         // ventilador: pás girando
+			if(sin(3.0*atan(q.y,q.x)+mT*6.0)>0.0&&r>0.25)
+				mPoe(vec3(0.4));
+			if(r<0.25)
+				mPoe(vec3(0.15));
+			if(r>0.8)
+				mPoe(vec3(0.12));                                     // grade
+			}
+		if(length(mL(vec2(0.030,0.955)))<0.35)
+			mPoe(vec3(0.95));                                         // cano
+		if(mEm(MP_M_GAV,0.004))
+			{
+			mClaro(mRet(MP_M_GAV),vec3(0.93,0.92,0.89));
+			q=mL(vec2(0.036,0.575));
+			if(abs(q.x)<0.5&&abs(q.y)<0.5)
+				{
+				mPoe(vec3(0.08));                                     // PC com borda RGB
+				if(max(abs(q.x),abs(q.y))>0.38)
+					{
+					vec3 c=0.5+0.5*cos(6.283*(fract(mT*0.2+atan(q.y,q.x)/6.283)+vec3(0.0,0.33,0.67)));
+					mPoe(c*0.3);
+					mE=c*0.7;
+					}
+				}
+			if(length(mL(vec2(0.036,0.590)))<0.4)
+				mPoe(vec3(0.97));                                      // caixinha inteligente
+			}
+		}
+	/* longarinas embrulhadas na parede L, ligadas por uma barra */
+	if(mF.y<0.60&&mF.x>0.04&&mF.x<0.165)
+		{
+		if(abs(mF.y-0.571)*mK.y<0.15&&mF.x>0.055&&mF.x<0.149)
+			mPoe(vec3(0.6));
+		float k=clamp(floor((mF.x-0.055)/0.0235+0.5),0.0,4.0);
+		mEmbrulhada(vec2(0.055+k*0.0235,0.578),1.5708,vec3(0.1));
+		}
+	/* fileiras de cadeiras embrulhadas (de frente para a tela? não: para a mesa de vidro, como na foto) */
+	if(mF.y>0.88)
+		{
+		float k=clamp(floor((mF.x-0.055)/0.025+0.5),0.0,5.0);
+		mEmbrulhada(vec2(0.055+k*0.025,0.944),-1.5708,vec3(0.1));
+		k=clamp(floor((mF.x-0.079)/0.0273+0.5),0.0,3.0);
+		mEmbrulhada(vec2(0.079+k*0.0273,0.898),-1.5708,vec3(0.1));
+		}
+	if(mF.x>0.215)
+		{
+		float k=clamp(floor((mF.y-0.862)/0.0265+0.5),0.0,2.0);
+		mEmbrulhada(vec2(0.239,0.862+k*0.0265),3.1416,vec3(0.1));
+#if MUNDO_NIVEL>=3
+		vec2 q=mL(vec2(0.236,0.835));
+		for(int j=0;j<2;++j)
+			{
+			float o=0.25*float(j+1);
+			if(abs(exCaixa(q+vec2(o,-o),vec2(1.0),0.3))<0.07)
+				mPoe(vec3(0.75));                                      // pilha de cadeiras
+			}
+		mEmbrulhada(vec2(0.236,0.835),3.1416,vec3(0.1));
+#endif
+		}
+	/* caixa de som com o anel vermelho; apresentando: ondas */
+	vec2 qs=mL(MP_M_SOM.xy);
+	if(dot(qs,qs)<12.0)
+		{
+		if(abs(qs.x)<0.7&&abs(qs.y)<0.7)
+			mPoe(length(qs)>0.35&&length(qs)<0.5?vec3(0.8,0.1,0.1):vec3(0.05));
+		else if(mBit(4.0)>0.5)
+			{
+			float r=length(qs),f=fract(mT*0.8);
+			if(abs(r-(0.9+2.2*f))<0.1)
+				mE+=vec3(0.5,0.6,1.0)*0.4*(1.0-f);
+			}
+		}
+	/* mesa de vidro (posto do Gazziro) com teclado, controle, tablet e celular; fita azul no chão */
+	if(mF.x>0.10&&mF.x<0.19&&mF.y>0.66&&mF.y<0.78)
+		{
+		vec2 q=mL(vec2(0.1615,0.695));
+		vec2 h=vec2(0.0165,0.027)*mK;
+		if(abs(exCaixa(q,h,0.0))<0.125)
+			mPoe(vec3(0.15,0.35,0.85));                                // fita azul
+		mCadeira(vec2(0.160,0.695),2.6,vec3(0.13));
+		mCadeira(MP_A0.xy,MP_A0.z,vec3(0.80,0.72,0.58));              // cadeira bege do Gazziro
+		q=mL(vec2(0.126,0.731));
+		if(abs(q.x)<1.1&&abs(q.y)<2.6)
+			{
+			mPoe(mix(piso,vec3(0.75,0.85,0.88),0.5));                  // vidro
+			if(abs(abs(q.x*2.6)-abs(q.y*1.1))<0.35||max(abs(q.x)-0.9,abs(q.y)-2.4)>0.0)
+				mPoe(vec3(0.82,0.84,0.86));                            // cromado
+			if(abs(q.x+0.0)<0.3&&abs(q.y)<1.1)
+				mPoe(vec3(0.15));                                      // teclado
+			vec2 c=mL(vec2(0.124,0.755));
+			if(length(c-vec2(0.0,0.2))<0.25||length(c+vec2(0.0,0.2))<0.25)
+				mPoe(vec3(0.95));                                      // controle
+			c=mL(vec2(0.130,0.708));
+			if(abs(c.x)<0.45&&abs(c.y)<0.6)
+				mPoe(vec3(0.05));                                      // tablet
+			c=mL(vec2(0.119,0.700));
+			if(abs(c.x)<0.15&&abs(c.y)<0.3)
+				mPoe(vec3(0.1,0.1,0.14));                              // celular
+			}
+		else if(abs(exCaixa(q,vec2(1.1,2.6),0.0))<0.2)
+			mG*=0.6;
+		}
+#if MUNDO_NIVEL>=3
+	vec2 qa=mL(vec2(0.138,0.765));
+	if(abs(qa.x)<0.8&&abs(qa.y)<0.6)
+		mPoe(length(qa-vec2(0.4,0.0))<0.2?vec3(0.1):vec3(0.7));        // aparelho no teto
+#endif
+	/* sofá preto na parede S, com a mochila */
+	if(mEm(MP_M_SOFA,0.003))
+		{
+		float d=mRet(MP_M_SOFA);
+		if(d<0.0)
+			{
+			vec3 c=vec3(0.15);
+			if(mF.x>0.240||mF.y<0.664||mF.y>0.807)
+				c=vec3(0.08);                                          // encosto e braços
+			else if(abs(mF.y-0.709)*mK.y<0.08||abs(mF.y-0.762)*mK.y<0.08)
+				c=vec3(0.05);                                          // emendas das almofadas
+			c+=vec3(0.06)*step(0.8,fract(mC.y*0.35+mC.x*0.1));         // brilho do couro
+			mPoe(c);
+			}
+		else if(d<0.2)
+			mG*=0.6;
+		if(length(mL(vec2(0.230,0.673))/vec2(0.6,0.45))<1.0)
+			mPoe(vec3(0.04,0.04,0.05));                                // mochila
+		}
+	/* porta do miniauditório aberta (dobradiça no lado da forense, abre para dentro) */
+	if(mBit(7.0)>0.5)
+		mFolha(vec2(MP_PAREDE_F_X0,MP_PORTA_MINI_0),vec2(-1.0,0.0),vec2(0.0,1.0),(MP_PORTA_MINI_1-MP_PORTA_MINI_0)*mK.y*0.8);
+	}
+
+/* ---------------------------------------------------------- SALA PRINCIPAL: cada grupo de móveis */
+void mXadrez(vec4 r)
+	{
+	if(mEm(r,0.0))
+		mPoe(mod(floor(mC.x/1.6)+floor(mC.y/1.6),2.0)<0.5?vec3(0.95):vec3(0.08));
+	}
+void mBancadaH()
+	{
+	/* armário alto e lixeira; bancada da parede H com torres, câmera do Willbert, aparelhos, osciloscópio,
+	   torso de RCP, monitor; as cadeiras laranja, amarela e pretas */
+	if(mEm(MP_ARM_ALTO,0.004))
+		mClaro(mRet(MP_ARM_ALTO),vec3(0.93,0.92,0.89));
+	if(length(mL(vec2(0.500,0.157)))<0.55)
+		mPoe(vec3(0.07));
+	if(mEm(MP_BANC_H,0.004))
+		{
+		mPinta(mRet(MP_BANC_H),vec3(0.07));
+		if(mF.y>0.1975)
+			mPoe(vec3(0.92));                                         // borda branca
+		else if(mF.y<0.160)
+			mPoe(vec3(0.12));                                         // prateleira
+		if(mF.x>0.858)
+			{
+			/* 2 torres pretas de grade e a câmera branca de pan/tilt em cima (a do Willbert) */
+			vec2 q=mL(vec2(0.871,0.174));
+			vec2 q2=mL(vec2(0.889,0.174));
+			if((abs(q.x)<0.8&&abs(q.y)<0.8)||(abs(q2.x)<0.8&&abs(q2.y)<0.8))
+				mPoe(fract(mC.y/0.3)<0.4?vec3(0.18):vec3(0.04));
+			if(mSeg(mC,vec2(0.880,0.170)*mK,vec2(0.880,0.150)*mK)<0.1)
+				mPoe(vec3(0.5));                                       // cabo
+			float r=length(mL(vec2(0.880,0.170)));
+			if(r<0.6)
+				mPoe(r<0.42?vec3(0.97):vec3(0.85));
+			if(length(mL(vec2(0.880,0.170))-vec2(0.0,0.3))<0.2)
+				mPoe(vec3(0.03));                                      // lente
+			mLed(vec2(0.880,0.170)+vec2(0.0,-0.25)/mK,vec3(0.2,0.5,1.0),1.0);
+			}
+#if MUNDO_NIVEL>=3
+		vec2 qn=mL(vec2(0.845,0.160));
+		if(abs(qn.x)<0.9&&abs(qn.y)<0.6)
+			mPoe(fract(mC.x/0.3)<0.4?vec3(0.18):vec3(0.08));          // nobreak/amplificador
+#endif
+		if(mF.x>0.690&&mF.x<0.775)
+			{
+			/* 3 aparelhos de bancada; o do meio é o osciloscópio */
+			float k=clamp(floor((mF.x-0.708)/0.025+0.5),0.0,2.0);
+			vec2 q=mL(vec2(0.708+0.025*k,0.172));
+			if(abs(q.x)<1.0&&abs(q.y)<0.8)
+				{
+				mPoe(vec3(0.55,0.56,0.58));
+				if(abs(q.x)<0.5&&abs(q.y-0.1)<0.3)
+					{
+					mPoe(vec3(0.05,0.08,0.06));
+					if(abs(k-1.0)<0.5)
+						{
+						bool liga=mBit(15.0)>0.5||mBit(0.0)>0.5||mDia>0.5;
+						vec2 s=q-vec2(0.0,0.1);
+						if(liga&&abs(s.y-0.12*sin(s.x*9.0+mT*6.0))<0.07)
+							{mPoe(vec3(0.1,0.3,0.12)); mE=vec3(0.3,1.0,0.4)*0.8;}
+						else if(!liga&&length(s)<0.08)
+							mE=vec3(0.3,1.0,0.4)*0.6;
+						}
+					else if(mDia>0.5||mBit(0.0)>0.5)
+						mE=vec3(0.15,0.3,0.45)*0.6;
+					}
+				}
+			}
+		if(mF.x>0.655&&mF.x<0.700)
+			{
+			if(length(mL(vec2(0.684,0.172))/vec2(0.8,0.5))<1.0)
+				mPoe(vec3(0.85,0.72,0.60)*(1.1-0.2*length(mL(vec2(0.684,0.172))/vec2(0.8,0.5)))); // torso de RCP
+			if(mSeg(mC,vec2(0.665,0.152)*mK,vec2(0.690,0.152)*mK)<0.15||mSeg(mC,vec2(0.665,0.157)*mK,vec2(0.688,0.157)*mK)<0.15)
+				mPoe(vec3(0.95));                                      // tubos de pôster
+			}
+		mMonitor(vec2(0.592,0.168),-1.5708,mBit(0.0));
+		mMonitor(vec2(0.535,0.168),-1.5708,0.0);
+		}
+	/* cadeiras da bancada H */
+	if(mF.y<0.26)
+		{
+		mPlastico(vec2(0.642,0.221),vec3(0.95,0.50,0.12));
+		mPlastico(vec2(0.606,0.221),vec3(0.95,0.80,0.15));
+		mCadeira(MP_A2.xy,MP_A2.z,vec3(0.13));
+		mCadeira(vec2(0.804,0.230),-1.5708,vec3(0.13));
+		}
+	/* câmera do Willbert: cone de visão para dentro da sala (mais forte com algum membro presente) */
+	mCone(vec2(0.880,0.170),1.5708,0.5,8.0,vec3(0.06,0.08,0.1)*(0.6+0.4*sin(mT*2.0))*(mBit(21.0)>0.5?1.8:1.0));
+	}
+void mCantoFH()
+	{
+	/* canto F/H: geladeira com ímãs, armários de aço, mesinha, coluna, mesa de carteado */
+	if(mEm(MP_GELADEIRA,0.004))
+		{
+		float d=mRet(MP_GELADEIRA);
+		mClaro(d,vec3(0.94));
+		if(d<0.0&&abs(mF.y-0.2005)*mK.y<0.07)
+			mG*=0.75;                                                  // as 2 portas
+		for(int k=0;k<4;++k)
+			if(length(mL(vec2(0.283+0.005*float(k),0.190+0.006*mod(float(k),2.0))))<0.3)
+				mPoe(0.5+0.5*cos(6.283*(float(k)*0.27+vec3(0.0,0.33,0.67))));   // ímãs
+		}
+	if(mEm(MP_ARM_ACO,0.004))
+		{
+		float d=mRet(MP_ARM_ACO);
+		mPinta(d,vec3(0.45,0.50,0.45));
+		if(d<0.0&&(abs(fract((mF.y-MP_ARM_ACO.z)/0.01025)-0.5)>0.45||abs(mF.x-0.2885)*mK.x<0.06))
+			mG*=0.75;                                                  // portas: 2 colunas x 4
+		}
+#if MUNDO_NIVEL>=3
+	vec2 qm=mL(vec2(0.318,0.262));
+	if(abs(qm.x)<0.95&&abs(qm.y)<0.95)
+		mClaro(exCaixa(qm,vec2(0.7),0.1),vec3(0.93));                  // mesinha branca
+#endif
+	if(mEm(MP_COLUNA,0.006))
+		{
+		vec2 q=mL(vec2(0.2925,0.2915));
+		vec2 h=vec2(0.0175*mK.x,0.0205*mK.y);
+		if(exCaixa(q-vec2(0.4,-0.4),h,0.0)<0.0)
+			mG*=0.8;                                                   // sombra
+		mClaro(exCaixa(q,h,0.0),vec3(0.92,0.92,0.9));
+		}
+	vec2 q=mL(MP_CARTEADO.xy);
+	if(dot(q,q)<25.0)
+		{
+		for(int k=0;k<5;++k)
+			{
+			float a=1.5708+1.2566*float(k);
+			mEmbrulhada(MP_CARTEADO.xy+vec2(cos(a),sin(a))*3.6/mK,a+3.1416,vec3(0.12));
+			}
+		float r=length(q);
+		if(r<MP_CARTEADO.z)
+			{
+			mPoe(r>MP_CARTEADO.z-0.35?vec3(0.75,0.15,0.12):vec3(0.10,0.45,0.25)*(1.05-0.1*r/2.4)); // barrado e feltro
+			for(int k=0;k<4;++k)
+				{
+				float a=0.7854+1.5708*float(k);
+				vec2 n=q-vec2(cos(a),sin(a))*1.2;
+				bool vermelho=mod(float(k),2.0)>0.5;
+				float d=vermelho?abs(n.x)+abs(n.y)-0.35:length(n-vec2(0.0,0.08))-0.22;
+				if(!vermelho&&abs(n.x)<0.06&&n.y<0.0&&n.y>-0.32)
+					d=-1.0;                                            // naipe preto com a hastezinha
+				if(d<0.0)
+					mPoe(vermelho?vec3(0.85,0.1,0.1):vec3(0.03));
+				}
+			}
+		else if(r<MP_CARTEADO.z+0.25)
+			mG*=0.6;
+		}
+	}
+void mScanner()
+	{
+	/* xadrez 1 com o scanner corporal: plataforma girando com o manequim, torre, laser; câmera F no alto
+	   da parede do nicho; banner roxo com as mesas; nicho com o PC aberto; banner do provador virtual */
+	mXadrez(vec4(MP_PAREDE_F_X1,0.395,0.287,0.444));
+	float th=mT*0.35;
+	vec2 cP=MP_PLATAFORMA.xy;
+	vec2 q=mL(cP);
+	float r=length(q);
+	vec2 qt=mL(vec2(0.322,0.375));
+	if(abs(qt.x)<0.6&&mF.y>0.375&&mF.y<cP.y)
+		mPoe(vec3(0.9));                                               // base da torre até a plataforma
+	if(r<MP_PLATAFORMA.z+0.25)
+		{
+		if(r>MP_PLATAFORMA.z)
+			mG*=0.55;
+		else if(r>1.55)
+			{
+			mPoe(vec3(0.95));                                         // aro com as marcas girando
+			if(abs(fract((atan(q.y,q.x)-th)*0.955)-0.5)>0.42)
+				mPoe(vec3(0.6));
+			}
+		else
+			{
+			mPoe(vec3(0.18,0.19,0.21));
+			vec2 p=exGira(q,th);
+			if(abs(abs(p.y)-0.55)<0.15&&abs(p.x)<1.3)
+				mPoe(vec3(0.7));                                      // barras de apoio dos pés
+			/* manequim girando junto */
+			float o=length(p/vec2(0.55,1.05));
+			if(o<1.0)
+				mPoe(vec3(0.96)*(1.05-0.15*o));
+			if(length(p)<0.42)
+				mPoe(vec3(0.99));
+			if(min(length(vec2(p.x,abs(p.y)-0.75)),length(vec2(p.x-0.35,abs(p.y)-0.3)))<0.18)
+				mPoe(vec3(0.9,0.12,0.1));                              // marcadores
+			}
+		}
+	if(abs(qt.x)<1.6&&abs(qt.y)<1.2)
+		{
+		mClaro(exCaixa(qt,vec2(1.2,0.8),0.6),vec3(0.95));              // torre
+		if(length(qt-vec2(0.95,0.0))<0.3)
+			mPoe(vec3(0.85,0.1,0.1));                                 // botão
+		}
+	if(mBit(8.0)>0.5)
+		{
+		vec2 a=vec2(0.322,0.375)*mK+vec2(0.0,0.8),b=cP*mK;
+		if(mSeg(mC,a,b)<0.1&&step(0.5,fract(mT*3.0))>0.5)
+			{mPoe(vec3(1.0,0.2,0.2)); mE=vec3(1.0,0.2,0.2)*0.8;}       // laser
+		}
+	/* banner do provador virtual (girado 30 graus) */
+	vec2 qb=exGira(mL(vec2(0.346,0.304)),0.5236);
+	if(abs(qb.x)<1.2&&abs(qb.y)<0.25)
+		mClaro(-0.01,abs(qb.y)<0.08?vec3(0.6):vec3(0.95));
+	else if(abs(qb.x)<1.45&&abs(qb.y)<0.5)
+		mG*=0.7;
+	/* banner roxo na parede F e as mesas brancas com 3 monitores e o gaveteiro */
+	if(mF.x<0.322&&mF.y<0.44)
+		{
+		if(mEm(MP_MESAS_ROXO,0.004))
+			{
+			mClaro(mRet(vec4(0.282,0.300,0.296,0.428)),vec3(0.92,0.91,0.88));
+			mMonitor(vec2(0.2855,0.320),3.1416,mBit(0.0));
+			mMonitor(vec2(0.2855,0.355),3.1416,0.0);
+			mMonitor(vec2(0.2855,0.390),3.1416,0.0);
+			vec2 g=mL(vec2(0.291,0.418));
+			if(abs(g.x)<0.8&&abs(g.y)<0.6)
+				mPoe(abs(g.y)<0.05?vec3(0.6):vec3(0.93));              // gaveteiro
+			if(mF.x<0.282&&mF.y>0.296&&mF.y<0.428)
+				mPoe(exHash(floor(mC*2.0))>0.85?(exHash(floor(mC*2.0)+3.0)>0.5?vec3(1.0,0.4,0.8):vec3(0.3,0.9,1.0)):vec3(0.35,0.25,0.55)); // banner anime roxo
+			}
+		if(mEm(MP_NICHO,0.004))
+			{
+			mClaro(mRet(MP_NICHO),vec3(0.92,0.91,0.88));
+#if MUNDO_NIVEL>=3
+			vec2 n=mL(vec2(0.294,0.304));
+			if(abs(n.x)<0.5&&abs(n.y)<0.5)
+				mPoe(vec3(0.06));                                     // PC
+			n=mL(vec2(0.310,0.304));
+			if(abs(n.x)<0.6&&abs(n.y)<0.55)
+				mPoe(abs(n.x)<0.4&&abs(n.y)<0.35?vec3(0.2,0.45,0.25):vec3(0.4)); // PC aberto
+#endif
+			}
+		/* câmera F no alto da parede do nicho, olhando a plataforma */
+		if(length(mL(vec2(0.279,0.305)))<0.4)
+			mPoe(vec3(0.05));
+		mLed(vec2(0.279,0.305)+vec2(0.25,0.0)/mK,vec3(1.0,0.15,0.1),step(0.5,fract(mT*(mBit(8.0)>0.5?2.0:1.0))));
+		}
+	mCone(vec2(0.279,0.305),1.05,0.45,7.0,vec3(0.05,0.04,0.04)*(mBit(8.0)>0.5?2.0:1.0));
+	}
+void mCluster()
+	{
+	/* bancada do cluster: cabos azuis, PCs SFF deitados com LEDs, roteador, switch, mesh, câmeras do trilho;
+	   estações dos dois lados; mesa da ponta C; caixa de areia com o projetor */
+	if(mEm(MP_CLUSTER,0.004))
+		{
+		mPinta(mRet(MP_CLUSTER),vec3(0.07));
+		if(abs(mF.y-0.3135)*mK.y<0.15||abs(mF.y-0.4185)*mK.y<0.15)
+			mPoe(vec3(0.92));                                         // bordas brancas
+		/* cabos (antes dos PCs) */
+		float cy=mC.y-0.366*mK.y;
+		if(abs(cy)<2.6&&mF.x>0.45&&mF.x<0.875)
+			{
+			float v=(cy+0.5*sin(mC.x*0.9)+0.3*sin(mC.x*2.3+1.0))/0.7;
+			float id=floor(v);
+			if(abs(fract(v)-0.5)<0.12&&exHash(vec2(id,floor(mC.x/6.0)))>0.35)
+				{
+				float h=exHash(vec2(id,5.0));
+				mPoe(h<0.75?vec3(0.2,0.5,0.95):(h<0.88?vec3(0.95,0.85,0.2):vec3(0.9,0.2,0.15)));
+				}
+			}
+		if(abs(mF.y-0.366)*mK.y<0.225&&!(mF.x>0.56&&mF.x<0.82&&mF.y>0.366))
+			{
+			mPoe(vec3(0.92));                                         // estrutura de cima
+#if MUNDO_NIVEL>=3
+			if(abs(fract(mC.x/5.0)-0.5)*5.0<0.2)
+				mPoe(vec3(0.75));                                      // tomadas
+#endif
+			}
+		/* 6 grupos de 2 PCs SFF deitados, frente prateada para o lado B */
+		if(mF.x>0.560&&mF.x<0.820&&mF.y>0.375)
+			{
+			float g=clamp(floor((mF.x-0.570)/0.040),0.0,5.0);
+			vec2 q=mL(vec2(0.590+0.040*g,0.390));
+			float k=step(0.0,q.x);
+			vec2 p=q-vec2(k*1.4-0.7,0.0);
+			if(abs(p.x)<0.65&&abs(p.y)<0.75)
+				{
+				mPoe(vec3(0.25,0.26,0.28));
+				if(p.y>0.4)
+					mPoe(vec3(0.72,0.74,0.77));                        // frente
+				if(abs(p.x)<0.075)
+					mPoe(vec3(0.12));                                  // pilha de 2
+				float n=g*2.0+k;
+				vec2 l1=vec2(0.590+0.040*g,0.390)+vec2(k*1.4-0.7-0.3,0.55)/mK;
+				vec2 l2=vec2(0.590+0.040*g,0.390)+vec2(k*1.4-0.7+0.25,0.55)/mK;
+				mLed(l1,vec3(0.2,1.0,0.3),step(0.3,fract(mT*(1.3+0.4*k)+exHash(vec2(k,g)))));
+				mLed(l2,vec3(1.0,0.55,0.1),step(0.7,exHash(vec2(n+4.0*g,floor(mT*7.0)))));
+				}
+			}
+		/* roteador (antenas e LEDs azuis) e switch na estrutura */
+		vec2 qr=mL(vec2(0.684,0.366));
+		if(abs(qr.x)<1.6&&abs(qr.y)<1.3)
+			{
+			for(int k=0;k<4;++k)
+				{
+				float a=(float(k)<1.5?0.5236+0.5236*float(k):3.1416-0.5236-0.5236*(float(k)-2.0));
+				if(mSeg(qr,vec2(0.0),vec2(cos(a),sin(a))*1.2)<0.1)
+					mPoe(vec3(0.05));
+				}
+			if(abs(qr.x)<0.8&&abs(qr.y)<0.5)
+				{
+				mPoe(vec3(0.06));
+				for(int k=0;k<3;++k)
+					mLed(vec2(0.684,0.366)+vec2(-0.4+0.4*float(k),-0.2)/mK,vec3(0.2,0.5,1.0),step(0.2,fract(mT*0.7+float(k)*0.3)));
+				}
+			}
+		vec2 qs=mL(vec2(0.557,0.366));
+		if(abs(qs.x)<1.5&&abs(qs.y)<0.4)
+			{
+			mPoe(vec3(0.06));
+			float k=floor((qs.x+1.5)/0.375);
+			mLed(vec2(0.557,0.366)+vec2(-1.5+0.375*(k+0.5),0.0)/mK,exHash(vec2(k,2.0))>0.6?vec3(1.0,0.55,0.1):vec3(0.2,1.0,0.3),step(0.3,exHash(vec2(k,floor(mT*5.0)))));
+			}
+		vec2 qm=mL(vec2(0.850,0.395));
+		if(abs(qm.x)<0.85&&abs(qm.y)<0.85)
+			mClaro(exCaixa(qm,vec2(0.6),0.3),vec3(0.96));              // roteador mesh branco
+		/* trilho das câmeras Tapo (lado H, ponta C) */
+		if(mF.x>0.733&&mF.x<0.874&&abs(mF.y-0.341)*mK.y<0.15)
+			mPoe(vec3(0.5));
+		if(mF.x>0.73&&mF.x<0.88&&mF.y<0.36)
+			{
+			float k=clamp(floor((mF.x-0.745)/0.030+0.5),0.0,4.0);
+			vec2 c=vec2(0.745+0.030*k,0.341);
+			float rc=length(mL(c));
+			if(rc<0.45)
+				mClaro(-0.01,vec3(0.97));
+			else if(rc<0.65)
+				mG*=0.55;
+			if(length(mL(c)-vec2(0.0,-0.2))<0.2)
+				mPoe(vec3(0.03));                                      // lente
+			mLed(c+vec2(0.2,0.15)/mK,vec3(0.2,0.5,1.0),step(0.5,fract(mT*0.5+0.2*k)));
+			}
+		/* estações do lado H: monitores, teclados, joysticks e o carregador */
+		if(mF.y<0.36&&mF.x<0.735)
+			{
+			float k=clamp(floor((mF.x-0.48)/0.04+0.5),0.0,6.0);
+			mMonitor(vec2(0.48+0.04*k,0.345),1.5708,(k==3.0&&mBit(0.0)>0.5)?1.0:0.0);
+			vec2 t=mL(vec2(0.48+0.04*k,0.322));
+			if(abs(t.x)<1.0&&abs(t.y)<0.3)
+				mPoe(vec3(0.25)*(0.9+0.2*step(0.5,fract(t.x*2.5))));
+#if MUNDO_NIVEL>=3
+			for(int j=0;j<2;++j)
+				{
+				float rj=length(mL(vec2(0.455+0.015*float(j),0.330)));
+				if(rj<0.45)
+					mPoe(rj<0.3?vec3(0.9,0.1,0.1)*(1.2-rj):vec3(0.05)); // joysticks
+				}
+			vec2 u=mL(vec2(0.500,0.325));
+			if(abs(u.x)<0.7&&abs(u.y)<0.3)
+				mPoe(vec3(0.05));                                      // carregador USB
+#endif
+			}
+		/* estação do Lucas no lado B */
+		mMonitor(vec2(0.820,0.404),-1.5708,mBit(14.0));
+		vec2 t=mL(vec2(0.820,0.414));
+		if(abs(t.x)<1.1&&abs(t.y)<0.35)
+			mPoe(vec3(0.22)*(0.9+0.2*step(0.5,fract(t.x*2.5))));
+		}
+	/* câmeras do trilho: cone para o corredor (mais forte com alguém ajustando ou com o Victor sentado) */
+	if(mF.y<0.345&&mF.x>0.70)
+		{
+		float k=clamp(floor((mF.x-0.745)/0.030+0.5),0.0,4.0);
+		mCone(vec2(0.745+0.030*k,0.341),-1.5708,0.45,5.0,vec3(0.04)*(mBit(22.0)>0.5||mBit(13.0)>0.5?2.0:1.0));
+		}
+	/* cadeiras do lado B */
+	if(mF.y>0.42&&mF.y<0.48)
+		{
+		mCadeira(MP_A1.xy,MP_A1.z,vec3(0.13));
+		mCadeira(vec2(0.580,0.447),-1.5708,vec3(0.13));
+		mCadeira(vec2(0.640,0.452),-1.5708,vec3(0.13));
+		}
+	/* mesa da ponta C, com monitor e PC */
+	if(mEm(MP_MESA_C,0.025))
+		{
+		mCadeira(vec2(0.902,0.312),1.5708,vec3(0.13));
+		float d=mRet(MP_MESA_C);
+		mClaro(d,vec3(0.92,0.91,0.88));
+		if(d<0.0&&d>-0.3&&length(abs(mL(vec2(0.9025,0.362)))-vec2(1.2,2.1))<0.3)
+			mPoe(vec3(0.05));                                         // pés
+		mMonitor(vec2(0.900,0.370),1.5708,0.0);
+		vec2 q=mL(vec2(0.911,0.383));
+		if(abs(q.x)<0.5&&abs(q.y)<0.8)
+			mPoe(vec3(0.06));
+		}
+	/* caixa de areia: bancada, moldura, o relevo colorido (luz própria), projetor e Kinect, monitor */
+	if(mEm(MP_AREIA,0.006))
+		{
+		mPinta(mRet(MP_AREIA),vec3(0.06));
+		float d=mRet(vec4(0.381,0.430,0.382,0.440));
+		if(d<0.0)
+			{
+			if(d>-0.4)
+				mPoe(vec3(0.93));
+			else if(d>-0.6)
+				mPoe(vec3(0.04));
+			else
+				{
+				vec2 p=mC*0.55;
+				float h=exRuido(p+vec2(mT*0.05,0.0))*0.8+0.2*sin(p.x*1.3+p.y*0.7);
+				vec3 c=h<0.35?vec3(0.2,0.5,0.85):(h<0.5?vec3(0.3,0.7,0.35):(h<0.68?vec3(0.92,0.84,0.5):vec3(0.75,0.4,0.2)));
+				mPoe(vec3(0.0));
+				mE=c*0.85;
+				}
+			}
+		vec2 q=mL(vec2(0.405,0.411));
+		if(abs(q.x)<0.6&&abs(q.y)<0.4)
+			mPoe(vec3(0.05));                                         // projetor e Kinect
+		if(abs(q.x)<0.15&&q.y<0.0&&mF.y>0.382)
+			mPoe(vec3(0.95));                                         // poste
+		if(abs(mF.y-0.447)*mK.y<0.18&&mF.x>0.413&&mF.x<0.435)
+			{mPoe(vec3(0.05)); if(mF.y<0.447) mE=vec3(0.2,0.45,0.85)*0.8;} // monitor com o painel
+		}
+	/* banner "Sensória" e a coluna com 2 extintores */
+	vec2 qb=mL(vec2(0.432,0.468));
+	if(abs(qb.x)<1.25&&abs(qb.y)<0.45)
+		{
+		mClaro(max(abs(qb.x)-1.0,abs(qb.y)-0.2),vec3(0.95));
+		if(abs(qb.y)<0.2&&abs(fract(qb.x/0.5+0.5)-0.5)*0.5<0.12&&abs(qb.x)<0.9)
+			mPoe(0.5+0.5*cos(6.283*(floor(qb.x/0.5)*0.23+vec3(0.0,0.33,0.67))));
+		}
+	if(mEm(MP_EXTINTORES,0.012))
+		{
+		vec2 q=mL(vec2(0.451,0.477));
+		mClaro(exCaixa(q,vec2(0.6),0.0),vec3(0.92));
+		if(length(vec2(abs(q.x)-0.42,q.y-0.95))<0.4)
+			mPoe(vec3(0.85,0.1,0.1));
+		}
+	}
+void mParedeC()
+	{
+	/* parede C: painel elétrico, caixa alta, 9 caixas pretas, quadro verde com giz, armário do escudo,
+	   pôster e expositor */
+	if(mF.y<0.26&&mF.y>0.19)
+		{
+		if(mF.x>0.966&&mF.y>0.197&&mF.y<0.254)
+			mPoe(vec3(0.60,0.61,0.62));
+		float r=length(mL(vec2(0.973,0.240)));
+		if(r<0.3)
+			{mPoe(vec3(0.6,0.05,0.05)); mE=vec3(1.0,0.15,0.1)*0.7;}
+		}
+	if(mEm(MP_CAIXA_ALTA,0.004))
+		mPinta(mRet(MP_CAIXA_ALTA),vec3(0.05));
+	if(mEm(MP_CAIXAS,0.004))
+		{
+		float k=clamp(floor((mF.y-0.312)/0.0478),0.0,8.0);
+		vec2 q=mL(vec2(0.9555,0.312+0.0478*(k+0.5)));
+		float d=exCaixa(q,vec2(1.0,1.3),0.5);
+		if(d<0.0)
+			mPoe(vec3(0.08)+vec3(0.1)*smoothstep(0.6,0.0,length(q-vec2(-0.4,0.6))));
+		else if(d<0.15)
+			mG*=0.6;
+		}
+	if(mF.x>0.962&&mF.y>0.395&&mF.y<0.766)
+		{
+		if(mF.x<0.966)
+			{
+			mPoe(vec3(0.6));                                          // calha
+			if(abs(mF.y-0.48)*mK.y<0.4||abs(mF.y-0.70)*mK.y<0.4)
+				mPoe(vec3(0.85,0.75,0.55));                            // apagadores
+			}
+		else
+			{
+			mPoe(vec3(0.16,0.36,0.30));
+			bool giz=exHash(floor(mC*vec2(1.5,3.0)))>0.9;
+			if(mBit(12.0)>0.5)
+				giz=giz&&mF.y<0.395+0.371*fract(mT/20.0);
+			else
+				giz=giz&&(abs(mF.y-0.46)<0.012||abs(mF.y-0.55)<0.01||abs(mF.y-0.63)<0.008);
+			if(giz)
+				mPoe(vec3(0.9));
+			}
+		}
+	if(mEm(MP_ESCUDO,0.006))
+		{
+		float d=mRet(MP_ESCUDO);
+		mClaro(d,vec3(0.93));
+		if(d<0.0&&d>-0.25)
+			mPoe(vec3(0.80,0.12,0.12));                               // friso vermelho
+		vec2 q=mL(vec2(0.955,0.895));
+		float r=length(q);
+		if(r<1.4)
+			{
+			float t=r/1.4;
+			mPoe(t>0.78?vec3(0.8,0.1,0.12):(t>0.57?vec3(0.95):(t>0.38?vec3(0.8,0.1,0.12):vec3(0.10,0.25,0.65))));
+			float a=atan(q.y,q.x);
+			if(t<0.38&&t<0.17+0.17*(0.5+0.5*cos(5.0*(a-1.5708))))
+				mPoe(vec3(0.97));                                     // estrela
+			}
+#if MUNDO_NIVEL>=3
+		if(mF.x<0.938&&abs(fract((mF.y-0.857)/0.01875)-0.5)*1.33<0.3)
+			mPoe(vec3(0.05));                                         // losangos pretos na lateral
+#endif
+		}
+	if(mF.x>0.972&&mF.y>0.791&&mF.y<0.857)
+		{
+		mPoe(vec3(0.95));                                             // pôster
+		if(exHash(floor(mC*3.3))>0.86)
+			mPoe(0.5+0.5*cos(6.283*(exHash(floor(mC*3.3)+1.0)+vec3(0.0,0.33,0.67))));
+		}
+	float re=length(mL(vec2(0.945,0.808)));
+	if(re<0.4)
+		mPoe(re<0.2?vec3(0.1):vec3(0.85));                             // expositor
+	}
+void mFundoF()
+	{
+	/* lado F perto da janela: xadrez 2, placa do miniauditório, banner cyberpunk, bancada de eletrônica,
+	   arco branco, bola de pilates e as 2 cadeiras */
+	mXadrez(vec4(0.296,0.416,0.659,0.940));
+	if(mF.x<0.281&&mF.y>0.575&&mF.y<0.625)
+		mPoe(abs(mF.y-0.600)*mK.y<0.15?vec3(0.95):vec3(0.05));        // placa do miniauditório
+	if(mEm(MP_BANC_F,0.004))
+		{
+		mPinta(mRet(MP_BANC_F),vec3(0.07));
+		vec2 q=mL(vec2(0.292,0.700));
+		if(abs(q.x)<0.8&&abs(q.y)<0.8)
+			mPoe(vec3(0.6,0.45,0.28)*(abs(q.x)<0.05?0.8:1.0));      // caixa de papelão
+		mMonitor(vec2(0.300,0.800),3.1416,mBit(0.0));
+		vec2 c=floor(mC/0.8);
+		if(mF.y>0.72&&mF.y<0.78&&exHash(c)>0.86&&length(fract(mC/0.8)-0.5)<0.2)
+			mPoe(0.5+0.5*cos(6.283*(exHash(c+2.0)+vec3(0.0,0.33,0.67))));  // pecinhas
+		}
+	if(mF.x<0.282&&mF.y>0.709&&mF.y<0.841)
+		{
+		vec2 c=floor(mC*1.5);
+		float h=exHash(c);
+		mPoe(h>0.9?vec3(1.0,0.85,0.3):(h>0.8?vec3(0.3,0.9,1.0):vec3(0.12,0.15,0.25))); // banner cyberpunk
+		}
+	/* arco branco: sombra, barra e os pés (com faixa vermelha e preta) */
+	if(mF.x>0.34&&mF.x<0.385&&mF.y>0.69&&mF.y<0.86)
+		{
+		vec2 a=vec2(0.360,0.709)*mK,b=vec2(0.360,0.841)*mK;
+		if(mSeg(mC-vec2(0.25,-0.25),a,b)<0.4)
+			mG*=0.75;
+		if(mSeg(mC,a,b)<0.4)
+			{
+			if(mBit(9.0)>0.5)
+				{mPoe(vec3(0.5,0.95,1.0)*0.7); mE=vec3(0.5,0.95,1.0)*0.4;}
+			else
+				mClaro(-0.01,vec3(0.97));
+			}
+		else if(mSeg(mC,a,b)<0.6)
+			mG*=0.6;
+		for(int k=0;k<2;++k)
+			{
+			vec2 q=mL(vec2(0.360,k==0?0.709:0.841));
+			if(abs(q.x)<1.1&&abs(q.y)<0.8)
+				mPoe(abs(q.x-0.5)<0.15?vec3(0.85,0.1,0.1):(abs(q.x-0.15)<0.15?vec3(0.05):vec3(0.97)));
+			else if(abs(q.x)<1.35&&abs(q.y)<1.05)
+				mG*=0.6;
+			}
+		}
+	vec2 q=mL(MP_BOLA.xy);
+	float r=length(q);
+	if(r<MP_BOLA.z)
+		mPoe(vec3(0.55,0.56,0.58)+vec3(0.25)*smoothstep(0.8,0.0,length(q-vec2(-0.5,0.5))));
+	else if(r<MP_BOLA.z+0.25)
+		mG*=0.6;
+	if(mF.x<0.34&&mF.y>0.75&&mF.y<0.83)
+		{
+		mCadeira(vec2(0.318,0.775),3.1416,vec3(0.13));
+		mCadeira(vec2(0.318,0.807),3.1416,vec3(0.13));
+		}
+	}
+void mIlha(vec4 r,float div,float xe,float xo,vec3 ligaE,vec3 ligaO)
+	{
+	/* ilha de mesas: 3 lugares de cada lado (Fy 0,643 / 0,725 / 0,808), com 2 monitores, teclado e cadeira;
+	   leste vira para pi, oeste para 0. ligaE/ligaO: lugar com membro sentado (monitores acesos), por lugar;
+	   -1 = o lugar tem desenho próprio (o do Victor) */
+	if(!mEm(r,0.03))
+		return;
+	float k=clamp(floor((mF.y-0.643)/0.0825+0.5),0.0,2.0);
+	float yl=0.643+0.0825*k;
+	float d=mRet(r);
+	mClaro(d,vec3(0.92,0.91,0.88));
+	if(d<0.0)
+		{
+		if(abs(mF.x-div)*mK.x<0.15)
+			mPoe(vec3(0.6));                                          // divisória
+		if(length(abs(mL(vec2(r.x+r.y,r.z+r.w)*0.5))-vec2(r.y-r.x,r.w-r.z)*0.5*mK+0.4)<0.3)
+			mPoe(vec3(0.05));                                         // pés
+		}
+	for(int j=0;j<2;++j)
+		{
+		bool leste=j==0;
+		float xs=leste?xe:xo;
+		float a=leste?3.1416:0.0;
+		if(abs(mF.x-xs)>0.10)
+			continue;
+		mCadeira(vec2(xs,yl),a,vec3(0.13));
+		vec3 lg=leste?ligaE:ligaO;
+		float liga=k<0.5?lg.x:(k<1.5?lg.y:lg.z);
+		if(liga<-0.5)
+			continue;
+		float xm=leste?div+0.006:div-0.006;
+		mMonitor(vec2(xm,yl-0.0156),a,liga);
+		mMonitor(vec2(xm,yl+0.0156),a,liga);
+		mTeclado(vec2(leste?xs-0.030:xs+0.030,yl),a,vec3(0.22));
+		}
+	}
+void mVictor()
+	{
+	/* o lugar do Victor (ilha 1, leste, perto da janela): 3 monitores, teclado RGB no mousepad, caixinhas
+	   de som, garrafa, copo térmico, PC torre e a plaquinha */
+	vec2 q=mL(vec2(0.845,0.808));
+	if(abs(q.x)<0.9&&abs(q.y)<1.9)
+		mPoe(vec3(0.12));                                             // mousepad
+	if(abs(q.x)<0.4&&abs(q.y)<1.3)
+		{
+		vec3 rgb=0.5+0.5*cos(6.283*(fract(mC.y*0.3-mT*0.25)+vec3(0.0,0.33,0.67)));
+		mPoe(rgb*0.3);
+		mE=rgb*(mBit(13.0)>0.5?0.8:0.3)*(0.85+0.15*step(0.5,fract(q.y*2.5))*step(0.1,abs(q.x)));
+		}
+	for(int k=0;k<3;++k)
+		{
+		float fk=float(k)-1.0;
+		vec2 c=vec2(0.824,0.808+0.026*fk);
+		vec2 m=exGira(mL(c),3.1416-0.26*fk);
+		if(abs(m.x)<0.2&&abs(m.y)<1.0)
+			{
+			mPoe(vec3(0.06,0.065,0.08));
+			if(m.x<-0.03&&abs(m.y)<0.88)
+				{
+				if(mBit(13.0)>0.5)
+					mE=fract(m.y*2.2+floor(mT*2.0)*0.37)<0.55?vec3(0.25,0.9,0.35)*0.8:vec3(0.05,0.15,0.07);  // terminal rolando
+				else if(mBit(0.0)>0.5)
+					mE=vec3(0.2,0.45,0.85)*0.6;
+				}
+			}
+		}
+	if(mBit(13.0)<0.5&&mBit(0.0)<0.5)
+		mLed(vec2(0.826,0.795),vec3(1.0,0.55,0.1),1.0);
+	for(int k=0;k<2;++k)
+		{
+		vec2 c=mL(vec2(0.834,k==0?0.794:0.822));
+		if(abs(c.x)<0.25&&abs(c.y)<0.25)
+			mPoe(vec3(0.05));                                         // caixinhas de som
+		}
+	float g=length(mL(vec2(0.847,0.770)));
+	if(g<0.3)
+		mPoe(vec3(0.3,0.55,0.85)*(1.2-g));                            // garrafa
+	g=length(mL(vec2(0.850,0.846)));
+	if(g<0.35)
+		mPoe(g<0.2?vec3(0.2):vec3(0.05));                              // copo térmico
+	vec2 p=mL(vec2(0.832,0.851));
+	if(abs(p.x)<0.9&&abs(p.y)<0.45)
+		mPoe(vec3(0.06)+vec3(0.1)*step(0.7,fract(p.x*2.0)));           // PC torre
+	vec2 pl=mL(vec2(0.8555,0.795));
+	if(abs(pl.x)<0.15&&abs(pl.y)<0.6)
+		mPoe(abs(pl.x)<0.05&&abs(pl.y)<0.45?vec3(0.05):vec3(0.97));   // plaquinha
+	}
+void mFundoB()
+	{
+	/* mesas das persianas, mesa em L do canto, extintor */
+	if(mEm(MP_PERSIANAS,0.03))
+		{
+		for(int k=0;k<3;++k)
+			mCadeira(vec2(0.455+0.0375*float(k),0.870),1.5708,vec3(0.13));
+		float d=mRet(MP_PERSIANAS);
+		mClaro(d,vec3(0.92,0.91,0.88));
+		if(d<0.0)
+			{
+			float k=clamp(floor((mF.x-0.455)/0.0375+0.5),0.0,2.0);
+			mMonitor(vec2(0.455+0.0375*k,0.935),1.5708,0.0);
+			vec2 t=mL(vec2(0.455+0.0375*k,0.905));
+			if(abs(t.x)<1.0&&abs(t.y)<0.3)
+				mPoe(vec3(0.22));
+			}
+		}
+	if(mF.x>0.85&&mF.y>0.80)
+		{
+		mCadeira(vec2(0.870,0.895),0.0,vec3(0.13));
+		mCadeira(vec2(0.915,0.825),1.5708,vec3(0.13));
+		float d=min(mRet(MP_MESA_L1),mRet(MP_MESA_L2));
+		mClaro(d,vec3(0.92,0.91,0.88));
+		if(d<0.0)
+			{
+			mMonitor(vec2(0.886,0.897),0.0,0.0);
+			mMonitor(vec2(0.915,0.862),1.5708,0.0);
+			vec2 q=mL(vec2(0.924,0.905));
+			if(abs(q.x)<0.5&&abs(q.y)<0.8)
+				mPoe(vec3(0.06));
+			}
+		vec2 q=mL(vec2(0.881,0.955));
+		float r=length(q);
+		if(r<1.0)
+			mPoe(r<0.7?vec3(0.85,0.1,0.1)*(1.15-0.3*r):(r<1.0&&r>0.7?vec3(0.05):mG)); // extintor com a mangueira
+		}
+	}
+void mPrincipal()
+	{
+	mPoe(vec3(0.70,0.71,0.70));
+#if MUNDO_NIVEL>=3
+	if(mBit(0.0)>0.5||mDia<0.5)
+		{
+		vec2 g=vec2(fract((mF.x-0.275)/0.1175),fract((mF.y-0.147)/0.2753));
+		mG+=vec3(0.035)*smoothstep(0.5,0.0,length((g-0.5)*vec2(1.0,0.6)))*mBit(0.0); // luminárias
+		}
+	if(mF.y>0.201&&mF.y<0.312&&abs(mC.x-(64.0+0.6*sin(mC.y*1.3)))<0.15)
+		mPoe(vec3(0.05));                                              // cabo preto no chão
+#endif
+	/* janelas: vidro e persianas (dia/noite) */
+	if(mF.y>0.962)
+		{
+		float x=mF.x;
+		if((x>0.296&&x<0.360)||(x>0.881&&x<0.952))
+			{
+			vec3 c=mix(vec3(0.06,0.08,0.16),vec3(0.62,0.82,0.95),mDia);
+			mPoe(c);
+			if(mDia<0.5&&exHash(floor(mC*0.8))>0.97)
+				mE=vec3(1.0,0.85,0.4)*0.6;                             // luzes da cidade à noite
+			}
+		else if(x>0.360&&x<0.881)
+			mPoe(abs(fract((x-0.360)/0.0744+0.5)-0.5)*7.44<0.15?vec3(0.6):mix(vec3(0.28,0.30,0.36),vec3(0.92,0.92,0.90),mDia));
+		else
+			mPoe(vec3(0.85));
+		}
+	if(mF.y<0.31)
+		{
+		if(mF.x<0.41)
+			mCantoFH();
+		else
+			mBancadaH();
+		}
+	if(mF.x<0.41&&mF.y>0.28&&mF.y<0.47)
+		mScanner();
+	if(mF.x>0.36&&mF.y>0.26&&mF.y<0.50)
+		mCluster();
+	if(mF.x>0.93)
+		mParedeC();
+	if(mF.y>0.5)
+		{
+		if(mF.x<0.43)
+			mFundoF();
+		else if(mF.x<0.72)
+			mIlha(MP_ILHA2,0.610,MP_A5.x,MP_A6.x,vec3(0.0,mBit(18.0),0.0),vec3(mBit(19.0),0.0,0.0)); // A5 (leste, meio) e A6 (oeste, embaixo)
+		else
+			{
+			mIlha(MP_ILHA1,0.818,MP_A3.x,MP_A4.x,vec3(mBit(20.0),0.0,-1.0),vec3(0.0,0.0,mBit(17.0)));  // A7 e o Victor (leste), A4 (oeste, em cima)
+			if(mF.x>0.81&&mF.x<0.89&&mF.y>0.75&&mF.y<0.87)
+				mVictor();
+			}
+		if(mF.x>0.42)
+			mFundoB();
+		}
+	}
+
+/* ---------------------------------------------------------- a planta toda */
+vec3 mundoCor(vec2 u)
+	{
+	/* u = cm da areia desde o canto da área iluminada */
+	mK=vec2(100.0,100.0*extrasMundo.z/extrasMundo.y);
+	mF=u/extrasMundo.yz;
+	mC=mF*mK;
+	mT=extrasInfo.x;
+	mBits=extrasMundo.x;
+	mDia=smoothstep(5.3,6.8,extrasMundo2.z)*(1.0-smoothstep(17.5,19.2,extrasMundo2.z));
+	mG=vec3(0.70,0.71,0.70);
+	mE=vec3(0.0);
+	float luz=1.0;
+	bool parede=mF.y<MP_PAREDE_H_Y||mF.y>MP_PAREDE_B_Y||mF.x<MP_EXTERNA_X||mF.x>MP_PAREDE_C_X
+	            ||(mF.x>MP_PAREDE_F_X0&&mF.x<MP_PAREDE_F_X1)||(mF.x<MP_PAREDE_F_X0&&mF.y>MP_DIVISORIA_Y0&&mF.y<MP_DIVISORIA_Y1);
+	if(mF.y<MP_CORREDOR_Y)
+		{
+		mCorredor();
+		luz=mix(0.85,0.95,mDia);
+		}
+	else if(parede)
+		{
+		mParede();
+		luz=mix(0.6,1.0,max(mDia,mBit(0.0)));
+		}
+	else if(mF.x<MP_PAREDE_F_X0)
+		{
+		if(mF.y<MP_DIVISORIA_Y0)
+			{
+			mForense();
+			luz=mBit(1.0)>0.5?1.0:mix(0.35,0.55,mDia);                 // sem janela: vazia, fica escura
+			}
+		else
+			{
+			mMini();
+			luz=mBit(2.0)>0.5?(mBit(4.0)>0.5?0.75:0.92):mix(0.32,0.50,mDia); // apresentando, a luz cai
+			}
+		}
+	else
+		{
+		mPrincipal();
+		luz=mix(0.40,1.0,max(0.92*mDia,mBit(0.0)))+0.07*mDia*smoothstep(0.80,0.97,mF.y);
+		}
+	return mG*luz+mE;
 	}
 )GLSL";
 
@@ -2539,116 +4128,10 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				}
 			}
 		}
-	/* Mundo LAOB: o chão deixa de ser o relevo colorido e vira o laboratório por dentro, visto de cima
-	   (planta aproximada, tirada do vídeo da sala; as posições são as mesmas do Mundo.cpp): janelas em
-	   cima, porta azul e quadro verde embaixo, bancada de parede com computadores, bancada comprida no
-	   meio, mesas perto das janelas, arco branco, manequim e a caixa de areia. À noite (hora de
-	   verdade) as janelas escurecem. */
+	/* Mundo LAOB: o chão deixa de ser o relevo colorido e vira o laboratório por dentro, visto de cima, com as
+	   três salas (mundoCor, nas funções do começo do shader; planta em MundoPlanta.h, a mesma do Mundo.cpp) */
 	if(extrasMundo.w>0.5)
-		{
-		vec2 u=vec2(ep.x-extrasMundo2.x,ep.y-extrasMundo2.y);
-		float mw=extrasMundo.y;
-		float mh=extrasMundo.z;
-			{
-
-			/* Quarta tela: o laboratório por dentro, visto de cima (planta aproximada, tirada do vídeo da sala):
-			   janelas em cima, porta azul e quadro verde embaixo, bancada de parede com computadores, bancada
-			   comprida no meio, mesas perto das janelas, arco branco, manequim e a caixa de areia. */
-			vec2 f=vec2(u.x/mw,u.y/mh);                                  // 0..1 dentro da sala
-			vec2 cm=vec2(f.x*mw,f.y*mh);                                 // em cm, para as texturas
-			vec3 g=mix(vec3(0.60,0.61,0.60),vec3(0.66,0.67,0.66),step(0.5,fract(cm.x/4.0))*step(0.5,fract(cm.y/4.0))
-			           +(1.0-step(0.5,fract(cm.x/4.0)))*(1.0-step(0.5,fract(cm.y/4.0))));     // piso
-			g+=vec3(0.05)*exRuido(cm*0.25);
-			float dia=smoothstep(5.3,6.8,extrasMundo2.z)*(1.0-smoothstep(17.5,19.2,extrasMundo2.z));
-			g+=vec3(0.07,0.07,0.05)*dia*smoothstep(0.45,0.95,f.y);       // claridade que entra pelas janelas
-			/* paredes */
-			float borda=min(min(f.x,1.0-f.x)*mw,min(f.y,1.0-f.y)*mh);
-			if(borda<2.6)
-				{
-				g=borda<1.4?vec3(0.1,0.11,0.13):vec3(0.86,0.85,0.8);
-				if(f.y>0.5&&borda>=1.4&&f.x>0.06&&f.x<0.94)
-					g=fract(f.x*13.0)<0.08?vec3(0.5,0.52,0.55):mix(vec3(0.1,0.14,0.28),vec3(0.62,0.82,0.95),dia);   // janelas
-				if(f.y<0.5&&borda>=1.4&&f.x>0.405&&f.x<0.465)
-					g=vec3(0.13,0.3,0.72);                                // porta azul
-				if(f.y<0.5&&borda>=1.4&&f.x>0.18&&f.x<0.34)
-					g=vec3(0.16,0.4,0.3);                                 // quadro verde
-				if(f.y<0.5&&borda>=1.4&&f.x>0.6&&f.x<0.66)
-					g=vec3(0.85,0.2,0.2);                                 // cartaz vermelho
-				if(f.x>0.5&&borda>=1.4&&((f.y>0.34&&f.y<0.43)||(f.y>0.5&&f.y<0.59)))
-					g=vec3(0.12,0.12,0.16);                               // as duas portas escuras do fundo
-				if(f.x<0.5&&borda>=1.4&&f.y>0.4&&f.y<0.7)
-					g=vec3(0.2,0.22,0.3);                                 // cartaz escuro
-				}
-			else
-				{
-				/* armário elétrico ao lado da porta */
-				if(f.x>0.345&&f.x<0.395&&f.y<0.13)
-					g=mix(vec3(0.6,0.61,0.62),vec3(0.9,0.2,0.15),step(distance(f,vec2(0.37,0.1)),0.008));
-				/* coluna com o extintor */
-				if(abs(f.x-0.36)<0.022&&f.y>0.86)
-					g=vec3(0.7,0.7,0.68);
-				if(distance(cm,vec2(0.385*mw,0.9*mh))<0.8)
-					g=vec3(0.85,0.1,0.1);
-				/* bancada de parede com computadores, e as cadeiras */
-				if(f.x>0.5&&f.x<0.92&&f.y>0.075&&f.y<0.17)
-					{
-					g=vec3(0.9,0.9,0.88);
-					if(abs(fract((f.x-0.56)*10.0+0.5)-0.5)<0.24&&f.y<0.12)
-						g=vec3(0.08,0.09,0.12);                           // monitores
-					if(abs(fract((f.x-0.56)*10.0+0.5)-0.5)<0.2&&f.y>0.135&&f.y<0.155)
-						g=vec3(0.25);                                     // teclados
-					}
-				for(int k=0;k<4;++k)
-					if(distance(cm,vec2((0.56+0.1*float(k))*mw,0.215*mh))<1.15)
-						g=k==3?vec3(0.9,0.75,0.1):(k==2?vec3(0.85,0.2,0.15):vec3(0.13));   // cadeiras (uma amarela e uma vermelha)
-				/* bancada comprida do meio, com prateleira e cabos azuis */
-				if(f.x>0.42&&f.x<0.8&&f.y>0.44&&f.y<0.56)
-					{
-					g=vec3(0.93,0.93,0.91);
-					if(abs(f.y-0.5)<0.022)
-						g=vec3(0.45,0.47,0.5);
-					if(fract(f.x*23.0)<0.3&&abs(f.y-0.47)<0.012)
-						g=vec3(0.15,0.4,0.85);
-					g*=mix(1.0,0.75,smoothstep(0.05,0.06,abs(f.y-0.5)));
-					}
-				/* mesas perto das janelas, com monitores e cadeiras */
-				if(f.x>0.1&&f.x<0.3&&f.y>0.7&&f.y<0.8)
-					g=abs(fract((f.x-0.14)*16.7+0.5)-0.5)<0.22&&f.y>0.75?vec3(0.08,0.09,0.12):vec3(0.86,0.82,0.74);
-				if(f.x>0.06&&f.x<0.13&&f.y>0.3&&f.y<0.56)
-					g=abs(f.y-0.42)<0.04&&f.x<0.09?vec3(0.08,0.09,0.12):vec3(0.86,0.82,0.74);
-				for(int k=0;k<3;++k)
-					if(distance(cm,vec2((0.14+0.06*float(k))*mw,0.65*mh))<1.1)
-						g=vec3(0.13);
-				if(distance(cm,vec2(0.17*mw,0.42*mh))<1.1)
-					g=vec3(0.13);
-				/* arco branco */
-				float arco=abs(length((cm-vec2(0.3*mw,0.5*mh))/vec2(1.0,1.0))-3.2);
-				if(arco<0.28&&cm.y>0.5*mh)
-					g=vec3(0.97);
-				if(distance(cm,vec2(0.3*mw-3.2,0.5*mh))<0.7)
-					g=vec3(0.95);
-				/* manequim */
-				if(length((cm-vec2(0.9*mw,0.62*mh))/vec2(0.7,1.3))<1.0||distance(cm,vec2(0.9*mw,0.62*mh))<0.62)
-					g=vec3(0.96,0.96,0.94);
-				/* a caixa de areia: moldura de madeira e o relevo colorido dentro */
-				vec2 ca=(f-vec2(0.64,0.77))/vec2(0.075,0.08);
-				if(max(abs(ca.x),abs(ca.y))<1.0)
-					{
-					float rel=exRuido(ca*2.2+vec2(et*0.05,0.0));
-					g=max(abs(ca.x),abs(ca.y))>0.86?vec3(0.5,0.33,0.16)
-					  :(rel<0.35?vec3(0.2,0.5,0.85):(rel<0.5?vec3(0.3,0.7,0.35):(rel<0.68?vec3(0.92,0.84,0.5):vec3(0.75,0.4,0.2))));
-					}
-				/* a câmera do Willbert, olhando para a porta */
-				vec2 cw2=cm-vec2(0.44*mw,mh-3.4);
-				if(length(cw2)<0.6)
-					g=vec3(0.98);
-				else if(cw2.y<0.0&&cw2.y>-9.0&&abs(cw2.x)<-cw2.y*0.45)
-					g+=vec3(0.06,0.08,0.1)*(0.6+0.4*sin(et*2.0));
-				}
-			g*=mix(0.86,1.0,dia);                                        // à noite, só a luz de dentro
-			baseColor=vec4(g,1.0);
-			}
-		}
+		baseColor=vec4(mundoCor(vec2(ep.x-extrasMundo2.x,ep.y-extrasMundo2.y)),1.0);
 	/* Jogos de água (Jogos.cpp) e labirinto: peças desenhadas antes dos bichos (eles passam por cima) */
 	if(extrasJogoInfo.x>0.5)
 		{
@@ -3278,7 +4761,8 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			if(vis>0.5)
 				porte=1.6;
 			if(extrasMundo.w>0.5)
-				porte*=1.15;                                                   // no laboratório, 15% maiores: dá para ler os detalhes
+				porte*=0.8;                                                    // 19/11/2026: no laboratório de 3 salas, 20% menores (antes 15% maiores):
+				                                                               // grandes, tapavam a mesa, o scanner e o cluster (medido nas prévias)
 			vec2 pl=l/porte;
 			vec2 pls=ls/porte;
 			float passo=extrasAg2[i].x>0.5&&extrasAg2[i].x<1.5?0.0:sin(et*7.0+float(i)*1.3); // parada olhando o pão: pés juntos
@@ -3301,7 +4785,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				   Gazziro e deixar eles mais diferenciáveis"): silhueta e cores fixas, tiradas das fotos, para
 				   reconhecer cada um de cima e de longe, sem depender da plaquinha. Contorno escuro em volta
 				   (o piso da sala é cinza).
-				   1 Gazziro: chapéu de feltro marrom de aba larga, com fita preta; camisa verde-água de botão.
+				   1 Gazziro: fedora grafite escuro com fita preta (como nas fotos f14/f15 do miniauditório); camisa verde-água de botão.
 				   2 Lucas: boné grafite com a aba para a frente; camiseta cinza mesclada.
 				   3 Mario: cabelo castanho-claro aloirado, óculos (aro na frente e hastes) e jaleco branco comprido.
 				   4 Victor: cabelo castanho-escuro bagunçado; camisa preta de gola. */
@@ -3336,17 +4820,17 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					if(g1)
 						{
 						float copa=length(hp/vec2(0.5,0.42));
-						vec3 feltro=vec3(0.36,0.25,0.16);
+						vec3 feltro=vec3(0.27,0.265,0.255);                       // grafite (19/11/2026: era marrom; as fotos mostram escuro)
 						if(copa<1.0)
 							{
-							cM=feltro*(1.2-0.35*copa)+vec3(0.14,0.1,0.06)*smoothstep(0.4,0.0,distance(hp,vec2(-0.12,0.14)));
+							cM=feltro*(1.2-0.35*copa)+vec3(0.13,0.13,0.12)*smoothstep(0.4,0.0,distance(hp,vec2(-0.12,0.14)));
 							if(abs(hp.y)<0.05&&abs(hp.x)<0.3)
 								cM*=0.62;                                         // vinco no alto da copa
 							}
 						else if(copa<1.22)
-							cM=vec3(0.06,0.05,0.05);                              // fita
+							cM=vec3(0.05,0.045,0.045);                            // fita
 						else
-							cM=feltro*mix(0.95,0.72,smoothstep(0.6,0.84,cabeca))+vec3(0.1,0.07,0.04)*smoothstep(0.82,0.9,cabeca); // aba, com a beirada virada
+							cM=feltro*mix(0.9,0.68,smoothstep(0.6,0.84,cabeca))+vec3(0.1)*smoothstep(0.82,0.9,cabeca); // aba, com a beirada virada (mais clara)
 						}
 					else if(g2)
 						{
@@ -3749,7 +5233,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 		if(mostra>0.5&&float(i)<extrasNomesCfg.z-0.5)
 			{
 			float R=2.3; // raio do rosto no balão, em cm
-			vec2 rr=ep.xy-(a.xy+cima*6.8);
+			vec2 rr=ep.xy-(a.xy+cima*6.3);
 			vec2 tr=vec2(dot(rr,dir),dot(rr,cima));
 			float dr=length(tr);
 			float hueM=fract(a.w);
@@ -3766,12 +5250,19 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					}
 				}
 			}
-		vec2 rel=ep.xy-(a.xy+cima*3.1); // (19/11/2026: 2,7 -> 3,1; os bonecos do laboratório ficaram 15% maiores)
+		vec2 rel=ep.xy-(a.xy+cima*2.6); // (19/11/2026: 2,7 -> 3,1 com os bonecos 15% maiores; 2,6 com eles 20% menores, nas 3 salas)
 		vec2 t=vec2(dot(rel,dir),dot(rel,cima));
 		float px=0.2;
 		float cw=4.0*px;
 		float larg=len*cw-px;
 		float margem=pres>0.5?0.95:0.35; // espaço para a bolinha verde
+		if(extrasMundo.w>0.5)
+			{
+			/* 19/11/2026 (revisão): no laboratório, perto da borda (pôster da forense, tela do miniauditório)
+			   a plaquinha corre para dentro da área iluminada em vez de perder o começo do nome */
+			float c0=dot(extrasMundo2.xy,dir),c1=dot(extrasMundo2.xy+extrasMundo.yz,dir),cd=dot(a.xy,dir);
+			t.x+=cd-clamp(cd,min(c0,c1)+larg*0.5+margem+0.3,max(c0,c1)-larg*0.5-0.65);
+			}
 		if(t.x<-larg*0.5-margem||t.x>larg*0.5+0.35||abs(t.y)>2.5*px+0.3)
 			continue;
 		baseColor.rgb=mix(baseColor.rgb,vec3(0.04,0.06,0.1),0.78);
@@ -3883,7 +5374,7 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 		}
 	glUniform4fvARB(locations[14],MAX_CHUVAS,ch);
 	bool sala=modo==MUNDO&&mundoPronto;
-	glUniform4fARB(locations[12],0.0f,bmax[0]-bmin[0],bmax[1]-bmin[1],sala?1.0f:0.0f);
+	glUniform4fARB(locations[12],sala?mundoBits:0.0f,bmax[0]-bmin[0],bmax[1]-bmin[1],sala?1.0f:0.0f); // .x: estado (bits; Mundo.cpp)
 	/* hora local (0-24): o laboratório escurece à noite e as luzes de dentro acendem */
 	float hora=horaFixa;
 	if(hora<0.0f)

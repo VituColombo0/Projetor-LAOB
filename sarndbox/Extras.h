@@ -176,6 +176,19 @@ class Extras
 	double rostoAte[MAX_NOMES]; // até quando mostrar o rosto no balão
 	float wpX[MAX_AGENTES],wpY[MAX_AGENTES]; // para onde o boneco está andando (bancada ou ponto da sala)
 	float horaFixa; // hora do laboratório para testes (0-24); <0 = a hora de verdade
+	/* 19/11/2026: três salas (MundoPlanta.h) e rotas pelas portas, sem atravessar móveis */
+	enum {MAX_ROTA=14};
+	float mRota[MAX_AGENTES][MAX_ROTA][2]; int nRota[MAX_AGENTES],kRota[MAX_AGENTES]; // pontos da rota (F) e o próximo
+	int mDest[MAX_AGENTES]; // destino: -1 o próprio assento, 0.. um ponto (Mundo.cpp), -2 a saída
+	int mVaga[MAX_AGENTES]; // qual lugar do ponto (sofá, plateia, aula no quadro têm 3)
+	float mAlvoAng[MAX_AGENTES]; // para onde fica virado ao chegar
+	double mChegou[MAX_AGENTES]; // quando chegou ao destino (<0 = ainda andando)
+	int mSocial[MAX_AGENTES]; // ponto escolhido pela rotina social (aula do Gazziro), -1 nenhum
+	double mundoArcoAte,mundoMusicaAte,mundoTVAte; // até quando o arco, a música e a TV da forense ficam ligados
+	float mundoBits; // estado para o shader (extrasMundo.x): salas ocupadas, portas, tela, scanner... (Mundo.cpp)
+	void mundoRota(int i,float fx,float fy); // planeja a rota do boneco i até (fx, fy) (F)
+	void mundoEscolhe(int i,int ponto,int vaga,const char* texto); // manda o boneco i a um ponto (-1 = assento)
+	void mundoEstado(void); // monta mundoBits
 	/* Copie o relevo: o alvo é a soma de até 4 morros/buracos (gaussianas: x, y, altura cm, largura cm)
 	   sobre a altura da areia no começo; a nota (0-100) compara o alvo com o relevo medido, 2x por segundo */
 	enum {COPIA_MAX=4,NUM_FORMAS=6};
