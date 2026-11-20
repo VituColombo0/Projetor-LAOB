@@ -51,11 +51,14 @@ uniform vec4 extrasEfeito; // Projetor-LAOB: efeito do tema (0 = água normal)
 		cobreA=max(cobreA,smoothstep(0.12,0.35,waterLevel));
 		if(extrasInfo.x>0.0&&extrasMarca>0.5)
 			cobreA*=0.25; // tem um animal marinho aqui (marcado pelo shader dos extras)
+		if(extrasInfo.x>0.0) // sombra macia (> 0) ou clarão (< 0) em volta do bicho da cor da água (19/11/2026)
+			waterColor.rgb=waterColor.rgb*(1.0-max(extrasAguaSombra,0.0))+(1.0-waterColor.rgb)*0.6*max(-extrasAguaSombra,0.0);
 		baseColor=mix(baseColor,waterColor,cobreA);
 """)
     s = rep(s, "uniform vec4 extrasEfeito; // Projetor-LAOB: efeito do tema (0 = água normal)\n", """uniform vec4 extrasEfeito; // Projetor-LAOB: efeito do tema (0 = água normal)
 uniform vec4 extrasInfo;   // .x = tempo dos extras (0 = extras desligados)
 float extrasMarca;         // posta em 1 pelo shader dos extras onde há um animal marinho
+float extrasAguaSombra;    // sombra na água em volta dos bichos (shader dos extras)
 """)
     open(ARQ, "w").write(s)
 

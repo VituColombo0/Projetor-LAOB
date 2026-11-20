@@ -186,7 +186,8 @@ void SurfaceRenderer::setDemDistScale(""")
 			extras->uploadUniforms(el);
 			}
 """)
-    # laboratório (Mundo): sem as linhas de relevo por cima da sala (a luz do relevo continua)
+    # laboratório (Mundo): sem as linhas de relevo por cima da sala (a luz do relevo continua).
+    # Bichos (19/11/2026): as linhas somem sob o corpo e vão sumindo logo em volta (extrasLimpa, do Extras.cpp)
     c = rep(c, """			fragmentMain+="\\
 				/* Modulate the base color by contour line color: */\\n\\
 				addContourLines(gl_FragCoord.xy,baseColor);\\n\\
@@ -194,7 +195,11 @@ void SurfaceRenderer::setDemDistScale(""")
 """, """			if(extras!=0)
 				fragmentMain+="\\
 				if(extrasMundo.w<0.5)\\n\\
+					{\\n\\
+					vec4 exSemCurva=baseColor;\\n\\
 					addContourLines(gl_FragCoord.xy,baseColor);\\n\\
+					baseColor=mix(baseColor,exSemCurva,extrasLimpa);\\n\\
+					}\\n\\
 				\\n";
 			else
 				fragmentMain+="\\

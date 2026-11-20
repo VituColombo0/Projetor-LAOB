@@ -162,6 +162,7 @@ class Extras
 	void chove(float fx,float fy,float segundos); // fx, fy = 0..1 dentro da área iluminada
 	char nomes[MAX_NOMES][MAX_LETRAS+1]; int nNomes,giroNomes;
 	bool presente[MAX_NOMES]; // o Willbert está vendo esse membro no laboratório agora
+	int visual[MAX_NOMES]; // visual próprio do boneco (copiaNomes: 1 Gazziro, 2 Lucas, 3 Mario, 4 Victor; 0 = sorteado pelo nome)
 	int nFotos; // os primeiros nFotos nomes têm rosto no painel de rostos (na mesma ordem)
 	enum {ATLAS_LADO=128};
 	std::vector<unsigned char> atlas; // painel de rostos: MAX_NOMES quadros RGBA lado a lado

@@ -70,6 +70,7 @@ Extras::Extras(void)
 		{
 		nomes[i][0]=0;
 		presente[i]=false;
+		visual[i]=0;
 		}
 	comida.x=comida.y=comida.r=0.0f;
 	comida.ate=-100.0;
@@ -959,7 +960,16 @@ void Extras::copiaNomes(const std::vector<std::string>& lista,int giro,int fotos
 			}
 		nomes[i][k]=0;
 		tipo[i]=3.05f+0.9f*float(soma%97u)/97.0f;
+		/* visual próprio de quem já é do laboratório (19/11/2026, pedido do Victor: chapéu no Gazziro e todos
+		   fáceis de distinguir de longe); membro novo fica com o boneco sorteado pelo nome, como antes */
+		static const char* const CONHECIDOS[4]={"GAZZIRO","LUCAS","MARIO","VICTOR"};
+		visual[i]=0;
+		for(int v=0;v<4;++v)
+			if(std::string(nomes[i])==CONHECIDOS[v])
+				visual[i]=v+1;
 		}
+	for(int i=n;i<MAX_NOMES;++i)
+		visual[i]=0;
 	}
 
 static float difAng(float a) // ângulo em -pi..pi
@@ -2073,8 +2083,17 @@ uniform vec4 extrasComida;  // comida do painel: x, y, raio (cm), fração do te
 uniform vec4 extrasRacao[25]; // [0] caixa que envolve a ração (min x, min y, max x, max y; vazia = nenhuma);
                               // [1..24] bolinhas: x, y (cm), segundos desde que caiu (<0 = vaga),
                               // tamanho*20 (parte inteira) + segundos desde a última beliscada (fração)
-uniform vec4 extrasAg2[32];  // por bicho: estado (0 normal, 1 pousado/sentado, 2 mergulho, 3 indo, 4 caçando), altura do voo (0-1), tamanho, andamento do mergulho (0-1)
+uniform vec4 extrasAg2[32];  // por bicho: estado (0 normal, 1 pousado/sentado, 2 mergulho, 3 indo, 4 caçando), altura do voo (0-1), tamanho, andamento do mergulho (0-1; no laboratório: visual do membro, 0 = sorteado)
 float extrasMarca;          // 1 onde há um animal marinho (o shader da água o deixa à vista)
+float extrasLimpa;          // 0..1: tira as curvas de nível (corpo dos bichos e beirada em volta; patch_surface.py)
+float extrasAguaSombra;     // -1..1: sombra macia (> 0) ou clarão (< 0) na água em volta dos bichos (patch_agua.py)
+float exDifCor(vec3 a,vec3 b)
+	{
+	/* diferença de cor aproximada (0 = igual; ~0,3 já se nota bem): a luminância pesa mais que o matiz,
+	   como no olho (bicho pequeno projetado: o amarelo-claro e o branco quase se confundem) */
+	vec3 d=a-b;
+	return length(vec3(dot(d,vec3(0.3,0.59,0.11))*2.2,(d.r-d.g)*0.9,((d.r+d.g)*0.5-d.b)*0.5));
+	}
 uniform vec4 extrasMundo;   // laboratório (Mundo.cpp): -, largura e altura da caixa, ligado (1)
 uniform vec4 extrasMundo2;  // canto da caixa (x, y) e a hora local (0-24)
 uniform sampler2D extrasRostos; // painel de rostos dos membros (8 quadros lado a lado, com transparência)
@@ -2161,6 +2180,8 @@ const char* Extras::glslFragmentMain=R"GLSL(
 	vec3 ep=extrasPos;
 	float et=extrasInfo.x;
 	extrasMarca=0.0;
+	extrasLimpa=0.0;
+	extrasAguaSombra=0.0;
 	vec4 exAntes=baseColor;     // para a transição suave quando a brincadeira muda
 	float ef=extrasEfeito.x;
 	float ref=extrasEfeito.y;
@@ -2828,6 +2849,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 		if(dot(r,r)>49.0)
 			continue;
 		float marcaAntes=extrasMarca;                                  // para saber o que ESTE bicho pintou (realce no fim)
+		vec3 exFundo=baseColor.rgb;                                    // o chão que ESTE bicho cobre (destaque no fim)
 		extrasMarca=0.0;
 		bool esteira=false;                                            // rastro e respingo: não levam o realce do corpo
 		float c=cos(a.z);
@@ -3252,6 +3274,11 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			   boné ou chapéu, mochila, camisa lisa ou listrada. */
 			float jeito=exHash(vec2(float(i)*1.7,hue*31.0));
 			float porte=(jeito<0.2?1.25:(jeito>0.85?1.85:1.6));                 // criança, adulto alto ou médio
+			float vis=extrasMundo.w>0.5?floor(extrasAg2[i].w+0.5):0.0;          // membro com visual próprio (copiaNomes; 0 = sorteado)
+			if(vis>0.5)
+				porte=1.6;
+			if(extrasMundo.w>0.5)
+				porte*=1.15;                                                   // no laboratório, 15% maiores: dá para ler os detalhes
 			vec2 pl=l/porte;
 			vec2 pls=ls/porte;
 			float passo=extrasAg2[i].x>0.5&&extrasAg2[i].x<1.5?0.0:sin(et*7.0+float(i)*1.3); // parada olhando o pão: pés juntos
@@ -3268,7 +3295,115 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			float sombra=length(pls/vec2(0.75,1.1));
 			bool mochila=fract(jeito*13.0)<0.3&&abs(pl.x+0.55)<0.28&&abs(pl.y)<0.55;
 			bool comprido=fract(jeito*17.0)<0.35&&length((pl-vec2(-0.35,0.0))/vec2(0.5,0.62))<1.0;
-			if(enfeite<0.4&&cabeca<(enfeite<0.25?0.56:0.86))
+			if(vis>0.5)
+				{
+				/* Membros do laboratório com visual próprio (19/11/2026, pedido do Victor: "colocar chapéu no do
+				   Gazziro e deixar eles mais diferenciáveis"): silhueta e cores fixas, tiradas das fotos, para
+				   reconhecer cada um de cima e de longe, sem depender da plaquinha. Contorno escuro em volta
+				   (o piso da sala é cinza).
+				   1 Gazziro: chapéu de feltro marrom de aba larga, com fita preta; camisa verde-água de botão.
+				   2 Lucas: boné grafite com a aba para a frente; camiseta cinza mesclada.
+				   3 Mario: cabelo castanho-claro aloirado, óculos (aro na frente e hastes) e jaleco branco comprido.
+				   4 Victor: cabelo castanho-escuro bagunçado; camisa preta de gola. */
+				bool g1=vis<1.5,g2=vis>1.5&&vis<2.5,g3=vis>2.5&&vis<3.5,g4=vis>3.5;
+				vec3 peleM=g1?vec3(0.86,0.66,0.52):(g2?vec3(0.93,0.76,0.63):(g3?vec3(0.96,0.79,0.69):vec3(0.92,0.75,0.62)));
+				vec3 cabeloM=g3?vec3(0.6,0.4,0.21):vec3(0.17,0.11,0.07);
+				vec3 roupa=g1?vec3(0.58,0.86,0.78):(g2?vec3(0.47,0.49,0.52):(g3?vec3(0.97):vec3(0.1,0.1,0.11)));
+				vec2 hp=pl-vec2(0.08,0.0);                                       // centro da cabeça
+				float angC=atan(hp.y,hp.x);
+				float rCab=g4?0.53+0.08*abs(sin(angC*5.0+0.4)):0.52;            // Victor: cabelo arrepiado
+				float dCab=cabeca-rCab;
+				if(g1)
+					dCab=cabeca-0.92;                                            // aba do chapéu
+				if(g2)
+					dCab=min(cabeca-0.55,max((length((hp-vec2(0.5,0.0))/vec2(0.48,0.42))-1.0)*0.42,0.34-hp.x)); // boné com aba
+				if(g3)
+					dCab=min(dCab,max(abs(hp.x-0.55)-0.08,abs(hp.y)-0.47));      // aro dos óculos, na frente do rosto
+				float casaco=length((pl-vec2(-0.24,0.0))/vec2(0.84,1.04));       // jaleco: desce atrás dos ombros
+				float dTronco=(ombros-1.0)*0.55;
+				if(g3)
+					dTronco=min(dTronco,(casaco-1.0)*0.84);
+				float dBraco=min(bracoE,bracoD)-0.27;
+				float dPe=(min(peE,peD)-1.0)*0.24;
+				float dM=min(min(dCab,dTronco),min(dBraco,dPe));
+				if(g1)
+					sombra=min(sombra,length(pls-vec2(0.08,0.0))/0.92);         // a aba também faz sombra
+				if(g3)
+					sombra=min(sombra,length((pls-vec2(-0.24,0.0))/vec2(0.9,1.1)));
+				vec3 cM=vec3(0.0);
+				if(dCab<0.0)
+					{
+					if(g1)
+						{
+						float copa=length(hp/vec2(0.5,0.42));
+						vec3 feltro=vec3(0.36,0.25,0.16);
+						if(copa<1.0)
+							{
+							cM=feltro*(1.2-0.35*copa)+vec3(0.14,0.1,0.06)*smoothstep(0.4,0.0,distance(hp,vec2(-0.12,0.14)));
+							if(abs(hp.y)<0.05&&abs(hp.x)<0.3)
+								cM*=0.62;                                         // vinco no alto da copa
+							}
+						else if(copa<1.22)
+							cM=vec3(0.06,0.05,0.05);                              // fita
+						else
+							cM=feltro*mix(0.95,0.72,smoothstep(0.6,0.84,cabeca))+vec3(0.1,0.07,0.04)*smoothstep(0.82,0.9,cabeca); // aba, com a beirada virada
+						}
+					else if(g2)
+						{
+						if(cabeca<0.55)
+							{
+							cM=vec3(0.25,0.26,0.29)*(1.18-0.38*cabeca/0.55);
+							if(abs(fract(angC*6.0/6.2832+0.5)-0.5)<0.06)
+								cM*=0.72;                                         // costuras dos gomos
+							if(cabeca<0.08)
+								cM=vec3(0.42,0.43,0.46);                          // botão no alto
+							}
+						else
+							cM=mix(vec3(0.15,0.16,0.18),vec3(0.3,0.31,0.34),step(0.0,hp.x-0.86+0.6*hp.y*hp.y)); // aba (pesponto na beirada)
+						}
+					else if(g3&&hp.x>0.47)
+						cM=abs(hp.y)<0.08||abs(hp.y)>0.38||hp.x>0.6?vec3(0.08,0.07,0.07):vec3(0.72,0.86,0.94); // óculos: aro e lentes
+					else
+						{
+						float franja=g4?0.3+0.07*sin(hp.y*24.0):0.32;
+						vec3 topo=cabeloM*(0.8+0.4*smoothstep(0.5,0.0,cabeca))+vec3(0.22)*smoothstep(0.2,0.0,distance(hp,vec2(-0.12,0.16)));
+						if(g4)
+							topo*=0.85+0.3*step(0.5,fract(angC*2.4+cabeca*7.0));           // mechas
+						if(g3)
+							topo*=0.88+0.18*smoothstep(0.2,0.8,abs(fract(hp.y*7.0+0.3*hp.x)*2.0-1.0)); // penteado para trás
+						cM=hp.x>franja&&cabeca<0.52?peleM*(1.05-0.25*smoothstep(0.3,0.52,cabeca)):topo;
+						cM*=mix(1.0,0.75,smoothstep(0.46,0.52,cabeca));
+						if(g3&&abs(abs(hp.y)-0.45)<0.045&&hp.x>-0.12)
+							cM=vec3(0.08,0.07,0.07);                              // hastes dos óculos
+						}
+					}
+				else if(dTronco<0.0)
+					{
+					float ro=g3?min(ombros,casaco):ombros;
+					cM=roupa*mix(1.12,0.78,smoothstep(0.3,1.0,ro));
+					if(g2)
+						cM*=0.9+0.2*exHash(floor(pl*16.0));                   // mesclada
+					if(g4)
+						cM+=vec3(0.1)*smoothstep(0.75,1.0,ombros);            // brilho nos ombros (preto não some)
+					if(g1&&pl.x>0.35&&abs(pl.y)<0.035)
+						cM*=0.75;                                             // carreira de botões
+					if(g3&&pl.x<-0.45&&abs(pl.y)<0.03)
+						cM=vec3(0.7,0.72,0.75);                               // costura nas costas do jaleco
+					if(cabeca<0.66&&hp.x>-0.15)
+						cM=g3?(hp.x>0.3?vec3(0.62,0.76,0.93):roupa*0.84):(g4?vec3(0.24):roupa*0.82); // gola (no jaleco, a camisa azul aparece na frente)
+					}
+				else if(dBraco<0.0)
+					cM=min(bracoE,bracoD)<0.15?peleM:roupa*(g4?1.6:0.85);          // manga e mão
+				else if(dPe<0.0)
+					cM=g1||g3?vec3(0.33,0.2,0.11):vec3(0.1,0.1,0.11);             // sapatos
+				if(dM<0.0)
+					baseColor=vec4(cM,1.0);
+				else if(dM<0.075)
+					baseColor=vec4(0.06,0.06,0.08,1.0);                           // contorno
+				else if(sombra<1.0)
+					baseColor.rgb*=0.6;
+				}
+			else if(enfeite<0.4&&cabeca<(enfeite<0.25?0.56:0.86))
 				{
 				vec3 corChapeu=enfeite<0.25?vec3(0.55)+0.45*cos(6.2832*(vec3(jeito*5.0)+vec3(0.0,0.33,0.67))):vec3(0.86,0.76,0.5);
 				baseColor=vec4(corChapeu*(cabeca<0.4?1.0:0.82),1.0);          // boné (com aba) ou chapéu de palha
@@ -3385,6 +3520,98 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					poeira=max(poeira,smoothstep(rp,rp*0.3,distance(l,pp))*(1.0-ph));
 					}
 				baseColor.rgb=mix(baseColor.rgb,vec3(0.9,0.85,0.74),poeira*0.5);
+				}
+			}
+		if(extrasMundo.w<0.5)
+			{
+			/* Destaque (19/11/2026, pedido do Victor: "deixar os seres vivos mais diferentes do ambiente, sem
+			   deixar muito discrepante"). Sem mexer no desenho de cada espécie:
+			   - uma silhueta aproximada (caixa arredondada, em "cm do bicho") diz onde fica a beirada;
+			   - sob o corpo e logo em volta somem as curvas de nível (extrasLimpa, no patch_surface.py);
+			   - se o corpo tem a luminância do chão (ou da água) embaixo, ele escurece por igual no chão claro
+			     ou médio e clareia no chão escuro (o matiz e o desenho continuam);
+			   - em volta, sombra de contato macia (no chão escuro, um clarão leve); na água a sombra vai para
+			     o SurfaceAddWaterColor (extrasAguaSombra), porque a água cobre o chão. Rastros, respingos e as
+			     sombras de cada bicho ficam como estão. */
+			vec2 sc=vec2(0.0);                                             // centro, meia-caixa (cm do bicho)
+			vec2 sm=vec2(1.7,0.55);
+			vec3 cRep=cor;                                                 // cor típica do corpo
+			bool voando=false;
+			if(a.w<2.0)       { sc=vec2(-0.6,0.0); sm=vec2(2.9,1.05); }                                    // peixe
+			else if(a.w<3.0)  { sm=vec2(2.45,1.3); }                                                       // carrinho
+			else if(a.w<4.0)  { sm=vec2(1.0,1.75); cRep=mix(cor,vec3(0.3,0.22,0.15),0.4); }                 // pessoa (cabelo no meio)
+			else if(a.w<5.0)  { sc=vec2(-0.9,0.0); sm=vec2(3.5,1.15); cRep=vec3(0.33,0.4,0.47); }           // tubarão
+			else if(a.w<6.0)  { sc=vec2(0.3,0.0); sm=vec2(2.7,2.0); cRep=vec3(0.3,0.38,0.2); }              // tartaruga
+			else if(a.w<7.0)  { sc=vec2(-0.8,0.0); sm=vec2(2.2,1.35); cRep=vec3(0.85,0.6,0.9); }            // água-viva
+			else if(a.w<8.0)  { sm=vec2(1.7); cRep=vec3(0.75,0.33,0.45); }                                  // polvo (cabeça e começo dos braços)
+			else if(a.w<9.0)  { sm=vec2(2.0,2.3); cRep=vec3(0.4,0.38,0.38); }                               // arraia
+			else if(a.w<10.0)
+				{
+				float escP=max(0.3,extrasAg2[i].z);
+				sc=vec2(0.3,0.0)*escP; sm=vec2(1.7,0.85)*escP;
+				cRep=escP<0.9?vec3(1.0,0.86,0.3):(hue<0.45?vec3(0.95,0.95,0.9):vec3(0.5,0.45,0.35));       // patinho, pato branco, marreco
+				}
+			else if(a.w<11.0) { sc=vec2(0.2,0.0); sm=vec2(1.85,0.8); cRep=vec3(0.7,0.55,0.4); }             // barquinho
+			else if(a.w<12.0)
+				{
+				voando=!(extrasAg2[i].x>0.5&&extrasAg2[i].x<1.5);                                         // voando: lá no alto, sem sombra de contato
+				sm=voando?vec2(1.0,1.6):vec2(1.6,0.55);
+				cRep=hue<0.55?vec3(0.92):vec3(0.12,0.15,0.28);                                               // gaivota ou andorinha
+				}
+			else
+				{
+				float tomD=fract(hue*5.3);
+				sm=vec2(1.75,0.62);
+				cRep=tomD<0.35?vec3(0.78,0.52,0.25):(tomD<0.6?vec3(0.15,0.12,0.1):(tomD<0.8?vec3(0.95,0.93,0.88):vec3(0.55,0.55,0.57)));  // cachorro
+				}
+			float lRep=dot(cRep,vec3(0.3,0.59,0.11));
+			float dS=exCaixa(l-sc,sm,min(sm.x,sm.y));                      // < 0 dentro da silhueta
+			float dH=exCaixa(mix(l,ls,0.5)-sc,sm,min(sm.x,sm.y));          // a mesma, meio caminho da sombra (luz do canto)
+			vec3 qd=baseColor.rgb/max(exFundo,vec3(0.01));
+			bool sombraB=max(max(qd.r,qd.g),qd.b)-min(min(qd.r,qd.g),qd.b)<0.03&&qd.g<0.75;     // só escureceu o chão por igual
+			bool mudou=dot(abs(baseColor.rgb-exFundo),vec3(1.0))>0.004;
+			bool corpoB=(a.w<2.0||a.w>=4.0)?(extrasMarca>0.5&&!esteira&&!sombraB):(mudou&&!sombraB&&dS<0.05);
+			/* o que se vê embaixo: o chão ou, dentro do lago, a água (mesmas cores do patch_agua.py com o lago ligado) */
+			bool molhado=extrasInfo.w>-999.0&&ep.z<extrasInfo.w-0.05;
+			vec3 chao=exFundo;
+			if(molhado)
+				{
+				vec3 raso=vec3(0.14,0.56,0.93);
+				vec3 prof=vec3(0.02,0.11,0.42);
+				if(ef>1.5&&ef<2.5)      { raso=vec3(0.20,0.65,0.96); prof=vec3(0.05,0.28,0.65); }
+				else if(ef>2.5&&ef<3.5) { raso=vec3(0.18,0.72,0.82); prof=vec3(0.05,0.35,0.48); }
+				else if(ef>3.5&&ef<4.5) { raso=vec3(0.16,0.78,0.90); prof=vec3(0.02,0.40,0.52); }
+				else if(ef>5.5&&ef<6.5) { raso=vec3(0.6); prof=vec3(0.33); }
+				chao=mix(raso,prof,clamp((extrasInfo.w-ep.z)/2.0,0.0,1.0))+vec3(0.03);
+				}
+			float lf=dot(chao,vec3(0.3,0.59,0.11));
+			float lado=smoothstep(0.16,0.3,lf)*2.0-1.0;                    // +1 chão claro ou médio (escurece), -1 chão escuro (clareia)
+			float falta=1.0-smoothstep(0.15,0.42,exDifCor(cRep,chao));     // 1 = corpo da cor do chão
+			float v=falta*0.5;                                             // quanto o corpo escurece (ou clareia)
+			float lB=lRep*(1.0-v*max(lado,0.0))+(1.0-lRep)*v*max(-lado,0.0);
+			if(corpoB)
+				{
+				/* metade pela cor típica (o bicho todo muda junto) e metade pela cor deste pixel (o chapéu da
+				   cor da areia escurece mais que a camisa colorida) */
+				vec3 cb=baseColor.rgb;
+				float vP=0.5*mix(falta,1.0-smoothstep(0.15,0.42,exDifCor(cb,chao)),0.5);
+				baseColor.rgb=cb*(1.0-vP*max(lado,0.0))+(1.0-cb)*vP*max(-lado,0.0);
+				extrasLimpa=1.0;
+				}
+			else if(!mudou&&!voando)
+				{
+				float hS=1.0-smoothstep(-0.5,1.1,dH);
+				hS*=hS;                                                    // macia: some a ~1 cm da beirada
+				/* no chão claro a sombra só ajuda o corpo mais claro que o chão (o contorno escuro do bicho já se
+				   vê, e o corpo que acabou de escurecer não pode afundar junto na sombra); no chão escuro o
+				   contorno some, então o clarão ajuda todos, mais ainda o corpo escuro */
+				float ajuda=mix(0.5+0.5*smoothstep(-0.1,0.1,lf-lB),smoothstep(-0.1,0.1,lB-lf),smoothstep(-0.3,0.3,lado));
+				float escuro=(0.08+0.32*ajuda)*hS;
+				float agua=escuro*lado*falta;                               // na água, só quando o bicho tem a cor da água
+				if(molhado&&abs(agua)>abs(extrasAguaSombra))
+					extrasAguaSombra=agua;                                 // > 0 escurece a água, < 0 clareia
+				baseColor.rgb=baseColor.rgb*(1.0-escuro*max(lado,0.0))+(1.0-baseColor.rgb)*0.6*escuro*max(-lado,0.0);
+				extrasLimpa=max(extrasLimpa,0.8*(1.0-smoothstep(0.0,0.7,dS)));
 				}
 			}
 		if(extrasMarca>0.5&&!esteira)
@@ -3522,7 +3749,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 		if(mostra>0.5&&float(i)<extrasNomesCfg.z-0.5)
 			{
 			float R=2.3; // raio do rosto no balão, em cm
-			vec2 rr=ep.xy-(a.xy+cima*6.4);
+			vec2 rr=ep.xy-(a.xy+cima*6.8);
 			vec2 tr=vec2(dot(rr,dir),dot(rr,cima));
 			float dr=length(tr);
 			float hueM=fract(a.w);
@@ -3539,7 +3766,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					}
 				}
 			}
-		vec2 rel=ep.xy-(a.xy+cima*2.7);
+		vec2 rel=ep.xy-(a.xy+cima*3.1); // (19/11/2026: 2,7 -> 3,1; os bonecos do laboratório ficaram 15% maiores)
 		vec2 t=vec2(dot(rel,dir),dot(rel,cima));
 		float px=0.2;
 		float cw=4.0*px;
@@ -3675,6 +3902,8 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 		a2[i*4+1]=voo[i];
 		a2[i*4+2]=escala[i];
 		a2[i*4+3]=acao[i]==2?std::min(1.0f,acaoT[i]/1.8f):0.0f;
+		if(modo==MUNDO&&i<nNomes)
+			a2[i*4+3]=GLfloat(visual[i]); // no laboratório ninguém mergulha: o .w leva o visual do membro
 		}
 	glUniform4fvARB(locations[16],MAX_AGENTES,a2);
 	/* comida: só enquanto não acabou (o desenho some sozinho com a fração que falta) */
