@@ -598,6 +598,36 @@ class MundoLaob(ComMembros):
         self.assertFalse(self.areia.membros_atualiza())
         self.assertEqual(len(self.comandos()), n)                       # nenhum "estado" a mais
 
+    def test_vista_area_e_seguir(self):
+        """20/11/2026: o painel escolhe a área do laboratório que aparece ou segue um membro (mundoVista), e
+        lê do log qual vista está valendo; a lista de presentes mandada de novo não muda a vista."""
+        self.fotos_de_membros()
+        with self.assertRaisesRegex(self.areia.Erro, "não está ligado"):
+            self.areia.mundo_vista("forense")
+        self.status([])
+        self.areia.mundo()
+        log = os.path.join(self.D, "sandbox.log")
+        escreve(log, "Animais: mundo (2)\nMundo: laboratório montado\n")
+        self.assertEqual(self.areia.mundo_vista_atual(), {"area": "tudo"})
+        self.assertEqual(self.areia.mundo_vista("Forense"), ("area", "forense"))
+        self.assertEqual(self.cmds()[-1], "cmd mundoVista forense")
+        self.assertEqual(self.areia.mundo_vista("miniauditório"), ("area", "mini"))
+        self.assertEqual(self.areia.mundo_vista("sala principal"), ("area", "principal"))
+        self.assertEqual(self.areia.mundo_vista("victor"), ("segue", "VICTOR"))
+        self.assertEqual(self.cmds()[-1], "cmd mundoVista VICTOR")
+        with self.assertRaisesRegex(self.areia.Erro, "área"):
+            self.areia.mundo_vista("Fulano")
+        escreve(log, "Animais: mundo (2)\nMundo: vista forense\nMundo: GAZZIRO está no miniauditório\n")
+        self.assertEqual(self.areia.mundo_vista_atual(), {"area": "forense"})
+        escreve(log, "Animais: mundo (2)\nMundo: vista seguindo VICTOR\nAnimais: mundo (2)\n")   # presentes de novo
+        self.assertEqual(self.areia.mundo_vista_atual(), {"segue": "Victor", "fora": False})
+        escreve(log, "Animais: mundo (2)\nMundo: vista seguindo VICTOR (fora do laboratório)\n")
+        self.assertEqual(self.areia.mundo_vista_atual(), {"segue": "Victor", "fora": True})
+        escreve(log, "Animais: mundo (2)\nMundo: vista mini\nTesouro: escondendo a 4 cm\nAnimais: mundo (2)\n")
+        self.assertEqual(self.areia.mundo_vista_atual(), {"area": "tudo"})   # fechou e abriu: volta inteiro
+        escreve(log, "Animais: mundo (2)\nMundo: vista tudo (FULANO não é sala nem membro)\n")
+        self.assertEqual(self.areia.mundo_vista_atual(), {"area": "tudo"})
+
 
 class MarEChuva(Ambiente):
     def cmds(self):

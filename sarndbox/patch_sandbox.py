@@ -9,6 +9,7 @@
    fossilFim                                               encerra a escavação
    animais peixes|carros|pessoas|todos|nada [quantidade]   peixes no lago, carrinhos e pessoas andando
    mundo <giro> <n com rosto> <painel|-> <0> [NOME[+]...] / mundoRosto NOME   o laboratório (Mundo.cpp)
+   mundoVista tudo|principal|forense|mini|NOME             área do laboratório que aparece; NOME = seguir o membro
    copia [montanha|duas|vulcao|cratera|ilha|serra] [1-3] / copiaNova / copiaFim   copie o relevo
    mar peixe=N tubarao=N ...                                 vida na areia escolhida
    chuva <x 0-1> <y 0-1> [s] / secar                         nuvem de chuva num ponto; tira toda a água
@@ -469,6 +470,12 @@ void Sandbox::toggleDEM(DEM* dem)
 					{
 					if(extras.mundoRosto(tokens[1].c_str()))
 						std::cout<<"Mundo: mostrando o rosto de "<<tokens[1]<<std::endl;
+					}
+				else if(isToken(tokens[0],"mundoVista")&&tokens.size()>=2)
+					{
+					/* mundoVista tudo|principal|forense|mini|NOME (20/11/2026): a câmera do laboratório
+					   (Mundo.cpp); a linha "Mundo: vista ..." vai para o log pelas mensagens dos extras */
+					extras.mundoVista(tokens[1].c_str());
 					}
 				else if(isToken(tokens[0],"copia"))
 					{

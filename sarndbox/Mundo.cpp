@@ -14,12 +14,19 @@ MundoPlanta.h, a MESMA que o shader desenha (Extras.cpp):
 
 Cada membro tem assento e rotina próprios (pelo visual: 1 Gazziro,
 2 Lucas, 3 Mario, 4 Victor; membro novo usa os pontos genéricos):
-- Gazziro: posto na mesa de vidro do miniauditório; apresenta lá, dá aula
-  no quadro e trabalha na forense (o pôster de lá é dele). Quando ele
-  apresenta ou dá aula, os outros às vezes vão assistir;
-- Victor: mesa dele na ilha 1; caixa de areia, câmeras, scanner;
-- Lucas: lado B do cluster; switch, carteado, TV e música da forense;
-- Mario (suposição): bancada H do osciloscópio; scanner, tabuleiro, RCP.
+- Gazziro: posto na mesa de vidro do miniauditório e quase sempre lá
+  (apresenta, mesa de vidro); sai raramente (aula no quadro, forense,
+  café). Quando ele apresenta ou dá aula, os outros às vezes vão assistir;
+- Victor: ilha 1, lado do quadro, 3 monitores; caixa de areia, câmera do
+  Willbert, câmeras do trilho, scanner;
+- Mario: ilha 1, de frente para o Victor (monitores de costas uns para os
+  outros); osciloscópio, scanner, tabuleiro, RCP;
+- Lucas: mesinha colada na parede F, atrás da mesa de carteado; cluster,
+  roteador, switch, carteado, TV e música da forense.
+(Lugares marcados pelo Victor numa foto do projetor, 20/11/2026.)
+Parado, cada um mexe as mãos conforme o que faz (mAtiv: digitando,
+apontando o slide, bebendo, mexendo no aparelho) e às vezes dois que
+estão perto conversam (balãozinho "..." no shader).
 Quem o Willbert está vendo no laboratório de verdade fica dentro o tempo
 todo; quem não está entra pelo corredor de tempos em tempos e vai embora.
 Cada passeio segue uma rota (mp::rota): sai pela porta da sala, passa
@@ -46,19 +53,20 @@ const float PI=3.14159265f;
 #define MP_CPP_ASS(n,a,b,g) {float(a),float(b),float(g)},
 const float ASSENTO[8][3]={MP_ASSENTOS(MP_CPP_ASS)};
 #undef MP_CPP_ASS
-const char* const TXT_ASSENTO[8]={"está no miniauditório","está no cluster","está na bancada de eletrônica","está na mesa dele",
+const char* const TXT_ASSENTO[8]={"está no miniauditório","está na mesa dele","está na mesa dele","está na mesa dele",
                                    "está na bancada","está na bancada","está na bancada","está na bancada"};
 
 /* Rotina de cada visual (0 = membro novo, 1 Gazziro, 2 Lucas, 3 Mario, 4 Victor): peso do assento e de cada
-   ponto, em %. Victor: sofá e plateia só com a tela do miniauditório ligada (alguém lá). */
-const float PESO_ASSENTO[5]={55.0f,35.0f,45.0f,42.0f,42.0f};
+   ponto, em %. Victor: sofá e plateia só com a tela do miniauditório ligada (alguém lá).
+   20/11/2026: o Gazziro fica no miniauditório (assento, apresentar, mesa de vidro: ~88% das escolhas) */
+const float PESO_ASSENTO[5]={55.0f,50.0f,46.0f,44.0f,44.0f};
 const float PESO[5][N_PONTOS]={
-	/*         areia quad clus swit cam  scan arco gel  cart banc fund urna tab  pap  post tv   mus  pc   apr  sofa plat vidr rcp  wb   aula */
-	/* novo */ {7.5f,0,   7.5f,0,   0,   0,   0,   7.5f,7.5f,7.5f,7.5f,0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0},
-	/* Gaz. */ {4,   12,  0,   0,   0,   0,   0,   3,   6,   2,   0,   7,   0,   10,  6,   0,   0,   0,   15,  0,   0,   0,   0,   0,   0},
-	/* Lucas*/ {0,   0,   12,  10,  5,   0,   0,   5,   7,   0,   0,   0,   0,   0,   0,   6,   6,   0,   0,   0,   4,   0,   0,   0,   0},
-	/* Mario*/ {4,   0,   0,   0,   0,   13,  7,   5,   0,   0,   7,   0,   10,  0,   0,   0,   0,   0,   0,   0,   4,   0,   8,   0,   0},
-	/* Vict.*/ {14,  0,   6,   0,   7,   6,   3,   3,   0,   0,   0,   0,   4,   0,   0,   0,   0,   5,   0,   1.5f,1.5f,0,  0,   7,   0}};
+	/*         areia quad clus swit cam  scan arco gel  cart banc fund urna tab  pap  post tv   mus  pc   apr  sofa plat vidr rcp  wb   aula osc  rot  est  bebe */
+	/* novo */ {7.5f,0,   7.5f,0,   0,   0,   0,   7.5f,7.5f,7.5f,7.5f,0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   3},
+	/* Gaz. */ {1,   2.5f,0,   0,   0,   0,   0,   1.5f,0,   0,   0,   1,   0,   2,   1,   0,   0,   0,   26,  0,   0,   12,  0,   0,   0,   0,   0,   0,   1},
+	/* Lucas*/ {0,   0,   8,   6,   3,   0,   0,   5,   6,   0,   0,   0,   0,   0,   0,   4,   5,   0,   0,   0,   3,   0,   0,   0,   0,   0,   7,   8,   2},
+	/* Mario*/ {3,   0,   0,   0,   0,   10,  4,   4,   0,   4,   5,   0,   7,   0,   0,   0,   0,   0,   0,   0,   3,   0,   5,   0,   0,   10,  0,   0,   2},
+	/* Vict.*/ {12,  0,   4,   0,   6,   5,   2,   3,   0,   0,   0,   0,   3,   0,   0,   0,   0,   4,   0,   1.5f,1.5f,0,  0,   8,   0,   0,   0,   0,   2}};
 
 /* Portas (centro do vão, F) e a chegada pelo corredor */
 const float ENTRADA_X=0.5f*float(MP_PORTA_ENT_0+MP_PORTA_ENT_1);
@@ -123,6 +131,9 @@ void Extras::mundo(const std::vector<std::string>& lista,int giro,int fotos)
 		mDest[i]=-1;
 		mSocial[i]=-1;
 		mChegou[i]=-1.0;
+		mAtiv[i]=0.0f;
+		mConversaAte[i]=-100.0;
+		mConversaCom[i]=-1;
 		}
 	for(int i=0;i<MAX_NOMES;++i)
 		rostoAte[i]=0.0;
@@ -146,6 +157,7 @@ void Extras::mundoRota(int i,float fx,float fy)
 		nRota[i]=1;
 		}
 	kRota[i]=0;
+	mConversaAte[i]=-100.0; // (20/11/2026, revisão) saiu andando (chamado para a aula, por ex.): a conversa acabou
 	wpX[i]=bmin[0]+fx*w;
 	wpY[i]=bmin[1]+fy*h;
 	mChegou[i]=-1.0;
@@ -285,6 +297,8 @@ void Extras::mundoPasso(float dt)
 			vel[i]=vb[i];
 			mSocial[i]=-1;
 			mAte[i]=float(tempo)+40.0f+40.0f*aleatorio(); // a visita de quem não está presente dura isso
+			if(vis==1)
+				mAte[i]+=80.0f; // (20/11/2026) o Gazziro fica mais: o miniauditório é o lugar dele
 			if(i<nNomes)
 				{
 				rostoAte[i]=tempo+4.0; // o rosto aparece um instante: dá para ver quem entrou
@@ -360,7 +374,7 @@ void Extras::mundoPasso(float dt)
 				{
 				mEstado[i]=1;
 				escondido[i]=true;
-				mAte[i]=float(tempo)+35.0f+70.0f*aleatorio();
+				mAte[i]=float(tempo)+(vis==1?20.0f:35.0f)+70.0f*aleatorio();
 				if(i<nNomes)
 					anuncia(std::string("Mundo: ")+nomes[i]+" saiu do laboratório");
 				continue;
@@ -379,6 +393,7 @@ void Extras::mundoPasso(float dt)
 				if(kRota[i]>=nRota[i])
 					{
 					mChegou[i]=tempo;
+					mundoConversa(i); // (20/11/2026) às vezes puxa conversa com quem está perto
 					/* chegou: o arco "acende", a música e a TV ficam ligadas um tempo; o Gazziro chama a plateia */
 					int p=mDest[i];
 					if(p==P_ARCO)
@@ -432,12 +447,16 @@ void Extras::mundoEstado(void)
 	   4 apresentando; 5, 6, 7 portas de entrada, da forense e do miniauditório abertas (alguém a menos de 4 cm
 	   da planta); 8 scanner em uso; 9 arco (há menos de 2 s); 10 música (60 s); 11 TV da forense (90 s, ou forense
 	   ocupada); 12 aula no quadro; 13-20 assentos ocupados (A3 Victor, A1 Lucas, A2 Mario, A0 Gazziro, A4-A7);
-	   21 algum membro presente de verdade (o cone da câmera do Willbert fica mais forte); 22 alguém nas câmeras */
+	   21 algum membro presente de verdade (o cone da câmera do Willbert fica mais forte); 22 alguém nas câmeras.
+	   20/11/2026, mundoBits2 (extrasMundo.w = 1 + 2*mundoBits2): 0 alguém no osciloscópio; 1 alguém mexendo na
+	   caixa de areia (o relevo muda); 2 alguém no cluster, no roteador, no switch ou na estação; 3 geladeira aberta.
+	   E o que cada um faz com as mãos (mAtiv). */
 	const float w=bmax[0]-bmin[0],h=bmax[1]-bmin[1],asp=h/w;
-	unsigned int b=0u;
+	unsigned int b=0u,b2=0u;
 	static const int BIT_ASSENTO[8]={16,14,15,13,17,18,19,20};
 	for(int i=0;i<quantos;++i)
 		{
+		mAtiv[i]=tipo[i]<0.5f?0.0f:mundoAtividade(i);
 		if(tipo[i]<0.5f||mEstado[i]==1||escondido[i])
 			continue;
 		float fx=(ax[i]-bmin[0])/w,fy=(ay[i]-bmin[1])/h;
@@ -461,6 +480,10 @@ void Extras::mundoEstado(void)
 			if(p==P_SCANNER) b|=1u<<8;
 			if(p==P_QUADRO) b|=1u<<12;
 			if(p==P_CAMERAS||p==P_WILLBERT) b|=1u<<22;
+			if(p==P_OSCILO) b2|=1u;
+			if(p==P_AREIA) b2|=2u;
+			if(p==P_CLUSTER||p==P_ROTEADOR||p==P_SWITCH||p==P_ESTACAO) b2|=4u;
+			if(p==P_GELADEIRA) b2|=8u;
 			}
 		for(int k=0;k<8;++k)
 			{
@@ -476,6 +499,75 @@ void Extras::mundoEstado(void)
 		if(presente[i])
 			b|=1u<<21;
 	mundoBits=float(b);
+	mundoBits2=float(b2);
+	}
+
+float Extras::mundoAtividade(int i) const
+	{
+	/* 20/11/2026 (pedido do Victor: "fazer eles mexerem em outras coisas"): o que o boneco parado faz com as
+	   mãos, para o shader (extrasAg2.x): 0 andando, 1 parado, 2 trabalhando (digita), 3 apontando (slide,
+	   quadro), 4 bebendo (café, água), 5 falando (balão "..."), 6 mexendo num aparelho */
+	if(mEstado[i]!=0||kRota[i]<nRota[i]||mChegou[i]<0.0)
+		return 0.0f;
+	const int com=mConversaCom[i];
+	if(tempo<mConversaAte[i]&&com>=0&&com<quantos&&mConversaCom[com]==i&&tempo<mConversaAte[com]) // (revisão: os dois ainda na conversa)
+		{
+		/* conversa em dupla: um fala de cada vez, trocando a cada 2,5 s */
+		int vez=int(std::floor(tempo/2.5))+(i<mConversaCom[i]?0:1);
+		if(vez%2==0)
+			return 5.0f;
+		}
+	switch(mDest[i])
+		{
+		case -1: // o próprio assento: trabalhando no computador (o Gazziro, na mesa de vidro)
+		case P_BANCADA: case P_FUNDO: case P_PCABERTO: case P_PAPEIS: case P_ESTACAO: case P_URNA: case P_SWITCH:
+			return 2.0f;
+		case P_AREIA: case P_OSCILO: case P_SCANNER: case P_CAMERAS: case P_WILLBERT: case P_ROTEADOR: case P_CLUSTER:
+		case P_TABULEIRO: case P_RCP: case P_MUSICA: case P_TV: case P_VIDRO:
+			return 6.0f;
+		case P_APRESENTA: case P_QUADRO:
+			return 3.0f;
+		case P_GELADEIRA: case P_BEBEDOURO:
+			return 4.0f;
+		default:
+			return 1.0f;
+		}
+	}
+
+void Extras::mundoConversa(int i)
+	{
+	/* 20/11/2026: chegou e há alguém parado perto (até 12 cm da planta; Victor e Mario, de frente um para o
+	   outro na ilha 1, ficam a 11 cm): às vezes os dois conversam um pouco. Quem dá aula não para. */
+	if(i>=nNomes||mEstado[i]!=0||tempo<mConversaAte[i]||mDest[i]==P_APRESENTA||mDest[i]==P_QUADRO||aleatorio()>0.4f)
+		return;
+	const float w=bmax[0]-bmin[0];
+	int com=-1;
+	float dm=144.0f;
+	for(int j=0;j<nNomes&&j<quantos;++j)
+		{
+		if(j==i||tipo[j]<0.5f||mEstado[j]!=0||escondido[j]||kRota[j]<nRota[j]||mChegou[j]<0.0||tempo<mConversaAte[j]
+		   ||mDest[j]==P_APRESENTA||mDest[j]==P_QUADRO)
+			continue;
+		float dx=(ax[j]-ax[i])/w*100.0f,dy=(ay[j]-ay[i])/w*100.0f; // cm da planta nos dois eixos
+		if(dx*dx+dy*dy<dm)
+			{
+			dm=dx*dx+dy*dy;
+			com=j;
+			}
+		}
+	if(com<0)
+		return;
+	const double dura=7.0+5.0*aleatorio();
+	mConversaAte[i]=mConversaAte[com]=tempo+dura;
+	mConversaCom[i]=com;
+	mConversaCom[com]=i;
+	mTroca[i]=std::max(mTroca[i],float(tempo+dura)+1.0f); // ninguém sai no meio da conversa
+	mTroca[com]=std::max(mTroca[com],float(tempo+dura)+1.0f);
+	std::string a(nomes[i]),b(nomes[com]);
+	for(size_t c=1;c<a.size();++c) a[c]=char(a[c]-'A'+'a');
+	for(size_t c=1;c<b.size();++c) b[c]=char(b[c]-'A'+'a');
+	anuncia(std::string("Mundo: ")+nomes[i]+" está conversando com "+b);
+	anuncia(std::string("Mundo: ")+nomes[com]+" está conversando com "+a);
 	}
 
 bool Extras::mundoRosto(const char* nome,float segundos)
@@ -491,4 +583,176 @@ bool Extras::mundoRosto(const char* nome,float segundos)
 			return true;
 			}
 	return false;
+	}
+
+/* ------------------------------------------------------------------ vista
+   20/11/2026, pedido do Victor: "pelo site trocar qual área eu quero ver, seguir os personagens".
+   Uma câmera sobre a planta: centro em F e zoom (1 = o laboratório inteiro). Cada sala aparece
+   inteira na área iluminada, sem deformar (o zoom é o mesmo nos dois eixos); seguindo um membro, o
+   centro vai no boneco com zoom 2. A câmera nunca mostra o que fica fora da planta, e a troca
+   desliza em 0,6 s. O shader (Extras.cpp, extrasVista) passa tudo do laboratório por ela. */
+namespace {
+const float VISTA_SALA[4][4]={                                            // Fx0, Fx1, Fy0, Fy1 de cada vista
+	{0.0f,1.0f,0.0f,1.0f},                                                // tudo
+	{float(MP_PAREDE_F_X0),1.0f,float(MP_CORREDOR_Y),1.0f},               // sala principal, com as paredes
+	{0.0f,float(MP_PAREDE_F_X1),float(MP_CORREDOR_Y),float(MP_DIVISORIA_Y1)}, // forense
+	{0.0f,float(MP_PAREDE_F_X1),float(MP_DIVISORIA_Y0),1.0f}};            // miniauditório
+const char* const NOME_VISTA[4]={"tudo","principal","forense","mini"};
+const float VISTA_ZOOM_SEGUE=2.0f,VISTA_TROCA=0.6f;
+}
+
+bool Extras::mundoVista(const char* qual)
+	{
+	/* mundoVista tudo|principal|forense|mini|NOME: a câmera do laboratório (painel, aba LAOB) */
+	if(modo!=MUNDO)
+		{
+		anuncia("Mundo: sem vista (o laboratório não está aberto)");
+		return false;
+		}
+	std::string q,nome;
+	for(const char* c=qual;*c!=0&&q.size()<32;++c)
+		{
+		char ch=*c;
+		q.push_back(ch>='A'&&ch<='Z'?char(ch-'A'+'a'):ch);
+		if(ch>='a'&&ch<='z')
+			ch=char(ch-'a'+'A');
+		if(ch>='A'&&ch<='Z'&&nome.size()<size_t(MAX_LETRAS))
+			nome.push_back(ch);
+		}
+	int novo=-1;
+	if(q=="tudo"||q=="todo"||q=="laboratorio")
+		novo=VISTA_TUDO;
+	else if(q=="principal"||q=="sala")
+		novo=VISTA_PRINCIPAL;
+	else if(q=="forense")
+		novo=VISTA_FORENSE;
+	else if(q=="mini"||q=="miniauditorio"||q=="auditorio")
+		novo=VISTA_MINI;
+	int quem=-1;
+	bool desconhecido=false;
+	if(novo<0)
+		{
+		for(int i=0;i<nNomes;++i)
+			if(nome==nomes[i])
+				quem=i;
+		if(quem<0)
+			{
+			/* não é sala nem membro: volta ao laboratório inteiro */
+			nome=q;
+			novo=VISTA_TUDO;
+			desconhecido=true;
+			}
+		else
+			novo=VISTA_SEGUE;
+		}
+	/* a troca parte de onde a câmera está agora */
+	vistaDe[0]=vistaC[0];
+	vistaDe[1]=vistaC[1];
+	vistaDe[2]=vistaZ;
+	vistaDesde=tempo;
+	vistaModo=novo;
+	vistaSegOk=false;
+	if(novo==VISTA_SEGUE)
+		{
+		vistaNome=nomes[quem];
+		vistaFora=quem>=quantos||tipo[quem]<0.5f||escondido[quem]||mEstado[quem]==1||!mundoPronto;
+		if(mEstado[quem]==1)
+			mAte[quem]=float(tempo); // como no rosto: quem está fora entra para aparecer
+		anuncia("Mundo: vista seguindo "+vistaNome);
+		return true;
+		}
+	vistaNome.clear();
+	if(desconhecido)
+		{
+		anuncia("Mundo: vista tudo ("+nome+" não é sala nem membro)");
+		return false;
+		}
+	anuncia(std::string("Mundo: vista ")+NOME_VISTA[novo]);
+	return true;
+	}
+
+void Extras::mundoVistaPasso(float dt)
+	{
+	float alvo[3]={0.5f,0.5f,1.0f};
+	if(vistaModo>=VISTA_PRINCIPAL&&vistaModo<=VISTA_MINI)
+		{
+		const float* r=VISTA_SALA[vistaModo];
+		alvo[0]=0.5f*(r[0]+r[1]);
+		alvo[1]=0.5f*(r[2]+r[3]);
+		alvo[2]=std::min(1.0f/(r[1]-r[0]),1.0f/(r[3]-r[2])); // a sala inteira cabe nos dois sentidos
+		}
+	else if(vistaModo==VISTA_SEGUE)
+		{
+		int i=-1;
+		for(int k=0;k<nNomes;++k)
+			if(vistaNome==nomes[k])
+				i=k;
+		if(i<0)
+			{
+			/* a lista de membros mudou e ele não está mais nela: volta ao laboratório inteiro */
+			anuncia("Mundo: vista tudo ("+vistaNome+" não está mais na lista)");
+			vistaModo=VISTA_TUDO;
+			vistaNome.clear();
+			vistaDe[0]=vistaC[0];
+			vistaDe[1]=vistaC[1];
+			vistaDe[2]=vistaZ;
+			vistaDesde=tempo;
+			}
+		else
+			{
+			bool fora=i>=quantos||tipo[i]<0.5f||escondido[i]||mEstado[i]==1||!mundoPronto;
+			if(fora!=vistaFora)
+				{
+				/* saiu da sala: mostra o laboratório inteiro até ele voltar (e volta a segui-lo) */
+				vistaFora=fora;
+				vistaDe[0]=vistaC[0];
+				vistaDe[1]=vistaC[1];
+				vistaDe[2]=vistaZ;
+				vistaDesde=tempo;
+				anuncia("Mundo: vista seguindo "+vistaNome+(fora?" (fora do laboratório)":""));
+				}
+			if(fora)
+				vistaSegOk=false;
+			else
+				{
+				const float fx=(ax[i]-bmin[0])/(bmax[0]-bmin[0]),fy=(ay[i]-bmin[1])/(bmax[1]-bmin[1]);
+				if(!vistaSegOk)
+					{
+					vistaSeg[0]=fx;
+					vistaSeg[1]=fy;
+					vistaSegOk=true;
+					}
+				else
+					{
+					/* acompanha o boneco com um pouco de atraso: o passo dele não sacode a imagem */
+					const float k=1.0f-std::exp(-dt/0.35f);
+					vistaSeg[0]+=(fx-vistaSeg[0])*k;
+					vistaSeg[1]+=(fy-vistaSeg[1])*k;
+					}
+				alvo[0]=vistaSeg[0];
+				alvo[1]=vistaSeg[1];
+				alvo[2]=VISTA_ZOOM_SEGUE;
+				}
+			}
+		}
+	float s=float((tempo-vistaDesde)/VISTA_TROCA);
+	if(s<1.0f)
+		{
+		s=std::max(0.0f,s);
+		s=s*s*(3.0f-2.0f*s);
+		vistaZ=std::exp(std::log(vistaDe[2])+(std::log(alvo[2])-std::log(vistaDe[2]))*s); // zoom por fator: a troca não acelera no fim
+		vistaC[0]=vistaDe[0]+(alvo[0]-vistaDe[0])*s;
+		vistaC[1]=vistaDe[1]+(alvo[1]-vistaDe[1])*s;
+		}
+	else
+		{
+		vistaZ=alvo[2];
+		vistaC[0]=alvo[0];
+		vistaC[1]=alvo[1];
+		}
+	/* nada de fora da planta na imagem */
+	vistaZ=std::max(1.0f,vistaZ);
+	const float meia=0.5f/vistaZ;
+	for(int k=0;k<2;++k)
+		vistaC[k]=std::max(meia,std::min(1.0f-meia,vistaC[k]));
 	}

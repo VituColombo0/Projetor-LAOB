@@ -870,6 +870,51 @@ def mundo_rosto(nome):
     return n
 
 
+# Vista do mundo LAOB (20/11/2026, pedido do Victor: "pelo site trocar qual área eu quero ver, seguir os
+# personagens"): a câmera do Mundo.cpp mostra o laboratório inteiro, uma sala, ou segue um membro com zoom.
+VISTAS = {"tudo": "Tudo", "principal": "Sala principal", "forense": "Forense", "mini": "Miniauditório"}
+_APELIDOS_VISTA = {"todo": "tudo", "laboratorio": "tudo", "sala": "principal", "sala-principal": "principal",
+                   "miniauditorio": "mini", "auditorio": "mini"}
+
+
+def mundo_vista(qual):
+    """Troca o que aparece do laboratório: uma área (tudo, principal, forense, mini) ou o nome de um
+    membro para segui-lo. Devolve ("area", chave) ou ("segue", NOME)."""
+    if animais_situacao() != "mundo":
+        raise Erro("o mundo LAOB não está ligado")
+    q = _chave_tema(str(qual or "tudo"))
+    q = _APELIDOS_VISTA.get(q, q)
+    if q in VISTAS:
+        _comando(f"mundoVista {q}")
+        return "area", q
+    n = _nome_curto(qual)
+    if not n or n not in membros_lista()[0]:
+        raise Erro("área: " + ", ".join(VISTAS) + " (ou o nome de um membro para segui-lo)")
+    _comando(f"mundoVista {n}")
+    return "segue", n
+
+
+def mundo_vista_atual():
+    """O que o laboratório mostra agora: {"area": chave} ou {"segue": "Nome", "fora": bool}, pelas linhas
+    "Mundo: vista ..." do registro. O laboratório abre sempre inteiro; as linhas "Animais: mundo" repetidas
+    (lista de presentes atualizada) não mexem na vista. None se o mundo não está ligado."""
+    if animais_situacao() != "mundo":
+        return None
+    vista, aberto = {"area": "tudo"}, False
+    for l in _registro_caca():
+        if l.startswith(("Animais", "Tesouro: escondendo", "Fossil: escondendo", "Labirinto: nascente", "Jogo pedido",
+                         "Modo Rosto:", "Modo Esculpir:")):
+            mundo_agora = l.startswith("Animais: mundo")
+            if mundo_agora and not aberto:
+                vista = {"area": "tudo"}
+            aberto = mundo_agora
+            continue
+        m = re.match(r"Mundo: vista (tudo|principal|forense|mini|seguindo ([A-Z]+))( \(fora)?", l.strip())
+        if m and aberto:
+            vista = {"segue": m.group(2).capitalize(), "fora": bool(m.group(3))} if m.group(2) else {"area": m.group(1)}
+    return vista
+
+
 def animais_fim():
     if qual() == "rosto":
         _comando("animais nada")

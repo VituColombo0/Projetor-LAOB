@@ -11,6 +11,8 @@
   areia-animais mar [peixe=6 tubarao=1 ... pato=2 barco=1 carro=4 pessoa=4 cachorro=2 passaro=3]   quantos de cada
   areia-animais pessoas      pessoinhas passeando pela areia
   areia-animais mundo        o mundo LAOB: o laboratório por dentro, com os membros (fotos em membros/)
+  areia-animais vista principal   com o mundo aberto: mostra só uma área (tudo, principal, forense, mini)
+  areia-animais vista Victor      ou segue um membro com zoom (areia-animais vista tudo volta)
   areia-animais todos        tudo junto (pode pôr a quantidade: areia-animais peixes 15)
   areia-animais parar        tira os animais
 
@@ -69,6 +71,10 @@ def animais(args):
             print("Membros: " + ", ".join(n.capitalize() + (" (no laboratório agora)" if n in presentes else "") for n in nomes) + ".")
         else:
             print(f"Sem fotos de membros: a sala fica vazia. Fotos em {areia.PASTA_MEMBROS} (Nome.jpg).")
+    elif pedido in ("vista", "ver", "seguir"):
+        # 20/11/2026: área do laboratório que aparece, ou seguir um membro (precisa do mundo aberto)
+        tipo, q = areia.mundo_vista(" ".join(args[1:]) or "tudo")
+        print(f"Seguindo {q.capitalize()} na areia." if tipo == "segue" else f"Na areia: {areia.VISTAS[q]}.")
     elif pedido == "mar":
         sel = None
         if len(args) > 1:

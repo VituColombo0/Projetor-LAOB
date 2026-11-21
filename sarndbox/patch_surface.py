@@ -9,7 +9,7 @@ def rep(s, old, new, count=1):
 h = open("SurfaceRenderer.h").read()
 if "FaceImage" not in h:
     h = rep(h, "class DEM;\n", "class DEM;\nclass FaceImage;\n")
-    # 48: com tudo ligado o shader pede 21 + Extras::NUM_UNIFORMS localizações (39 hoje; o static_assert
+    # 48: com tudo ligado o shader pede 21 + Extras::NUM_UNIFORMS localizações (41 desde 20/11/2026; o static_assert
     # abaixo para a compilação se faltar lugar, em vez de escrever por cima das variáveis seguintes)
     h = rep(h, "GLint heightMapShaderUniforms[16];", "GLint heightMapShaderUniforms[48];")
     h = rep(h, "\tGLfloat demDistScale; // Maximum deviation", "\tFaceImage* faceImage; // Foto projetada na areia (modo Rosto); 0 = desligado\n\tGLfloat demDistScale; // Maximum deviation")

@@ -45,6 +45,12 @@ Extras::Extras(void)
 		}
 	mundoPedido=mundoPronto=false;
 	horaFixa=-1.0f;
+	vistaModo=VISTA_TUDO; // vista do Mundo (20/11/2026): o laboratório inteiro
+	vistaC[0]=vistaC[1]=vistaDe[0]=vistaDe[1]=0.5f;
+	vistaZ=vistaDe[2]=1.0f;
+	vistaDesde=-100.0;
+	vistaSeg[0]=vistaSeg[1]=0.5f;
+	vistaSegOk=vistaFora=false;
 	fatorVazao=1.32f; // o dobro da calibração de 16/11 (0,66), pedido em 17/11; as bocas maiores não mudam o total (ver patch_sandbox)
 	copia=false;
 	copiaForma=copiaNivel=copiaRodadas=0;
@@ -68,9 +74,12 @@ Extras::Extras(void)
 		mAlvoAng[i]=0.0f;
 		mChegou[i]=-1.0;
 		mSocial[i]=-1;
+		mAtiv[i]=0.0f;
+		mConversaAte[i]=-100.0;
+		mConversaCom[i]=-1;
 		}
 	mundoArcoAte=mundoMusicaAte=mundoTVAte=-100.0;
-	mundoBits=0.0f;
+	mundoBits=mundoBits2=0.0f;
 	for(int i=0;i<MAX_NOMES;++i)
 		rostoAte[i]=0.0;
 	atlasNovo=false;
@@ -1162,12 +1171,21 @@ void Extras::passo(float dt)
 		for(int k=0;k<MAX_CHUVAS;++k)
 			temChuva=temChuva||chuvas[k].ate+1.0>tempo; // fica ligada mais 1 s: a nuvem se desfaz aos poucos
 		}
+	if(modo!=MUNDO&&(vistaModo!=VISTA_TUDO||vistaZ!=1.0f))
+		{
+		/* fechou o laboratório: na próxima vez ele abre inteiro (vista do Mundo, 20/11/2026) */
+		vistaModo=VISTA_TUDO;
+		vistaNome.clear();
+		vistaC[0]=vistaC[1]=0.5f;
+		vistaZ=1.0f;
+		}
 	if(!mapaOk||modo==NADA)
 		return;
 	dt=std::min(dt,0.1f);
 	if(modo==MUNDO)
 		{
 		mundoPasso(dt); // o laboratório tem rotina própria (Mundo.cpp): não usa o movimento pelo relevo
+		mundoVistaPasso(dt); // a câmera da vista (Mundo.cpp)
 		return;
 		}
 	passoRacao(dt);
@@ -2064,7 +2082,7 @@ bool Extras::cachorro(int i,float dt)
 
 const char* Extras::nomesUniforms[NUM_UNIFORMS]={"extrasCaixa","extrasAg","extrasTesouro","extrasInfo","extrasEfeito",
 	"extrasLab","extrasLab2","extrasJogo","extrasJogoInfo","extrasNomes","extrasNomesCfg","extrasRostos","extrasMundo","extrasMundo2","extrasChuva","extrasCopiaInfo",
-	"extrasAg2","extrasComida","extrasRacao"};
+	"extrasAg2","extrasComida","extrasRacao","extrasVista"};
 
 const char* Extras::glslVertexUniforms=R"GLSL(
 uniform mat4 extrasCaixa; // espaço da câmera -> caixa (cm)
@@ -2105,6 +2123,7 @@ float exDifCor(vec3 a,vec3 b)
 	}
 uniform vec4 extrasMundo;   // laboratório (Mundo.cpp): estado (bits; mundoEstado), largura e altura da área iluminada, ligado (1)
 uniform vec4 extrasMundo2;  // canto da caixa (x, y) e a hora local (0-24)
+uniform vec4 extrasVista;   // vista do Mundo (20/11/2026): centro da câmera (F) e zoom; (0,5, 0,5, 1) = o laboratório inteiro
 uniform sampler2D extrasRostos; // painel de rostos dos membros (8 quadros lado a lado, com transparência)
 float exCaixa(vec2 p,vec2 metade,float raio)
 	{
@@ -2215,6 +2234,11 @@ vec2 exGira(vec2 p,float a)
 float mBit(float k)
 	{
 	return mod(floor(mBits/exp2(k)),2.0);
+	}
+float mBits2;   // mais estado (20/11/2026; extrasMundo.w = 1 + 2*mundoBits2): osciloscópio, areia, cluster, geladeira
+float mBit2(float k)
+	{
+	return mod(floor(mBits2/exp2(k)),2.0);
 	}
 vec2 mL(vec2 cF)
 	{
@@ -2933,7 +2957,11 @@ void mMini()
 				mPoe(vec3(0.95));                                      // controle
 			c=mL(vec2(0.130,0.708));
 			if(abs(c.x)<0.45&&abs(c.y)<0.6)
+				{
 				mPoe(vec3(0.05));                                      // tablet
+				if(mBit(16.0)>0.5&&abs(c.x)<0.33&&abs(c.y)<0.48)
+					mE=vec3(0.25,0.45,0.8)*(0.6+0.2*step(0.5,fract(c.y*3.0+floor(mT/4.0)*0.37))); // aceso com o Gazziro sentado (20/11/2026)
+				}
 			c=mL(vec2(0.119,0.700));
 			if(abs(c.x)<0.15&&abs(c.y)<0.3)
 				mPoe(vec3(0.1,0.1,0.14));                              // celular
@@ -2982,6 +3010,29 @@ void mBancadaH()
 	   torso de RCP, monitor; as cadeiras laranja, amarela e pretas */
 	if(mEm(MP_ARM_ALTO,0.004))
 		mClaro(mRet(MP_ARM_ALTO),vec3(0.93,0.92,0.89));
+	if(mEm(MP_GELADEIRA,0.035))
+		{
+		/* geladeira com ímãs (20/11/2026: junto do armário alto); com alguém pegando café, a porta abre
+		   (dobradiça do lado do armário) e a luz de dentro cai no chão */
+		float d=mRet(MP_GELADEIRA);
+		mClaro(d,vec3(0.94));
+		if(d<0.0&&abs(mF.x-0.449)*mK.x<0.07)
+			mG*=0.75;                                                  // as 2 portas
+		for(int k=0;k<4;++k)
+			if(length(mL(vec2(0.442+0.005*float(k),0.180-0.006*mod(float(k),2.0))))<0.3)
+				mPoe(0.5+0.5*cos(6.283*(float(k)*0.27+vec3(0.0,0.33,0.67))));   // ímãs
+		if(mBit2(3.0)>0.5)
+			{
+			vec2 dob=vec2(MP_GELADEIRA.y,MP_GELADEIRA.w)*mK;
+			float sd=mSeg(mC,dob,dob+vec2(1.3,2.1));                    // aberta bem (~120 graus): a folha passa do boneco
+			if(d>0.0)
+				mE+=vec3(0.9,0.95,1.0)*0.3*smoothstep(3.0,0.0,length(mL(vec2(0.449,0.188))));
+			if(sd<0.22)
+				mPoe(vec3(0.95));
+			else if(sd<0.38)
+				mG*=0.6;
+			}
+		}
 	if(length(mL(vec2(0.500,0.157)))<0.55)
 		mPoe(vec3(0.07));
 	if(mEm(MP_BANC_H,0.004))
@@ -3025,9 +3076,10 @@ void mBancadaH()
 					mPoe(vec3(0.05,0.08,0.06));
 					if(abs(k-1.0)<0.5)
 						{
-						bool liga=mBit(15.0)>0.5||mBit(0.0)>0.5||mDia>0.5;
+						float usa=mBit2(0.0);                         // alguém mexendo nele (20/11/2026): a onda corre e cresce
+						bool liga=usa>0.5||mBit(0.0)>0.5||mDia>0.5;
 						vec2 s=q-vec2(0.0,0.1);
-						if(liga&&abs(s.y-0.12*sin(s.x*9.0+mT*6.0))<0.07)
+						if(liga&&abs(s.y-(0.12+0.08*usa)*sin(s.x*(9.0+5.0*usa)+mT*(6.0+8.0*usa)))<0.07)
 							{mPoe(vec3(0.1,0.3,0.12)); mE=vec3(0.3,1.0,0.4)*0.8;}
 						else if(!liga&&length(s)<0.08)
 							mE=vec3(0.3,1.0,0.4)*0.6;
@@ -3052,7 +3104,7 @@ void mBancadaH()
 		{
 		mPlastico(vec2(0.642,0.221),vec3(0.95,0.50,0.12));
 		mPlastico(vec2(0.606,0.221),vec3(0.95,0.80,0.15));
-		mCadeira(MP_A2.xy,MP_A2.z,vec3(0.13));
+		mCadeira(vec2(0.754,0.230),-1.5708,vec3(0.13));               // a do osciloscópio (era do Mario até 20/11/2026)
 		mCadeira(vec2(0.804,0.230),-1.5708,vec3(0.13));
 		}
 	/* câmera do Willbert: cone de visão para dentro da sala (mais forte com algum membro presente) */
@@ -3060,16 +3112,27 @@ void mBancadaH()
 	}
 void mCantoFH()
 	{
-	/* canto F/H: geladeira com ímãs, armários de aço, mesinha, coluna, mesa de carteado */
-	if(mEm(MP_GELADEIRA,0.004))
+	/* canto F/H: mesinha do Lucas, armários de aço, mesinha, coluna, mesa de carteado */
+	if(mEm(MP_MESA_LUCAS,0.025))
 		{
-		float d=mRet(MP_GELADEIRA);
-		mClaro(d,vec3(0.94));
-		if(d<0.0&&abs(mF.y-0.2005)*mK.y<0.07)
-			mG*=0.75;                                                  // as 2 portas
-		for(int k=0;k<4;++k)
-			if(length(mL(vec2(0.283+0.005*float(k),0.190+0.006*mod(float(k),2.0))))<0.3)
-				mPoe(0.5+0.5*cos(6.283*(float(k)*0.27+vec3(0.0,0.33,0.67))));   // ímãs
+		/* 20/11/2026 ("3" na foto do Victor): o Lucas fica colado na parede F, atrás da mesa de carteado:
+		   mesinha com monitor (aceso com ele sentado), teclado, PC, fone e a cadeira dele */
+		mCadeira(MP_A1.xy,MP_A1.z,vec3(0.13));
+		float d=mRet(MP_MESA_LUCAS);
+		mClaro(d,vec3(0.92,0.91,0.88));
+		if(d<0.0)
+			{
+			mMonitor(vec2(0.283,MP_A1.y),3.1416,mBit(14.0));
+			mTeclado(vec2(0.296,MP_A1.y),3.1416,vec3(0.22));
+			vec2 p=mL(vec2(0.288,0.204));
+			if(abs(p.x)<0.8&&abs(p.y)<0.45)
+				mPoe(vec3(0.06)+vec3(0.1)*step(0.7,fract(p.x*2.0)));      // PC
+			if(abs(p.x)<0.15&&abs(p.y-0.22)<0.06)
+				mE=vec3(0.2,0.5,1.0)*0.6*mBit(14.0);                     // LED do PC
+			float f=length(mL(vec2(0.292,0.163))/vec2(1.0,0.8));
+			if(f>0.25&&f<0.45)
+				mPoe(vec3(0.08));                                      // fone
+			}
 		}
 	if(mEm(MP_ARM_ACO,0.004))
 		{
@@ -3273,7 +3336,7 @@ void mCluster()
 				{
 				mPoe(vec3(0.06));
 				for(int k=0;k<3;++k)
-					mLed(vec2(0.684,0.366)+vec2(-0.4+0.4*float(k),-0.2)/mK,vec3(0.2,0.5,1.0),step(0.2,fract(mT*0.7+float(k)*0.3)));
+					mLed(vec2(0.684,0.366)+vec2(-0.4+0.4*float(k),-0.2)/mK,vec3(0.2,0.5,1.0),step(0.2,fract(mT*(0.7+3.3*mBit2(2.0))+float(k)*0.3))); // com alguém no cluster, piscam rápido
 				}
 			}
 		vec2 qs=mL(vec2(0.557,0.366));
@@ -3322,8 +3385,8 @@ void mCluster()
 				mPoe(vec3(0.05));                                      // carregador USB
 #endif
 			}
-		/* estação do Lucas no lado B */
-		mMonitor(vec2(0.820,0.404),-1.5708,mBit(14.0));
+		/* estação do lado B (era do Lucas até 20/11/2026): acesa com alguém mexendo no cluster */
+		mMonitor(vec2(0.820,0.404),-1.5708,mBit2(2.0));
 		vec2 t=mL(vec2(0.820,0.414));
 		if(abs(t.x)<1.1&&abs(t.y)<0.35)
 			mPoe(vec3(0.22)*(0.9+0.2*step(0.5,fract(t.x*2.5))));
@@ -3337,7 +3400,7 @@ void mCluster()
 	/* cadeiras do lado B */
 	if(mF.y>0.42&&mF.y<0.48)
 		{
-		mCadeira(MP_A1.xy,MP_A1.z,vec3(0.13));
+		mCadeira(vec2(0.820,0.447),-1.5708,vec3(0.13));
 		mCadeira(vec2(0.580,0.447),-1.5708,vec3(0.13));
 		mCadeira(vec2(0.640,0.452),-1.5708,vec3(0.13));
 		}
@@ -3368,7 +3431,10 @@ void mCluster()
 			else
 				{
 				vec2 p=mC*0.55;
-				float h=exRuido(p+vec2(mT*0.05,0.0))*0.8+0.2*sin(p.x*1.3+p.y*0.7);
+				float mexe=mBit2(1.0);                                 // 20/11/2026: alguém mexendo na areia: o relevo muda
+				float h=exRuido(p+vec2(mT*(0.05+0.3*mexe),0.0))*0.8+0.2*sin(p.x*1.3+p.y*0.7);
+				vec2 mo=mL(vec2(0.4055,0.411)+vec2(0.012*sin(mT*0.9),0.01*sin(mT*1.3))); // a mão que faz o morro
+				h+=mexe*0.45*exp(-dot(mo,mo)*0.9);
 				vec3 c=h<0.35?vec3(0.2,0.5,0.85):(h<0.5?vec3(0.3,0.7,0.35):(h<0.68?vec3(0.92,0.84,0.5):vec3(0.75,0.4,0.2)));
 				mPoe(vec3(0.0));
 				mE=c*0.85;
@@ -3571,54 +3637,134 @@ void mIlha(vec4 r,float div,float xe,float xo,vec3 ligaE,vec3 ligaO)
 	}
 void mVictor()
 	{
-	/* o lugar do Victor (ilha 1, leste, perto da janela): 3 monitores, teclado RGB no mousepad, caixinhas
-	   de som, garrafa, copo térmico, PC torre e a plaquinha */
-	vec2 q=mL(vec2(0.845,0.808));
+	/* a mesa do Victor (ilha 1, leste, "1" na foto dele): 3 monitores (acesos só com ele sentado: terminal
+	   verde rolando), teclado RGB no mousepad, caixinhas de som dos lados do monitor do meio, garrafa, copo
+	   térmico, PC torre e a plaquinha branca. 20/11/2026: um lugar só, no meio da mesa (antes, perto da janela) */
+	float y0=MP_A3.y;
+	bool sentado=mBit(13.0)>0.5;
+	vec2 q=mL(vec2(0.845,y0));
 	if(abs(q.x)<0.9&&abs(q.y)<1.9)
 		mPoe(vec3(0.12));                                             // mousepad
 	if(abs(q.x)<0.4&&abs(q.y)<1.3)
 		{
 		vec3 rgb=0.5+0.5*cos(6.283*(fract(mC.y*0.3-mT*0.25)+vec3(0.0,0.33,0.67)));
 		mPoe(rgb*0.3);
-		mE=rgb*(mBit(13.0)>0.5?0.8:0.3)*(0.85+0.15*step(0.5,fract(q.y*2.5))*step(0.1,abs(q.x)));
+		mE=rgb*(sentado?0.8:0.3)*(0.85+0.15*step(0.5,fract(q.y*2.5))*step(0.1,abs(q.x)));
 		}
 	for(int k=0;k<3;++k)
 		{
 		float fk=float(k)-1.0;
-		vec2 c=vec2(0.824,0.808+0.026*fk);
+		vec2 c=vec2(0.824,y0+0.026*fk);
 		vec2 m=exGira(mL(c),3.1416-0.26*fk);
 		if(abs(m.x)<0.2&&abs(m.y)<1.0)
 			{
 			mPoe(vec3(0.06,0.065,0.08));
-			if(m.x<-0.03&&abs(m.y)<0.88)
-				{
-				if(mBit(13.0)>0.5)
-					mE=fract(m.y*2.2+floor(mT*2.0)*0.37)<0.55?vec3(0.25,0.9,0.35)*0.8:vec3(0.05,0.15,0.07);  // terminal rolando
-				else if(mBit(0.0)>0.5)
-					mE=vec3(0.2,0.45,0.85)*0.6;
-				}
+			if(sentado&&m.x<-0.03&&abs(m.y)<0.88)
+				mE=fract(m.y*2.2+floor(mT*2.0)*0.37+fk*0.3)<0.55?vec3(0.25,0.9,0.35)*0.8:vec3(0.05,0.15,0.07);  // terminal rolando
 			}
 		}
-	if(mBit(13.0)<0.5&&mBit(0.0)<0.5)
-		mLed(vec2(0.826,0.795),vec3(1.0,0.55,0.1),1.0);
+	if(!sentado)
+		mLed(vec2(0.826,y0-0.013),vec3(1.0,0.55,0.1),1.0);
 	for(int k=0;k<2;++k)
 		{
-		vec2 c=mL(vec2(0.834,k==0?0.794:0.822));
+		vec2 c=mL(vec2(0.834,y0+(k==0?-0.014:0.014)));
 		if(abs(c.x)<0.25&&abs(c.y)<0.25)
 			mPoe(vec3(0.05));                                         // caixinhas de som
 		}
-	float g=length(mL(vec2(0.847,0.770)));
+	float g=length(mL(vec2(0.847,y0-0.045)));
 	if(g<0.3)
 		mPoe(vec3(0.3,0.55,0.85)*(1.2-g));                            // garrafa
-	g=length(mL(vec2(0.850,0.846)));
+	g=length(mL(vec2(0.850,y0+0.045)));
 	if(g<0.35)
 		mPoe(g<0.2?vec3(0.2):vec3(0.05));                              // copo térmico
-	vec2 p=mL(vec2(0.832,0.851));
+	vec2 p=mL(vec2(0.832,y0+0.068));
 	if(abs(p.x)<0.9&&abs(p.y)<0.45)
 		mPoe(vec3(0.06)+vec3(0.1)*step(0.7,fract(p.x*2.0)));           // PC torre
-	vec2 pl=mL(vec2(0.8555,0.795));
+	vec2 pl=mL(vec2(0.8555,y0-0.024));
 	if(abs(pl.x)<0.15&&abs(pl.y)<0.6)
 		mPoe(abs(pl.x)<0.05&&abs(pl.y)<0.45?vec3(0.05):vec3(0.97));   // plaquinha
+	}
+void mMario()
+	{
+	/* a mesa do Mario (ilha 1, oeste, "2" na foto do Victor; 20/11/2026), de frente para o Victor: 3 monitores
+	   de costas para os dele (acesos só com ele sentado: forma de onda verde no do meio, desenho azul nos
+	   outros), teclado e mouse, caneca de café, multímetro amarelo e uma placa de circuito */
+	float y0=MP_A2.y;
+	bool sentado=mBit(15.0)>0.5;
+	vec2 q=mL(vec2(0.790,y0));
+	if(abs(q.x)<0.9&&abs(q.y)<1.9)
+		mPoe(vec3(0.15,0.16,0.19));                                   // mousepad
+	mTeclado(vec2(0.792,y0+0.003),0.0,vec3(0.22));
+	if(length((q-vec2(-0.1,-1.45))/vec2(0.25,0.35))<1.0)
+		mPoe(vec3(0.08));                                             // mouse
+	for(int k=0;k<3;++k)
+		{
+		float fk=float(k)-1.0;
+		vec2 c=vec2(0.812,y0+0.026*fk);
+		vec2 m=exGira(mL(c),0.26*fk);
+		if(abs(m.x)<0.2&&abs(m.y)<1.0)
+			{
+			mPoe(vec3(0.06,0.065,0.08));
+			if(sentado&&m.x<-0.03&&abs(m.y)<0.88)
+				{
+				if(k==1)
+					mE=fract(m.y*1.6-mT*1.2)<0.35?vec3(0.3,1.0,0.4)*0.8:vec3(0.04,0.12,0.06); // osciloscópio na tela
+				else
+					mE=vec3(0.2,0.45,0.85)*(0.55+0.2*step(0.5,fract(m.y*3.0+fk*0.4)));   // desenho da placa
+				}
+			}
+		}
+	if(!sentado)
+		mLed(vec2(0.810,y0+0.013),vec3(1.0,0.55,0.1),1.0);
+	float g=length(mL(vec2(0.789,y0-0.045)));
+	if(g<0.34)
+		mPoe(g<0.2?vec3(0.28,0.16,0.08):vec3(0.95));                  // caneca de café
+	if(length(mL(vec2(0.789,y0-0.045))-vec2(-0.4,0.0))<0.12)
+		mPoe(vec3(0.95));                                             // asa da caneca
+	vec2 mm=mL(vec2(0.791,y0+0.050));
+	if(abs(mm.x)<0.55&&abs(mm.y)<0.8)
+		{
+		mPoe(vec3(0.95,0.78,0.12));                                   // multímetro
+		if(abs(mm.x)<0.38&&abs(mm.y-0.35)<0.22)
+			mPoe(vec3(0.15,0.2,0.16));                                // visor
+		if(length(mm-vec2(0.0,-0.3))<0.25)
+			mPoe(vec3(0.1));                                          // seletor
+		}
+	vec2 pc=mL(vec2(0.797,y0-0.075));
+	if(abs(pc.x)<0.9&&abs(pc.y)<0.65)
+		{
+		mPoe(vec3(0.1,0.42,0.2));                                     // placa de circuito
+		if(abs(pc.x)<0.3&&abs(pc.y)<0.3)
+			mPoe(vec3(0.05));                                         // chip
+		else if(length(fract(pc*2.5)-0.5)<0.14)
+			mPoe(vec3(0.85,0.7,0.3));                                 // soldas
+		}
+	}
+void mIlha1()
+	{
+	/* 20/11/2026 (pedido do Victor, com os números na foto do projetor): a ilha 1 são as mesas dele (leste)
+	   e do Mario (oeste), um de frente para o outro; 1 cadeira de cada lado e 3 monitores cada, de costas
+	   uns para os outros na divisória do meio */
+	if(!mEm(MP_ILHA1,0.035))
+		return;
+	float d=mRet(MP_ILHA1);
+	mClaro(d,vec3(0.92,0.91,0.88));
+	if(d<0.0)
+		{
+		if(abs(mF.x-0.818)*mK.x<0.15)
+			mPoe(vec3(0.6));                                          // divisória
+		if(length(abs(mL(vec2(0.818,0.7085)))-vec2(0.039,0.1485)*mK+0.4)<0.3)
+			mPoe(vec3(0.05));                                         // pés
+		}
+	mCadeira(MP_A3.xy,MP_A3.z,vec3(0.13));
+	mCadeira(MP_A2.xy,MP_A2.z,vec3(0.13));
+	if(d<0.0&&abs(mF.y-MP_A3.y)<0.09)
+		{
+		if(mF.x>0.818)
+			mVictor();
+		else
+			mMario();
+		}
 	}
 void mFundoB()
 	{
@@ -3704,13 +3850,9 @@ void mPrincipal()
 		if(mF.x<0.43)
 			mFundoF();
 		else if(mF.x<0.72)
-			mIlha(MP_ILHA2,0.610,MP_A5.x,MP_A6.x,vec3(0.0,mBit(18.0),0.0),vec3(mBit(19.0),0.0,0.0)); // A5 (leste, meio) e A6 (oeste, embaixo)
+			mIlha(MP_ILHA2,0.610,MP_A5.x,MP_A6.x,vec3(mBit(20.0),mBit(18.0),0.0),vec3(mBit(19.0),0.0,mBit(17.0))); // A7, A5 (leste) e A6, A4 (oeste): membro novo
 		else
-			{
-			mIlha(MP_ILHA1,0.818,MP_A3.x,MP_A4.x,vec3(mBit(20.0),0.0,-1.0),vec3(0.0,0.0,mBit(17.0)));  // A7 e o Victor (leste), A4 (oeste, em cima)
-			if(mF.x>0.81&&mF.x<0.89&&mF.y>0.75&&mF.y<0.87)
-				mVictor();
-			}
+			mIlha1();                                                  // Victor e Mario (20/11/2026)
 		if(mF.x>0.42)
 			mFundoB();
 		}
@@ -3725,6 +3867,7 @@ vec3 mundoCor(vec2 u)
 	mC=mF*mK;
 	mT=extrasInfo.x;
 	mBits=extrasMundo.x;
+	mBits2=floor(extrasMundo.w*0.5);
 	mDia=smoothstep(5.3,6.8,extrasMundo2.z)*(1.0-smoothstep(17.5,19.2,extrasMundo2.z));
 	mG=vec3(0.70,0.71,0.70);
 	mE=vec3(0.0);
@@ -3767,6 +3910,14 @@ const char* Extras::glslFragmentMain=R"GLSL(
 	{
 	/* Projetor-LAOB: efeito do tema, lago, tesouro e animais sobre o relevo */
 	vec3 ep=extrasPos;
+	if(extrasMundo.w>0.5)
+		{
+		/* Vista do Mundo (20/11/2026, pedido do Victor: escolher pelo painel a área e seguir um membro): a câmera
+		   (centro em F e zoom; Mundo.cpp, mundoVistaPasso) leva o ponto da areia a um ponto da planta. Planta,
+		   bonecos, plaquinhas, balão do rosto, cones e LEDs saem todos de ep.xy: tudo acompanha a câmera */
+		vec2 meio=extrasMundo2.xy+0.5*extrasMundo.yz;
+		ep.xy=extrasMundo2.xy+extrasVista.xy*extrasMundo.yz+(ep.xy-meio)/max(extrasVista.z,1.0);
+		}
 	float et=extrasInfo.x;
 	extrasMarca=0.0;
 	extrasLimpa=0.0;
@@ -4765,7 +4916,8 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				                                                               // grandes, tapavam a mesa, o scanner e o cluster (medido nas prévias)
 			vec2 pl=l/porte;
 			vec2 pls=ls/porte;
-			float passo=extrasAg2[i].x>0.5&&extrasAg2[i].x<1.5?0.0:sin(et*7.0+float(i)*1.3); // parada olhando o pão: pés juntos
+			float atv=extrasMundo.w>0.5?floor(extrasAg2[i].x+0.5):0.0;        // no laboratório: o que faz parado (Mundo.cpp, mundoAtividade)
+			float passo=(extrasAg2[i].x>0.5&&extrasAg2[i].x<1.5)||atv>0.5?0.0:sin(et*7.0+float(i)*1.3); // parado: pés juntos
 			vec3 pele=mix(vec3(0.97,0.82,0.68),vec3(0.42,0.27,0.17),fract(hue*7.3));
 			float tomCabelo=fract(hue*3.7);
 			vec3 cabelo=tomCabelo<0.3?vec3(0.08,0.06,0.05):(tomCabelo<0.6?vec3(0.36,0.22,0.1):(tomCabelo<0.8?vec3(0.78,0.6,0.25):(tomCabelo<0.92?vec3(0.6,0.2,0.1):vec3(0.75))));
@@ -4775,6 +4927,31 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			float ombros=length(pl/vec2(0.55,1.0));
 			float bracoE=length(pl-vec2(-0.45*passo,0.98));
 			float bracoD=length(pl-vec2(0.45*passo,-0.98));
+			float mao=min(bracoE,bracoD);                                       // até a mão mais perto (pele)
+			float dCopo=9.0;
+			if(atv>1.5)
+				{
+				/* 20/11/2026 (pedido do Victor: "fazer eles mexerem em outras coisas"): parado, as mãos mostram o
+				   que ele faz: 2 digitando, 3 apontando (slide, quadro), 4 bebendo (leva o copo à boca), 5 falando
+				   (gesticula), 6 mexendo num aparelho. O braço vai do ombro até a mão. */
+				float fa=float(i)*1.3;
+				vec2 hE=vec2(0.0,0.98),hD=vec2(0.0,-0.98);
+				if(atv<2.5)
+					{hE=vec2(0.78+0.07*sin(et*13.0+fa),0.52); hD=vec2(0.78+0.07*sin(et*11.0+fa+1.7),-0.52);}
+				else if(atv<3.5)
+					hD=vec2(0.55,-1.0)+vec2(0.45,-0.3)*(0.6+0.4*sin(et*1.6+fa));
+				else if(atv<4.5)
+					hD=mix(vec2(0.3,-0.95),vec2(0.74,-0.22),smoothstep(0.3,0.6,abs(fract(et*0.3+fa*0.1)*2.0-1.0)));
+				else if(atv<5.5)
+					hD=vec2(0.62+0.2*sin(et*5.0+fa),-0.78+0.15*sin(et*3.1+fa));
+				else
+					{hE=vec2(0.95,0.42+0.2*sin(et*4.0+fa)); hD=vec2(0.95,-0.42-0.2*sin(et*4.0+fa+1.5));}
+				bracoE=min(mSeg(pl,vec2(0.05,0.8),hE)+0.06,length(pl-hE));
+				bracoD=min(mSeg(pl,vec2(0.05,-0.8),hD)+0.06,length(pl-hD));
+				mao=min(length(pl-hE),length(pl-hD));
+				if(atv>3.5&&atv<4.5)
+					dCopo=length(pl-hD-vec2(0.1,0.12))-0.2;                     // o copo na mão
+				}
 			float cabeca=length(pl-vec2(0.08,0.0));
 			float sombra=length(pls/vec2(0.75,1.1));
 			bool mochila=fract(jeito*13.0)<0.3&&abs(pl.x+0.55)<0.28&&abs(pl.y)<0.55;
@@ -4803,19 +4980,22 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					dCab=min(cabeca-0.55,max((length((hp-vec2(0.5,0.0))/vec2(0.48,0.42))-1.0)*0.42,0.34-hp.x)); // boné com aba
 				if(g3)
 					dCab=min(dCab,max(abs(hp.x-0.55)-0.08,abs(hp.y)-0.47));      // aro dos óculos, na frente do rosto
-				float casaco=length((pl-vec2(-0.24,0.0))/vec2(0.84,1.04));       // jaleco: desce atrás dos ombros
+				float casaco=length((pl-vec2(-0.06,0.0))/vec2(0.62,0.96));       // jaleco: desce atrás dos ombros (20/11/2026: mais
+				                                                                 // justo, o Mario tinha ficado largo; a largura é a dos outros)
 				float dTronco=(ombros-1.0)*0.55;
 				if(g3)
 					dTronco=min(dTronco,(casaco-1.0)*0.84);
 				float dBraco=min(bracoE,bracoD)-0.27;
 				float dPe=(min(peE,peD)-1.0)*0.24;
-				float dM=min(min(dCab,dTronco),min(dBraco,dPe));
+				float dM=min(min(min(dCab,dTronco),min(dBraco,dPe)),dCopo);
 				if(g1)
 					sombra=min(sombra,length(pls-vec2(0.08,0.0))/0.92);         // a aba também faz sombra
 				if(g3)
-					sombra=min(sombra,length((pls-vec2(-0.24,0.0))/vec2(0.9,1.1)));
+					sombra=min(sombra,length((pls-vec2(-0.06,0.0))/vec2(0.75,1.1)));
 				vec3 cM=vec3(0.0);
-				if(dCab<0.0)
+				if(dCopo<0.0)
+					cM=dCopo<-0.07?vec3(0.32,0.18,0.08):vec3(0.96);           // copo de café (20/11/2026)
+				else if(dCab<0.0)
 					{
 					if(g1)
 						{
@@ -4877,7 +5057,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 						cM=g3?(hp.x>0.3?vec3(0.62,0.76,0.93):roupa*0.84):(g4?vec3(0.24):roupa*0.82); // gola (no jaleco, a camisa azul aparece na frente)
 					}
 				else if(dBraco<0.0)
-					cM=min(bracoE,bracoD)<0.15?peleM:roupa*(g4?1.6:0.85);          // manga e mão
+					cM=mao<0.15?peleM:roupa*(g4?1.6:0.85);                        // manga e mão
 				else if(dPe<0.0)
 					cM=g1||g3?vec3(0.33,0.2,0.11):vec3(0.1,0.1,0.11);             // sapatos
 				if(dM<0.0)
@@ -4912,7 +5092,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				baseColor=vec4(camisa,1.0);
 				}
 			else if(bracoE<0.27||bracoD<0.27)
-				baseColor=vec4(min(bracoE,bracoD)<0.15?pele:cor*0.82,1.0);                                 // manga da camisa e a mão
+				baseColor=vec4(mao<0.15?pele:cor*0.82,1.0);                                                // manga da camisa e a mão
 			else if(peE<1.0||peD<1.0)
 				baseColor=vec4(fract(jeito*23.0)<0.5?vec3(0.12,0.1,0.1):mix(vec3(0.95),vec3(0.8,0.15,0.15),step(0.75,fract(jeito*23.0))),1.0);  // sapato preto ou tênis
 			else if(sombra<1.0)
@@ -5250,6 +5430,24 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					}
 				}
 			}
+		if(extrasMundo.w>0.5&&abs(extrasAg2[i].x-5.0)<0.5)
+			{
+			/* 20/11/2026: conversa em dupla (Mundo.cpp, mundoConversa): quem está falando ganha um balãozinho
+			   branco acima da plaquinha, com os 3 pontinhos aparecendo um a um */
+			vec2 rb=ep.xy-(a.xy+cima*4.4);
+			vec2 tb=vec2(dot(rb,dir),dot(rb,cima));
+			float db=exCaixa(tb,vec2(1.0,0.55),0.4);
+			bool bico=tb.y<-0.4&&tb.y>-1.1&&tb.x>-0.6&&tb.x<-0.6+(tb.y+1.1)*0.9;
+			if(db<0.0||bico)
+				{
+				baseColor.rgb=vec3(0.97);
+				float k=floor(tb.x/0.5+0.5);
+				if(abs(k)<1.5&&length(tb-vec2(k*0.5,0.0))<0.15&&fract(et*0.8)>(k+1.0)*0.22)
+					baseColor.rgb=vec3(0.08);
+				}
+			else if(db<0.13)
+				baseColor.rgb=vec3(0.05);
+			}
 		vec2 rel=ep.xy-(a.xy+cima*2.6); // (19/11/2026: 2,7 -> 3,1 com os bonecos 15% maiores; 2,6 com eles 20% menores, nas 3 salas)
 		vec2 t=vec2(dot(rel,dir),dot(rel,cima));
 		float px=0.2;
@@ -5260,8 +5458,10 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			{
 			/* 19/11/2026 (revisão): no laboratório, perto da borda (pôster da forense, tela do miniauditório)
 			   a plaquinha corre para dentro da área iluminada em vez de perder o começo do nome */
-			float c0=dot(extrasMundo2.xy,dir),c1=dot(extrasMundo2.xy+extrasMundo.yz,dir),cd=dot(a.xy,dir);
-			t.x+=cd-clamp(cd,min(c0,c1)+larg*0.5+margem+0.3,max(c0,c1)-larg*0.5-0.65);
+			vec2 v0=extrasMundo2.xy+(extrasVista.xy-0.5/max(extrasVista.z,1.0))*extrasMundo.yz; // o que a vista mostra (20/11/2026)
+			float c0=dot(v0,dir),c1=dot(v0+extrasMundo.yz/max(extrasVista.z,1.0),dir),cd=dot(a.xy,dir);
+			/* só de quem aparece: com zoom, quem ficou fora da vista não arrasta a plaquinha para a beirada */
+			t.x+=(cd-clamp(cd,min(c0,c1)+larg*0.5+margem+0.3,max(c0,c1)-larg*0.5-0.65))*step(min(c0,c1),cd)*step(cd,max(c0,c1));
 			}
 		if(t.x<-larg*0.5-margem||t.x>larg*0.5+0.35||abs(t.y)>2.5*px+0.3)
 			continue;
@@ -5374,7 +5574,7 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 		}
 	glUniform4fvARB(locations[14],MAX_CHUVAS,ch);
 	bool sala=modo==MUNDO&&mundoPronto;
-	glUniform4fARB(locations[12],sala?mundoBits:0.0f,bmax[0]-bmin[0],bmax[1]-bmin[1],sala?1.0f:0.0f); // .x: estado (bits; Mundo.cpp)
+	glUniform4fARB(locations[12],sala?mundoBits:0.0f,bmax[0]-bmin[0],bmax[1]-bmin[1],sala?1.0f+2.0f*mundoBits2:0.0f); // .x: estado (bits; Mundo.cpp); .w: ligado (>0,5) e mais bits (20/11/2026)
 	/* hora local (0-24): o laboratório escurece à noite e as luzes de dentro acendem */
 	float hora=horaFixa;
 	if(hora<0.0f)
@@ -5395,6 +5595,8 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 		a2[i*4+3]=acao[i]==2?std::min(1.0f,acaoT[i]/1.8f):0.0f;
 		if(modo==MUNDO&&i<nNomes)
 			a2[i*4+3]=GLfloat(visual[i]); // no laboratório ninguém mergulha: o .w leva o visual do membro
+		if(modo==MUNDO)
+			a2[i*4+0]=mAtiv[i]; // e o .x, o que ele faz com as mãos (20/11/2026; Mundo.cpp, mundoAtividade)
 		}
 	glUniform4fvARB(locations[16],MAX_AGENTES,a2);
 	/* comida: só enquanto não acabou (o desenho some sozinho com a fração que falta) */
@@ -5423,6 +5625,9 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 		}
 	rr[0]=rx0; rr[1]=ry0; rr[2]=rx1; rr[3]=ry1; // sem nenhuma: caixa vazia (min > max), o shader nem olha
 	glUniform4fvARB(locations[18],MAX_RACAO+1,rr);
+	/* vista do Mundo (20/11/2026): fora do laboratório a câmera fica parada no meio, sem zoom */
+	bool comVista=modo==MUNDO&&mundoPronto;
+	glUniform4fARB(locations[19],comVista?vistaC[0]:0.5f,comVista?vistaC[1]:0.5f,comVista?vistaZ:1.0f,0.0f);
 	/* painel de rostos na unidade de textura 6 (a 5 é a foto do modo Foto). O número da unidade vai
 	   sempre: um sampler2D deixado na unidade 0 (das texturas retangulares) invalidaria o desenho. */
 	glUniform1iARB(locations[11],6);

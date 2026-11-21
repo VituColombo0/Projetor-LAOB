@@ -186,6 +186,28 @@ class Painel(Ambiente):
         self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd mundo 0 0 - 0")
         self.assertEqual(self.get("/estado").get_json()["mundo"], [])    # sem fotos nem Willbert nos testes
 
+    def test_vista_do_laboratorio_pelo_painel(self):
+        """20/11/2026: botões de área (Tudo, Sala principal, Forense, Miniauditório) e "seguir" por membro."""
+        pagina = self.get("/").get_data(as_text=True)
+        for v in ("tudo", "principal", "forense", "mini"):
+            self.assertIn(f'data-vista="{v}"', pagina)
+        self.assertIn("/mundo/vista", pagina)
+        self.assertEqual(self.post("/mundo/vista", json={"vista": "forense"}).status_code, 400)   # mundo fechado
+        self.assertIsNone(self.get("/estado").get_json()["mundo_vista"])
+        self.assertEqual(self.post("/brincar", json={"acao": "mundo"}).status_code, 200)
+        log = os.path.join(self.D, "sandbox.log")
+        with open(log, "w") as f:
+            f.write("Animais: mundo (0)\n")
+        self.assertEqual(self.get("/estado").get_json()["mundo_vista"], {"area": "tudo"})
+        r = self.post("/mundo/vista", json={"vista": "forense"})
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertIn("Forense", r.get_json()["msg"])
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd")][-1], "cmd mundoVista forense")
+        self.assertEqual(self.post("/mundo/vista", json={"vista": "Fulano"}).status_code, 400)   # não é membro
+        with open(log, "a") as f:
+            f.write("Mundo: vista forense\n")
+        self.assertEqual(self.get("/estado").get_json()["mundo_vista"], {"area": "forense"})
+
     def test_mar_e_chuva_pelo_painel(self):
         e = self.get("/estado").get_json()
         self.assertEqual(len(e["especies"]), 12)                         # 8 na água, 3 em terra, 1 no ar

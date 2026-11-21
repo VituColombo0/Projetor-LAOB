@@ -38,6 +38,8 @@ int main()
 			mp::lugar(p,v,l.x,l.y);
 			std::snprintf(l.nome,sizeof(l.nome),"P%d vaga %d",p,v);
 			l.sala=p>=mp::P_URNA&&p<=mp::P_PCABERTO?mp::FORENSE:(p>=mp::P_APRESENTA&&p<=mp::P_VIDRO?mp::MINI:mp::PRINCIPAL);
+			if(p==mp::P_BEBEDOURO)
+				l.sala=mp::CORREDOR; // (20/11/2026) o bebedouro fica no corredor
 			L.push_back(l);
 			}
 	Lugar ext[3]={{0.395f,0.775f,"P6 lado de lá do arco",mp::PRINCIPAL},{1.00f,0.050f,"chegada (corredor)",mp::CORREDOR},{1.02f,0.050f,"saída (corredor)",mp::CORREDOR}};

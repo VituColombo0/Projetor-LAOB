@@ -89,6 +89,7 @@ def ver_estado():
     e["copia"] = areia.copia_situacao()
     e["animais"] = areia.animais_situacao()
     e["mundo"] = areia.mundo_situacao()
+    e["mundo_vista"] = areia.mundo_vista_atual()   # o que o laboratório mostra (área ou quem segue)
     e["mar"] = areia.mar_escolhido()
     e["especies"] = [[k, r, f, areia.GRUPOS.get(k, "")] for k, (r, f) in areia.ESPECIES.items()]
     e["tema"] = areia.tema_atual()
@@ -399,6 +400,15 @@ def mundo_rosto():
     def faz():
         n = areia.mundo_rosto(str((request.get_json(silent=True) or {}).get("nome") or ""))
         return f"Rosto de {n.capitalize()} na areia por alguns segundos"
+    return resposta(faz)
+
+
+@app.post("/mundo/vista")
+def mundo_vista():
+    """Área do laboratório que aparece na areia (tudo, principal, forense, mini) ou seguir um membro (20/11/2026)."""
+    def faz():
+        tipo, q = areia.mundo_vista(str((request.get_json(silent=True) or {}).get("vista") or ""))
+        return f"Seguindo {q.capitalize()} na areia" if tipo == "segue" else f"Na areia: {areia.VISTAS[q]}"
     return resposta(faz)
 
 
@@ -739,6 +749,14 @@ input[type=range] { accent-color: var(--accent); }
 .morador.aqui .bola { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); }
 .morador .n { font-weight: 700; }
 .morador .f { font-size: .8rem; font-weight: 500; color: var(--muted); }
+/* vista do laboratório (20/11/2026): área que aparece na areia e "seguir" ao lado de cada membro */
+.vistas { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; }
+.vistas button { min-height: 38px; padding: 6px 8px; font-size: .84rem; }
+.morador-linha { display: flex; gap: 6px; min-width: 0; }
+.morador-linha .morador { flex: 1; min-width: 0; }
+.morador-linha .seguir { flex: none; padding: 6px 10px; font-size: .8rem; }
+.morador .n, .morador .f { overflow-wrap: anywhere; }
+@media (max-width: 420px) { .vistas { grid-template-columns: 1fr 1fr; } }
 
 /* fotos */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
@@ -780,7 +798,7 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
   .especie .e { font-size: 1.1rem; }
   .especie button { min-height: 34px; width: 38px; }
   section.card[data-aba="bichos"] .hint, section.card[data-aba="chuva"] .hint, section.card[data-aba="projetor"] .hint { display: none; }
-  .moradores { grid-template-columns: 1fr 1fr; }
+  .moradores { grid-template-columns: 1fr; gap: 6px; }   /* uma coluna: cada membro tem o botão "seguir" ao lado */
   .morador { padding: 8px 10px; min-height: 46px; }
   .quadro-chuva { max-width: none; }
 }
@@ -823,6 +841,12 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
   <section class="card" data-aba="laob" id="sec-laob">
     <h2>LAOB <span class="extra" id="laob-estado"></span></h2>
     <p class="hint" id="laob-dica">O laboratório por dentro, desenhado na areia, com os membros lá.</p>
+    <div class="vistas" id="vistas" hidden role="group" aria-label="Área do laboratório que aparece na areia">
+      <button data-vista="tudo">Tudo</button>
+      <button data-vista="principal">Sala principal</button>
+      <button data-vista="forense">Forense</button>
+      <button data-vista="mini">Miniauditório</button>
+    </div>
     <div class="moradores" id="moradores"></div>
     <div class="grid" style="margin-top:12px">
       <button class="primary" id="laob-ligar">🔬 Abrir o laboratório</button>
@@ -1108,14 +1132,24 @@ async function carrega() {
     $('#laob-ligar').hidden = ligado;
     $('#laob-fechar').hidden = !ligado;
     $('#laob-dica').textContent = ligado
-      ? (mundo.length ? 'Toque num nome para ver o rosto num balão (quem está fora entra para aparecer). Bolinha verde: está no laboratório de verdade agora.'
+      ? (mundo.length ? 'Escolha a área que aparece na areia, ou 👁 para seguir alguém com zoom. Toque num nome para ver o rosto num balão (quem está fora entra para aparecer). Bolinha verde: está no laboratório de verdade agora.'
                       : 'A sala está vazia: não há fotos de membros na pasta do projetor.')
       : 'O laboratório por dentro, desenhado na areia, com os membros lá.';
-    const chaveM = JSON.stringify(mundo);
+    /* vista (20/11/2026): a área que aparece na areia ou quem está sendo seguido */
+    const V = E.mundo_vista || {};
+    $('#vistas').hidden = !ligado;
+    for (const b of document.querySelectorAll('#vistas button')) {
+      const ativa = ligado && V.area === b.dataset.vista;
+      b.classList.toggle('active', ativa);
+      b.setAttribute('aria-pressed', ativa ? 'true' : 'false');
+    }
+    const chaveM = JSON.stringify([mundo, V.segue || '', !!V.fora]);
     if (M.dataset.chave !== chaveM) {
       M.dataset.chave = chaveM;
       M.innerHTML = '';
       for (const m of mundo) {
+        const linha = document.createElement('div');
+        linha.className = 'morador-linha';
         const b = document.createElement('button');
         b.className = 'morador' + (m.presente ? ' aqui' : '');
         b.innerHTML = '<span class="bola"></span><span><span class="n"></span><br><span class="f"></span></span>';
@@ -1123,7 +1157,15 @@ async function carrega() {
         b.querySelector('.f').textContent = m.fazendo;
         b.title = 'Mostrar o rosto de ' + m.nome + ' na areia';
         b.onclick = () => post('/mundo/rosto', {nome: m.nome});
-        M.appendChild(b);
+        const s = document.createElement('button');
+        const segue = V.segue === m.nome;
+        s.className = 'seguir' + (segue ? ' active' : '');
+        s.textContent = segue ? (V.fora ? '👁 fora' : '👁 seguindo') : '👁 seguir';
+        s.setAttribute('aria-pressed', segue ? 'true' : 'false');
+        s.title = segue ? 'Voltar ao laboratório inteiro' : 'Seguir ' + m.nome + ' na areia (com zoom)';
+        s.onclick = () => post('/mundo/vista', {vista: segue ? 'tudo' : m.nome});
+        linha.append(b, s);
+        M.appendChild(linha);
       }
     }
 
@@ -1390,6 +1432,7 @@ $('#som-top').onclick = () => mandaSom({mudo: !(E.som && E.som.mudo)});
 $('#som-vol').oninput = () => { SOM_MEXENDO = true; $('#som-vol-val').textContent = $('#som-vol').value + '%'; };
 $('#som-vol').onchange = () => { SOM_MEXENDO = false; mandaSom({volume: +$('#som-vol').value}); };
 $('#laob-ligar').onclick = () => post('/brincar', {acao: 'mundo'});
+for (const b of document.querySelectorAll('#vistas button')) b.onclick = () => post('/mundo/vista', {vista: b.dataset.vista});
 $('#mar-soltar').onclick = () => post('/mar', MAR || {});
 $('#quadro-chuva').onclick = chove;
 $('#quadro-comida').onclick = jogaComida;

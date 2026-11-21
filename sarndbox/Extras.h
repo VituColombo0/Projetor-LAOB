@@ -24,7 +24,7 @@ class Extras
 	public:
 	enum {MAX_AGENTES=32};
 	enum Modo {NADA=0,PEIXES=1,CARROS=2,TODOS=3,PESSOAS=4,MUNDO=6}; // TODOS = peixes, carrinhos e pessoas; MUNDO: o laboratório (Mundo.cpp); 5 era o modo membros (tirado em 18/11/2026)
-	enum {NUM_UNIFORMS=19}; // cabe em heightMapShaderUniforms[48] do SurfaceRenderer (static_assert no patch_surface.py)
+	enum {NUM_UNIFORMS=20}; // cabe em heightMapShaderUniforms[48] do SurfaceRenderer (static_assert no patch_surface.py)
 	enum {MAX_NOMES=8,MAX_LETRAS=8}; // membros do laboratório (Mundo), com o nome em cima
 	/* Efeito animado de cada tema de cor: */
 	enum Efeito {SEM_EFEITO=0,LAVA=1,NEVE=2,POEIRA=3,AREIA=4,ONDAS=5,BRILHO=6}; // (a chuva fina do clássico saiu em 13/11)
@@ -186,6 +186,14 @@ class Extras
 	int mSocial[MAX_AGENTES]; // ponto escolhido pela rotina social (aula do Gazziro), -1 nenhum
 	double mundoArcoAte,mundoMusicaAte,mundoTVAte; // até quando o arco, a música e a TV da forense ficam ligados
 	float mundoBits; // estado para o shader (extrasMundo.x): salas ocupadas, portas, tela, scanner... (Mundo.cpp)
+	/* 20/11/2026: o que cada um faz com as mãos (extrasAg2.x no laboratório: 0 andando, 1 parado, 2 trabalhando,
+	   3 apontando, 4 bebendo, 5 falando, 6 mexendo em aparelho), a conversa em dupla e mais estado para o
+	   shader (extrasMundo.w = 1 + 2*mundoBits2: osciloscópio, caixa de areia, cluster, geladeira) */
+	float mAtiv[MAX_AGENTES];
+	double mConversaAte[MAX_AGENTES]; int mConversaCom[MAX_AGENTES];
+	float mundoBits2;
+	float mundoAtividade(int i) const; // o código de mAtiv do boneco i, pelo destino e pela conversa
+	void mundoConversa(int i); // ao chegar: puxa conversa com quem está parado perto (às vezes)
 	void mundoRota(int i,float fx,float fy); // planeja a rota do boneco i até (fx, fy) (F)
 	void mundoEscolhe(int i,int ponto,int vaga,const char* texto); // manda o boneco i a um ponto (-1 = assento)
 	void mundoEstado(void); // monta mundoBits
@@ -207,6 +215,16 @@ class Extras
 	void mundoMonta(void);
 	void mundoPasso(float dt);
 	bool mundoRosto(const char* nome,float segundos=12.0f);
+	/* Vista do Mundo (20/11/2026, pedido do Victor: pelo painel escolher a área que aparece e seguir um membro):
+	   uma câmera sobre a planta, com centro em F e zoom (1 = o laboratório inteiro); a troca desliza em 0,6 s.
+	   O shader recebe a câmera em extrasVista e passa por ela tudo o que é do laboratório (Mundo.cpp) */
+	enum {VISTA_TUDO=0,VISTA_PRINCIPAL=1,VISTA_FORENSE=2,VISTA_MINI=3,VISTA_SEGUE=4};
+	int vistaModo; std::string vistaNome;  // VISTA_SEGUE: o nome de quem está sendo seguido
+	float vistaC[2],vistaZ;                // câmera de agora: centro (F) e zoom
+	float vistaDe[3]; double vistaDesde;   // de onde a troca partiu (centro e zoom) e quando
+	float vistaSeg[2]; bool vistaSegOk,vistaFora; // posição suavizada de quem é seguido (F); ele está fora da sala
+	bool mundoVista(const char* qual);     // tudo, principal, forense, mini ou o NOME de um membro; false se não existe
+	void mundoVistaPasso(float dt);
 	void armadilhasDoLabirinto(void); // peças P_PERIGO entre a nascente e o alvo
 	/* Comida na terra (painel, comando "comida", ou dedo apontado): os pássaros pousam em volta, os cachorros sentam do lado
 	   e quem passeia para um pouco para olhar; só vêm os que estão perto, no máximo COMEDORES de uma vez (19/11/2026).

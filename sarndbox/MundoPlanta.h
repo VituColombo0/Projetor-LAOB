@@ -36,7 +36,8 @@ testes/teste_mundo.cpp confere todas as rotas entre todos os pontos.
 #define MP_MOVEIS(R) \
 	R(BANC_H,      0.508,0.900,0.147,0.201) /* bancada da parede H (osciloscópio, torso de RCP, câmera do Willbert) */ \
 	R(ARM_ALTO,    0.465,0.494,0.147,0.180) /* armário alto branco */ \
-	R(GELADEIRA,   0.277,0.303,0.180,0.221) \
+	R(GELADEIRA,   0.436,0.462,0.147,0.188) /* 20/11/2026: junto do armário alto (o canto F/H é do Lucas) */ \
+	R(MESA_LUCAS,  0.277,0.302,0.152,0.214) /* 20/11/2026: mesinha do Lucas, colada na parede F atrás do carteado */ \
 	R(ARM_ACO,     0.277,0.300,0.230,0.271) /* armários de aço */ \
 	R(COLUNA,      0.275,0.310,0.271,0.312) \
 	R(MESAS_ROXO,  0.275,0.300,0.296,0.428) /* mesas do banner roxo */ \
@@ -51,7 +52,7 @@ testes/teste_mundo.cpp confere todas as rotas entre todos os pontos.
 	R(MESA_C,      0.888,0.917,0.329,0.395) /* mesa da ponta C do cluster */ \
 	R(CAIXAS,      0.945,0.966,0.312,0.742) /* 9 caixas pretas no chão, junto do quadro */ \
 	R(CAIXA_ALTA,  0.951,0.967,0.276,0.298) \
-	R(ILHA1,       0.779,0.857,0.560,0.857) /* ilha do Victor */ \
+	R(ILHA1,       0.779,0.857,0.560,0.857) /* ilha do Victor (leste) e do Mario (oeste), 1 lugar de cada lado */ \
 	R(ILHA2,       0.557,0.663,0.560,0.849) \
 	R(PERSIANAS,   0.430,0.557,0.890,0.948) /* mesas junto das persianas */ \
 	R(MESA_L1,     0.881,0.931,0.880,0.915) /* mesa em L do canto B/C */ \
@@ -85,14 +86,14 @@ testes/teste_mundo.cpp confere todas as rotas entre todos os pontos.
 
 /* Assentos dos membros (onde a cadeira é desenhada): nome, Fx, Fy, ângulo de quem senta */
 #define MP_ASSENTOS(R) \
-	R(A0, 0.150,0.740, 3.1416)  /* Gazziro: cadeira bege da mesa de vidro, no miniauditório */ \
-	R(A1, 0.820,0.447,-1.5708)  /* Lucas: lado B do cluster, ponta C */ \
-	R(A2, 0.754,0.230,-1.5708)  /* Mario: bancada H, junto do osciloscópio (suposição) */ \
-	R(A3, 0.875,0.808, 3.1416)  /* Victor: ilha 1, lado leste, o lugar mais perto da janela */ \
-	R(A4, 0.762,0.808, 0.0)     /* os outros (membro novo) */ \
+	R(A0, 0.150,0.740, 3.1416)  /* Gazziro: cadeira bege da mesa de vidro, no miniauditório ("4": ele quase sempre está lá) */ \
+	R(A1, 0.317,0.183, 3.1416)  /* Lucas: mesinha na parede F, atrás da mesa de carteado ("3" na foto do Victor, 20/11/2026) */ \
+	R(A2, 0.762,0.708, 0.0)     /* Mario: ilha 1, lado oeste, de frente para o Victor ("2") */ \
+	R(A3, 0.875,0.708, 3.1416)  /* Victor: ilha 1, lado leste, do lado do quadro ("1") */ \
+	R(A4, 0.543,0.808, 0.0)     /* os outros (membro novo): ilha 2 */ \
 	R(A5, 0.677,0.725, 3.1416) \
 	R(A6, 0.543,0.643, 0.0) \
-	R(A7, 0.875,0.643, 3.1416)
+	R(A7, 0.677,0.643, 3.1416)
 
 /* Vãos das portas: entrada (na parede H, Fx), forense e miniauditório (na parede F, Fy) */
 #define MP_PORTA_ENT_0  0.909  /* a dobradiça fica aqui (lado F); abre para o corredor */
@@ -138,7 +139,8 @@ inline int sala(float fx,float fy)
 struct Ponto {float x,y,ang; const char* txt;};
 enum {P_AREIA=0,P_QUADRO=1,P_CLUSTER=2,P_SWITCH=3,P_CAMERAS=4,P_SCANNER=5,P_ARCO=6,P_GELADEIRA=7,P_CARTEADO=8,
       P_BANCADA=9,P_FUNDO=10,P_URNA=11,P_TABULEIRO=12,P_PAPEIS=13,P_POSTER=14,P_TV=15,P_MUSICA=16,P_PCABERTO=17,
-      P_APRESENTA=18,P_SOFA=19,P_PLATEIA=20,P_VIDRO=21,P_RCP=22,P_WILLBERT=23,P_AULA=24,N_PONTOS=25};
+      P_APRESENTA=18,P_SOFA=19,P_PLATEIA=20,P_VIDRO=21,P_RCP=22,P_WILLBERT=23,P_AULA=24,
+      P_OSCILO=25,P_ROTEADOR=26,P_ESTACAO=27,P_BEBEDOURO=28,N_PONTOS=29}; // (20/11/2026: os 4 últimos)
 const Ponto PONTO[N_PONTOS]={
 	{0.400f,0.470f,-1.5707963f,"foi até a caixa de areia"},
 	{0.925f,0.700f,0.0f,"foi dar aula no quadro"},                    // (19/11/2026, revisão: 0,580 -> 0,700; a plaquinha do Victor na turma cobria a dele)
@@ -147,7 +149,7 @@ const Ponto PONTO[N_PONTOS]={
 	{0.805f,0.290f,1.5707963f,"foi ajustar as câmeras"},
 	{0.340f,0.333f,1.5707963f,"foi escanear o manequim"},
 	{0.325f,0.775f,3.1415927f,"foi passar pelo arco"},                      // (entra pelo lado de lá: 0,395; 0,775)
-	{0.318f,0.200f,3.1415927f,"foi até a geladeira"},
+	{0.449f,0.212f,-1.5707963f,"foi pegar um café na geladeira"},          // (20/11/2026: a geladeira foi para junto do armário alto)
 	{0.367f,0.294f,-1.5707963f,"foi para a mesa de carteado"},
 	{0.642f,0.221f,-1.5707963f,"foi para a bancada de eletrônica"},
 	{0.322f,0.740f,3.1415927f,"foi para a bancada do fundo"},
@@ -164,7 +166,12 @@ const Ponto PONTO[N_PONTOS]={
 	{0.160f,0.695f,2.6f,"foi para a mesa de vidro"},
 	{0.684f,0.215f,-1.5707963f,"foi treinar RCP no boneco"},
 	{0.880f,0.215f,-1.5707963f,"foi mexer na câmera do Willbert"},
-	{0.868f,0.440f,0.0f,"foi assistir a aula no quadro"}};          // vagas: (0,868; 0,440), (0,885; 0,530), (0,872; 0,620) (19/11/2026: mais abertas, os corpos se encostavam)
+	{0.868f,0.440f,0.0f,"foi assistir a aula no quadro"},           // vagas: (0,868; 0,440), (0,885; 0,530), (0,872; 0,620) (19/11/2026: mais abertas, os corpos se encostavam)
+	/* 20/11/2026 (pedido do Victor: "fazer eles mexerem em outras coisas") */
+	{0.754f,0.230f,-1.5707963f,"foi mexer no osciloscópio"},                // a cadeira que era do Mario na bancada H
+	{0.684f,0.290f,1.5707963f,"foi reiniciar o roteador do cluster"},
+	{0.820f,0.447f,-1.5707963f,"foi trabalhar na estação do cluster"},      // o lugar que era do Lucas
+	{0.580f,0.045f,-1.5707963f,"foi beber água no bebedouro"}};             // no corredor, na parede da frente
 
 /* Lugar de verdade de um ponto com vagas (sofá, plateia e aula têm 3) */
 inline void lugar(int p,int vaga,float& fx,float& fy)
