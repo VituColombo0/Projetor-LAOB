@@ -98,18 +98,27 @@ if "FaceImage" not in c:
 				}\\n\\
 			}\\n";
 		else if(fragmentUniforms.find("luzRealce")!=std::string::npos)
-		fragmentMain+="\\
+			{
+			/* Projetor-LAOB: luz mais forte e cada coisa mais separada do chão (pedidos do Victor, 22/11/2026).
+			   Os tons médios sobem por 1-(1-c)^(1+f): o preto quase não sobe, então os contornos escuros dos
+			   bichos, pessoas e comida continuam nítidos (a gama de antes os lavava). Onde há objeto
+			   (extrasObjeto, do Extras.cpp) a cor fica bem mais saturada e com mais contraste e sobe menos;
+			   o chão fica com a saturação moderada: os objetos saltam do relevo. */
+			std::string luzObj=fragmentUniforms.find("extrasObjeto")!=std::string::npos?"extrasObjeto":"0.0";
+			fragmentMain+="\\
 			/* Assign the final color to the fragment: */\\n\\
 			gl_FragColor=baseColor;\\n\\
-			/* Projetor-LAOB: luz mais forte (pedido do Victor, 22/11/2026): tons escuros e médios sobem (gama)\\n\\
-			   e as cores ficam mais vivas; o preto do projetor na areia vira só a cor da areia */\\n\\
 			if(luzRealce.x>0.0||luzRealce.y>0.0)\\n\\
 				{\\n\\
 				vec3 luzC=clamp(gl_FragColor.rgb,0.0,1.0);\\n\\
-				luzC=clamp(mix(vec3(dot(luzC,vec3(0.299,0.587,0.114))),luzC,1.0+luzRealce.y),0.0,1.0);\\n\\
-				gl_FragColor.rgb=pow(luzC,vec3(1.0/(1.0+luzRealce.x)));\\n\\
+				float luzO="+luzObj+";\\n\\
+				float luzY=dot(luzC,vec3(0.299,0.587,0.114));\\n\\
+				luzC=clamp(mix(vec3(luzY),luzC,1.0+luzRealce.y*mix(0.5,1.5,luzO)),0.0,1.0);\\n\\
+				luzC=mix(luzC,clamp((luzC-0.5)*(1.0+0.3*luzRealce.x)+0.5,0.0,1.0),luzO);\\n\\
+				gl_FragColor.rgb=1.0-pow(1.0-luzC,vec3(1.0+luzRealce.x*mix(1.0,0.5,luzO)));\\n\\
 				}\\n\\
 			}\\n";
+			}
 		else
 		fragmentMain+="\\
 			/* Assign the final color to the fragment: */\\n\\

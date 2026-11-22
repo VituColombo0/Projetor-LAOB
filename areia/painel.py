@@ -890,10 +890,10 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
     </div>
     <div class="quadro-chuva" id="quadro-comida" role="button" tabindex="0" aria-label="Tocar onde jogar comida" style="margin-top:12px">
       <img id="ao-vivo-comida" alt="" hidden>
-      <span class="aviso-vivo" id="aviso-comida">🍞 toque para jogar comida (na água: ração)</span>
+      <span class="aviso-vivo" id="aviso-comida">🥣 toque para jogar comida (na água: flocos de ração)</span>
       <span class="selo-vivo" id="selo-comida" hidden>● ao vivo</span>
     </div>
-    <p class="hint">Na água cai ração para os peixes, tartarugas e patos; na terra, pão para os pássaros e cachorros. Ou aponte com o indicador para cima e os outros dedos fechados: cai comida embaixo do dedo.</p>
+    <p class="hint">Na água caem flocos de ração para os peixes, tartarugas e patos; na terra, uma tigela de ração para os pássaros e cachorros. Ou aponte com o indicador (os outros dedos fechados): cai comida onde o dedo aponta.</p>
   </section>
 
   <section class="card" data-aba="chuva">
@@ -1378,7 +1378,7 @@ async function jogaComida(ev) {
   const x = Math.min(1, Math.max(0, (p.clientX - r.left) / r.width));
   const y = Math.min(1, Math.max(0, (p.clientY - r.top) / r.height));
   const m = document.createElement('span');
-  m.textContent = '🍞'; m.className = 'aviso-vivo pao';
+  m.textContent = '🥣'; m.className = 'aviso-vivo pao';
   m.style.cssText = `left:${x*100}%;top:${y*100}%;transform:translate(-50%,-50%);position:absolute`;
   q.appendChild(m);
   const tira = setTimeout(() => m.remove(), 20000);

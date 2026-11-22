@@ -2112,6 +2112,7 @@ uniform vec4 extrasRacao[25]; // [0] caixa que envolve a ração (min x, min y, 
                               // tamanho*20 (parte inteira) + segundos desde a última beliscada (fração)
 uniform vec4 extrasAg2[32];  // por bicho: estado (0 normal, 1 pousado/sentado, 2 mergulho, 3 indo, 4 caçando), altura do voo (0-1), tamanho, andamento do mergulho (0-1; no laboratório: visual do membro, 0 = sorteado)
 float extrasMarca;          // 1 onde há um animal marinho (o shader da água o deixa à vista)
+float extrasObjeto;         // 1 onde há bicho, pessoa, carro ou comida (a luz do fim os destaca do chão: patch_surface.py)
 float extrasLimpa;          // 0..1: tira as curvas de nível (corpo dos bichos e beirada em volta; patch_surface.py)
 float extrasAguaSombra;     // -1..1: sombra macia (> 0) ou clarão (< 0) na água em volta dos bichos (patch_agua.py)
 float exDifCor(vec3 a,vec3 b)
@@ -3920,6 +3921,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 		}
 	float et=extrasInfo.x;
 	extrasMarca=0.0;
+	extrasObjeto=0.0;
 	extrasLimpa=0.0;
 	extrasAguaSombra=0.0;
 	vec4 exAntes=baseColor;     // para a transição suave quando a brincadeira muda
@@ -4400,76 +4402,97 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			baseColor.rgb=c;
 			}
 		}
-	/* Comida jogada pelo painel (18/11/2026): um pão no meio e migalhas em volta, vistos de cima, com sombra
-	   e contorno escuro (lê em qualquer tema). As migalhas somem uma a uma conforme o tempo acaba e, no fim,
-	   o pão vai diminuindo. Longe dela não faz conta nenhuma. (A mão não desenha nada: o anel em volta
-	   dela foi tirado a pedido do Victor em 17/11/2026.) */
+	/* Comida de terra (painel ou dedo apontado). Até 22/11/2026 era um pão com migalhas em volta, que na
+	   areia parecia um sol (pedido do Victor: "tire o sol", "comida mais bonita"). Agora: uma tigela vermelha
+	   de borda clara, cheia de ração marrom (bolinhas com brilho), e uns grãos caídos de UM lado só, em
+	   monte (nada em círculo). A ração vai acabando com o tempo (o fundo da tigela aparece); sombra para o
+	   mesmo canto dos bichos e contorno escuro: lê em qualquer tema. Longe dela não faz conta nenhuma. */
 	if(extrasComida.w>0.0)
 		{
 		vec2 qc=ep.xy-extrasComida.xy;
-		float rc=extrasComida.z;
-		if(dot(qc,qc)<(rc+0.8)*(rc+0.8))
+		if(dot(qc,qc)<16.0)
 			{
 			float resta=extrasComida.w;                                  // 1 = acabou de cair .. 0 = acabou
-			const vec2 sm=vec2(0.25,-0.25);                               // sombra: luz do mesmo canto dos bichos
-			/* pão: bisnaga (cápsula) girada ao acaso, com três cortes na casca */
-			float giroP=exHash(extrasComida.xy)*3.1416;
-			vec2 eixo=vec2(cos(giroP),sin(giroP)),lado=vec2(-eixo.y,eixo.x);
-			float tamP=0.45+0.55*smoothstep(0.0,0.1,resta);             // no fim o pão vai sendo comido
-			vec2 pp=vec2(dot(qc,eixo),dot(qc,lado))/tamP;
-			vec2 ps=vec2(dot(qc-sm,eixo),dot(qc-sm,lado))/tamP;
-			float dP=exCaixa(pp,vec2(1.9,1.0),0.95)*tamP;                // < 0 dentro do pão (cm)
-			float sombra=smoothstep(0.35,-0.15,exCaixa(ps,vec2(1.9,1.0),0.95)*tamP);
-			/* migalhas: 10 em volta do pão, cada uma com lugar, tamanho, jeito e tom sorteados pela posição
-			   da comida; a de número maior some primeiro */
-			float dM=1e3,tomM=0.0;
-			for(int k=0;k<10;++k)
+			const vec2 sm=vec2(0.3,-0.3);                                 // sombra: luz do mesmo canto dos bichos
+			const float RT=1.45;                                          // raio da tigela (cm)
+			float dT=length(qc)-RT;                                       // < 0 dentro da tigela
+			float sombra=smoothstep(0.35,-0.2,length(qc-sm)-RT);
+			/* grãos caídos: 7, num monte de um lado só (rumo sorteado pela posição) */
+			float rumo=exHash(extrasComida.xy)*6.2832;
+			vec2 dirG=vec2(cos(rumo),sin(rumo));
+			float dG=1e3,tomG=0.0;
+			for(int k=0;k<7;++k)
 				{
 				float fk=float(k);
-				float lo=(fk+1.0)/11.0;
-				float vive=smoothstep(lo-0.03,lo+0.02,resta);
-				if(vive<=0.0)
-					continue;
-				vec2 sem=extrasComida.xy+vec2(fk*3.7,fk*1.3);
-				float h1=exHash(sem),h2=exHash(sem+vec2(5.1,2.3)),h3=exHash(sem+vec2(1.7,8.9));
-				float ak=fk*2.39996+h1*0.9;                                   // ângulo de ouro: espalhadas sem amontoar
-				vec2 cm=vec2(cos(ak),sin(ak))*rc*(0.5+0.42*h2);
-				float tk=(0.22+0.22*h3)*vive;
-				float ca=cos(h1*6.2832),sa=sin(h1*6.2832);
-				vec2 dq=qc-cm;
-				dq=vec2(ca*dq.x+sa*dq.y,-sa*dq.x+ca*dq.y)/vec2(1.0,0.7);  // um pouco achatadas, cada uma num rumo
-				float dk=length(dq)-tk;
-				if(dk<dM)
+				float lo=(fk+1.0)/8.0;
+				if(resta<lo*0.6)
+					continue;                                             // os de fora somem primeiro
+				vec2 sem=extrasComida.xy+vec2(fk*3.1,fk*1.7);
+				float h1=exHash(sem),h2=exHash(sem+vec2(4.3,1.1)),h3=exHash(sem+vec2(2.2,7.7));
+				vec2 cg=dirG*(RT+0.35+0.9*h1)+vec2(-dirG.y,dirG.x)*(h2-0.5)*1.3;
+				float rg=0.17+0.07*h3;
+				float d=length((qc-cg)*vec2(1.0,1.25))-rg;
+				if(d<dG)
 					{
-					dM=dk;
-					tomM=h2;
+					dG=d;
+					tomG=h2;
 					}
-				sombra=max(sombra,smoothstep(tk*0.4,-tk*0.6,length(qc-sm-cm)-tk)*0.8);
+				sombra=max(sombra,smoothstep(0.1,-0.1,length(qc-sm*0.4-cg)-rg)*0.7);
 				}
-			vec3 cc=mix(baseColor.rgb,baseColor.rgb*0.4,sombra*0.65);
-			vec3 contorno=vec3(0.2,0.1,0.04);
-			if(dM<0.0)
+			vec3 cc=mix(baseColor.rgb,baseColor.rgb*0.35,sombra*0.7);
+			bool pintou=sombra>0.05;
+			if(dG<0.0)
 				{
-				vec3 miolo=mix(vec3(0.84,0.56,0.25),vec3(0.98,0.86,0.58),tomM); // casca ou miolo
-				cc=dM>-0.09?contorno:miolo*(0.85+0.15*smoothstep(-0.25,0.0,-dM));
+				vec3 grao=mix(vec3(0.55,0.3,0.12),vec3(0.72,0.45,0.18),tomG);
+				cc=dG>-0.06?vec3(0.16,0.08,0.03):grao*(0.85+0.3*smoothstep(-0.2,0.0,-dG));
+				pintou=true;
 				}
-			if(dP<0.0)
+			if(dT<0.0)
 				{
-				/* casca dourada, mais tostada na beira; cortes claros em diagonal; brilho de um lado */
-				vec3 casca=mix(vec3(0.62,0.33,0.11),vec3(0.93,0.66,0.3),smoothstep(0.0,0.75,-dP));
-				float corte=0.0;
-				for(int k=0;k<3;++k)
+				if(dT>-0.08)
+					cc=vec3(0.18,0.05,0.04);                                  // contorno de fora
+				else if(dT>-0.32)
 					{
-					float xk=(float(k)-1.0)*1.05;
-					corte=max(corte,smoothstep(0.15,0.06,abs(pp.x-xk-0.45*pp.y))*step(abs(pp.y),0.62));
+					/* borda da tigela: vermelho com brilho em cima à esquerda */
+					float luz=dot(normalize(qc),vec2(-0.7,0.7));
+					cc=mix(vec3(0.72,0.1,0.08),vec3(0.98,0.42,0.32),smoothstep(-0.2,1.0,luz));
+					if(dT>-0.13||dT<-0.27)
+						cc*=0.8;
 					}
-				casca=mix(casca,vec3(0.99,0.9,0.66),corte*0.9);
-				casca+=vec3(0.14,0.1,0.05)*smoothstep(1.0,0.0,length(pp-vec2(-0.7,0.45)));
-				cc=dP>-0.1?contorno:casca;
+				else if(dT>-0.4)
+					cc=vec3(0.25,0.06,0.05);                                  // contorno de dentro
+				else
+					{
+					/* dentro: ração (bolinhas numa grade torta, cada uma com brilho); o que já foi comido deixa ver
+					   o fundo creme da tigela */
+					vec3 fundoT=vec3(0.93,0.86,0.74);
+					vec2 g=qc*2.4+vec2(0.0,0.5)*floor(qc.x*2.4);   // ~4 mm cada bolinha, cheia até a borda
+					vec2 cel=floor(g),f=fract(g)-0.5;
+					float hc=exHash(cel+extrasComida.xy);
+					vec2 off=(vec2(exHash(cel+vec2(3.0,1.0)),exHash(cel+vec2(1.0,5.0)))-0.5)*0.15;
+					float db=length(f-off)-0.47;
+					bool tem=hc<0.15+0.85*resta;
+					if(tem&&db<0.0)
+						{
+						vec3 kib=mix(vec3(0.5,0.27,0.1),vec3(0.7,0.42,0.18),hc);
+						kib+=vec3(0.22,0.17,0.12)*smoothstep(0.2,0.0,length(f-off-vec2(-0.12,0.12)));
+						cc=db>-0.09?vec3(0.22,0.11,0.04):kib;
+						}
+					else
+						cc=fundoT*(0.75+0.25*smoothstep(0.0,RT,length(qc+sm))); // fundo creme, com a sombra da borda
+					}
+				pintou=true;
 				}
-			if(dM<0.0||dP<0.0)
-				extrasMarca=1.0; // caiu na água: fica à vista, boiando
-			baseColor.rgb=cc;
+			if(pintou)
+				{
+				baseColor.rgb=cc;
+				extrasLimpa=max(extrasLimpa,dT<0.0||dG<0.0?1.0:0.6);
+				if(dT<0.0||dG<0.0)
+					{
+					extrasObjeto=1.0;
+					extrasMarca=1.0; // água chegando: fica à vista, boiando
+					}
+				}
 			}
 		}
 	/* Peixes e carrinhos (vistos de cima, com sombra): */
@@ -5255,6 +5278,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			float lB=lRep*(1.0-v*max(lado,0.0))+(1.0-lRep)*v*max(-lado,0.0);
 			if(corpoB)
 				{
+				extrasObjeto=1.0;
 				/* metade pela cor típica (o bicho todo muda junto) e metade pela cor deste pixel (o chapéu da
 				   cor da areia escurece mais que a camisa colorida) */
 				vec3 cb=baseColor.rgb;
@@ -5280,6 +5304,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			}
 		if(extrasMarca>0.5&&!esteira)
 			{
+			extrasObjeto=1.0;
 			/* Realce (19/11/2026): o corpo do bicho um pouco mais saturado; e o da água já vem "contra" o azul
 			   que a água ainda passa por cima dele (25% da água, no SurfaceAddWaterColor: a cor estimada da água
 			   funda de cada tema é descontada antes), para não ficar lavado */
@@ -5304,7 +5329,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 	vec4 rcx=extrasRacao[0];
 	if(ep.x>rcx.x&&ep.y>rcx.y&&ep.x<rcx.z&&ep.y<rcx.w)
 		{
-		float dB=1e3,dS=1e3;
+		float dB=1e3,dS=1e3,kB=0.0;
 		vec2 qB=vec2(0.0);
 		for(int k=1;k<25;++k)
 			{
@@ -5312,7 +5337,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			if(r.z<0.0)
 				continue;
 			vec2 q=ep.xy-r.xy;
-			if(dot(q,q)>4.0) // 2 cm: a bolinha caindo, ainda grande
+			if(dot(q,q)>4.0) // 2 cm: o floco caindo, ainda grande
 				continue;
 			float tam=floor(r.w)/20.0;                                   // 1 inteira .. 0 acabou (comida ou desmanchou)
 			float mord=fract(r.w);                                       // segundos desde a beliscada (0,99 = nenhuma)
@@ -5324,11 +5349,18 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			cai*=cai;
 			vec2 bob=cai>0.0?vec2(0.0):0.06*vec2(sin(et*2.1+fk*1.7),cos(et*1.7+fk*2.3)); // balança de leve na água
 			float rb=0.4*tam*(mord<0.2?0.8+mord:1.0)*(1.0+1.2*cai);     // encolhe na beliscada; maior lá no alto
-			float db=length(q-bob)-rb;
+			/* floco (22/11/2026, "comida mais bonita"): pedacinho achatado e torto, girando devagar, cada um
+			   numa cor de ração de peixe (laranja, vermelho, amarelo, verde) */
+			float giro=exHash(vec2(fk,7.0))*6.2832+0.25*sin(et*0.8+fk);
+			vec2 qr=q-bob;
+			qr=vec2(cos(giro)*qr.x+sin(giro)*qr.y,-sin(giro)*qr.x+cos(giro)*qr.y);
+			qr.x+=0.25*qr.y*(exHash(vec2(fk,3.0))-0.5);                  // torto (paralelogramo)
+			float db=exCaixa(qr,vec2(1.05,0.72)*rb,0.3*rb);
 			if(db<dB)
 				{
 				dB=db;
-				qB=(q-bob)/rb;
+				qB=qr/rb;
+				kB=fk;
 				}
 			if(cai>0.0)
 				dS=min(dS,length(q-vec2(0.25,-0.25)*(1.0+3.5*cai))-0.4*tam); // a sombra na água, chegando
@@ -5344,11 +5376,16 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				baseColor.rgb=vec3(0.2,0.1,0.03);                                            // contorno
 			else
 				{
-				/* ração: marrom, mais clara no alto (luz do mesmo canto dos bichos), com um brilho */
-				vec3 rc=mix(vec3(0.84,0.58,0.3),vec3(0.46,0.26,0.1),smoothstep(0.0,1.3,length(qB-vec2(-0.35,0.35))));
-				rc+=vec3(0.3,0.26,0.2)*smoothstep(0.3,0.0,length(qB-vec2(-0.35,0.38)));
-				baseColor.rgb=rc;
+				/* floco: cor da ração de peixe, mais clara no alto (luz do mesmo canto dos bichos), com um brilho
+				   e umas pintinhas mais escuras */
+				float hk=exHash(vec2(kB,11.0));
+				vec3 base=hk<0.35?vec3(1.0,0.5,0.1):hk<0.6?vec3(0.92,0.18,0.12):hk<0.82?vec3(1.0,0.82,0.18):vec3(0.35,0.78,0.22);
+				vec3 rc=mix(base*1.1,base*0.6,smoothstep(0.0,1.6,length(qB-vec2(-0.5,0.4))));
+				rc*=1.0-0.25*step(0.8,exHash(floor(qB*2.5)+vec2(kB)));
+				rc+=vec3(0.3)*smoothstep(0.35,0.0,length(qB-vec2(-0.45,0.3)));
+				baseColor.rgb=clamp(rc,0.0,1.0);
 				}
+			extrasObjeto=1.0;
 			}
 		}
 	/* Chuva pelo painel: a nuvem chega crescendo, deriva de leve, as gotas caem em riscos e respingam no

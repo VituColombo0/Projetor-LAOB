@@ -746,8 +746,8 @@ def comida(fx, fy, segundos=20):
     if l.startswith("Comida: nada caiu"):
         if "(agua)" in l:
             raise Erro("aí é água, e só os bichos da água comem a ração: não há nenhum na areia. "
-                       "Toque na terra (pão para os pássaros e cachorros) ou solte peixes na aba Vida")
-        raise Erro("aí é terra, e só os pássaros e cachorros comem o pão: não há nenhum na areia. "
+                       "Toque na terra (a tigela de ração dos pássaros e cachorros) ou solte peixes na aba Vida")
+        raise Erro("aí é terra, e só os pássaros e cachorros comem da tigela: não há nenhum na areia. "
                    "Toque na água (ração para os bichos da água) ou solte pássaros na aba Vida")
     onde = "agua" if l.endswith("(agua)") else "terra" if l.endswith("(terra)") else None
     return {"onde": onde, "comem": agua if onde == "agua" else terra if onde == "terra" else {**terra, **agua}}
