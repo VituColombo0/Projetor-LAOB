@@ -369,7 +369,7 @@ bool roda(const Caso& c,unsigned semente,bool mostra)
 
 /* ---- sequências no tempo, pelo caminho do Sandbox (Detector::passo + Rastro), a 12 quadros por segundo */
 
-struct Resultado {int confirmou=0,soltou=0,vistos=0; bool ativoNoFim=false; std::vector<int> quando;};
+struct Resultado {int confirmou=0,soltou=0,vistos=0,travados=0; bool ativoNoFim=false; std::vector<int> quando;};
 
 Resultado sequencia(int n,const std::function<Cena(int)>& cena,float cp,unsigned semente)
 	{
@@ -384,6 +384,7 @@ Resultado sequencia(int n,const std::function<Cena(int)>& cena,float cp,unsigned
 		Gesto::Passo p;
 		d.passo(q,2,2,W-2,H-2,i/12.0,0,maos,r,p);
 		res.vistos+=p.viu;
+		res.travados+=!d.trava.empty(); // relevo travado embaixo da mão (FrameFilter)
 		if(p.ev==Gesto::Rastro::CONFIRMOU) {++res.confirmou;res.quando.push_back(i);}
 		if(p.ev==Gesto::Rastro::SOLTOU) ++res.soltou;
 		}
@@ -678,11 +679,12 @@ int main(int argc,char** argv)
 		for(unsigned s=1;s<=4;++s)
 			{
 			Resultado r=sequencia(72,[&](int i){return i<12?Cena():(tipo==0?dedoCima(i,engoleEm(i,12)):dedoBaixo(i,engoleEm(i,12)));},0.13f,s);
-			ok+=r.confirmou==1&&r.soltou==0&&r.ativoNoFim&&r.quando[0]<=12+8;
+			ok+=r.confirmou==1&&r.soltou==0&&r.ativoNoFim&&r.quando[0]<=12+8&&r.travados>=55;
 			if(s==1) r1=r;
 			}
-		confere(ok==4,std::string(tipo==0?"dedo para cima":"dedo para baixo")+" parado 5 s com o filtro engolindo a mão: confirma 1 vez em até 0,7 s e não solta ("
-		        +std::to_string(ok)+"/4; confirmou no quadro "+(r1.quando.empty()?std::string("-"):std::to_string(r1.quando[0]))+", visto em "+std::to_string(r1.vistos)+")");
+		confere(ok==4,std::string(tipo==0?"dedo para cima":"dedo para baixo")+" parado 5 s com o filtro engolindo a mão: confirma 1 vez em até 0,7 s, não solta e trava o relevo ("
+		        +std::to_string(ok)+"/4; confirmou no quadro "+(r1.quando.empty()?std::string("-"):std::to_string(r1.quando[0]))+", visto em "+std::to_string(r1.vistos)
+		        +", relevo travado em "+std::to_string(r1.travados)+" de 60)");
 		}
 	}
 	{
@@ -693,7 +695,7 @@ int main(int argc,char** argv)
 	{
 	/* monte de areia feito agora e que fica: o filtro aceita em 1 s; a areia congelada aceita depois de 8 s */
 	Resultado r=sequencia(150,[&](int i){Cena c;if(i>=12){Monte m={0.0f,0.0f,10.0f,3.0f,false};c.montes.push_back(m);c.monteNaAreia=i>=24;}return c;},0.15f,6);
-	confere(r.confirmou==0&&r.vistos==0,"monte de areia novo que fica 11 s: nunca vira dedo (visto "+std::to_string(r.vistos)+")");
+	confere(r.confirmou==0&&r.vistos==0&&r.travados==0,"monte de areia novo que fica 11 s: nunca vira dedo nem trava o relevo (visto "+std::to_string(r.vistos)+", travado "+std::to_string(r.travados)+")");
 	}
 	{
 	/* monte com crista (ou ponta puxada de lado) feito agora e que fica: a areia congelada segura o monte
@@ -753,7 +755,7 @@ int main(int argc,char** argv)
 	for(int i=0;i<8;++i)
 		if(r.passo(i/12.0,true,10.0f+0.3f*i,5.0f)==Gesto::Rastro::CONFIRMOU)
 			confirmou=i;
-	confere(confirmou==3,"4 acertos seguidos confirmam (~0,3 s a 12 por segundo)");
+	confere(confirmou==3,"visto por 0,2 s confirma (4º quadro a 12 por segundo)");
 	int soltou=-1;
 	for(int i=8;i<20&&soltou<0;++i)
 		if(r.passo(i/12.0,false,0,0)==Gesto::Rastro::SOLTOU)
@@ -780,7 +782,21 @@ int main(int argc,char** argv)
 	const bool viu[6]={true,true,false,true,true,true};
 	for(int i=0;i<6;++i)
 		ev[i]=r.passo(i/12.0,viu[i],0.0f,0.0f);
-	confere(ev[4]==Gesto::Rastro::CONFIRMOU,"uma falha no meio é tolerada");
+	confere(ev[3]==Gesto::Rastro::CONFIRMOU,"uma falha no meio é tolerada");
+	}
+	{
+	/* a 30 quadros por segundo (o Sandbox desde 22/11/2026): confirma em 0,2 s, tolera 3 quadros perdidos,
+	   solta em ~0,35 s */
+	Gesto::Rastro r;
+	int confirmou=-1,soltou=-1;
+	for(int i=0;i<12;++i)
+		if(r.passo(i/30.0,!(i>=2&&i<=4),0.2f*i,0.0f)==Gesto::Rastro::CONFIRMOU)
+			confirmou=i;
+	for(int i=12;i<40&&soltou<0;++i)
+		if(r.passo(i/30.0,false,0,0)==Gesto::Rastro::SOLTOU)
+			soltou=i;
+	confere(confirmou==6&&soltou>=21&&soltou<=23,"a 30 por segundo: confirma em 0,2 s com 3 quadros perdidos, solta em ~0,35 s (confirmou no "+
+	        std::to_string(confirmou)+", soltou no "+std::to_string(soltou)+")");
 	}
 	{
 	/* a mão aberta que o SARndbox acha em cima do dedo confirmado solta na hora */

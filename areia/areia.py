@@ -343,6 +343,37 @@ def temas():
     return [t for t in NOMES_TEMAS if t in achados] + sorted(achados - set(NOMES_TEMAS))
 
 
+# Brilho da imagem (22/11/2026, pedido do Victor: "deixar a luz do projetor mais forte"): realce na cor
+# final do SARndbox (comando "luz <força> <saturação>"); guardado em luz.txt para as próximas aberturas.
+NIVEIS_LUZ = {"normal": "0 0", "forte": "0.5 0.3", "maximo": "0.9 0.45"}
+LUZ_PADRAO = "forte"
+
+
+def _arquivo_luz():
+    return os.path.join(D, "luz.txt")
+
+
+def luz_atual():
+    try:
+        with open(_arquivo_luz(), encoding="utf-8") as f:
+            v = " ".join(f.read().split())
+    except OSError:
+        return LUZ_PADRAO
+    return next((k for k, n in NIVEIS_LUZ.items() if n == v), LUZ_PADRAO)
+
+
+def escolhe_luz(nivel):
+    """Muda o brilho na hora (se a areia está aberta) e guarda para as próximas aberturas."""
+    if nivel not in NIVEIS_LUZ:
+        raise Erro("brilho desconhecido: " + str(nivel))
+    with open(_arquivo_luz() + ".tmp", "w", encoding="utf-8") as f:
+        f.write(NIVEIS_LUZ[nivel] + "\n")
+    os.replace(_arquivo_luz() + ".tmp", _arquivo_luz())
+    if qual() == "rosto":
+        _comando("luz " + NIVEIS_LUZ[nivel])
+    return nivel
+
+
 def tema_atual():
     try:
         return os.path.basename(os.readlink(TEMA_ATUAL))[:-4]

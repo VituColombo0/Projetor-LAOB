@@ -545,6 +545,88 @@ def carrinho():
     return sala(filtra(junta((bip(), 0), (bip(0.11), 0.16)), 0, 3000), 0.4, 0.15)
 
 
+# ---------- 22/11/2026: sons que combinam com o que está na areia ----------
+# (gerador próprio: rodar main() de novo refaz os antigos iguais e só acrescenta estes)
+rng2 = np.random.default_rng(20261122)
+
+
+def amb_laboratorio():
+    """Laboratório LAOB (Mundo): o ar-condicionado e as ventoinhas dos computadores, sala fechada."""
+    t = tempo(N)
+    ar = ruido(N, 70, 500, incl=1.6) * ondula(N, 0.08, 0.8)
+    ventoinha = ruido(N, 300, 2400, incl=0.6) * ondula(N, 0.05, 0.85)
+    zumbido = sum(a * np.sin(2 * np.pi * nota_periodica(f) * t) for f, a in ((120.0, 1.0), (240.0, 0.35), (360.0, 0.12)))
+    return sala(ar + 0.22 * ventoinha + 0.05 * zumbido, 0.4, 0.15, circular=True)
+
+
+def teclado(variante):
+    """Alguém digitando numa bancada: uma rajada de teclas (clique agudo + toque grave), às vezes o espaço."""
+    pedacos, tt = [], 0.0
+    for i in range((9, 13, 7)[variante - 1] + int(rng2.integers(0, 4))):
+        k = int(rng2.uniform(0.008, 0.014) * SR)
+        n = np.arange(k)
+        clique = filtra(rng2.standard_normal(k), 1800, 6500) * np.exp(-n / (k / 6))
+        toque = np.sin(2 * np.pi * rng2.uniform(260, 420) * n / SR) * np.exp(-n / (k / 3))
+        espaco = i > 3 and rng2.random() < 0.15
+        pedacos.append(((0.6 * clique + (0.9 if espaco else 0.45) * toque) * rng2.uniform(0.6, 1.0), tt))
+        tt += rng2.uniform(0.07, 0.17) + (0.25 if rng2.random() < 0.12 else 0.0)
+    return sala(junta(*pedacos), 0.3, 0.12)
+
+
+def fossil():
+    """Fóssil achado: o pincel limpando a terra em cima do osso e três notas de madeira subindo."""
+    pedacos = []
+    for i in range(3):
+        d = 0.22
+        n = int(d * SR)
+        env = np.sin(np.pi * np.arange(n) / n) ** 1.5
+        pedacos.append((filtra(rng2.standard_normal(n), 2200, 7000) * env * 0.35, i * 0.24))
+    for i, f in enumerate((392.0, 523.25, 659.25)):
+        pedacos.append((sino(f, 0.9, parciais=((1, 1), (4.0, .1), (9.9, .03)), decai=0.3), 0.8 + i * 0.16))
+    return sala(junta(*pedacos), 0.8, 0.2)
+
+
+def racao_agua():
+    """Ração caindo na água: plic-plic de bolinhas pequenas, uma atrás da outra."""
+    pedacos, tt = [], 0.0
+    for _ in range(4 + int(rng2.integers(0, 2))):
+        pedacos.append((bolha(rng2.uniform(750, 1150), rng2.uniform(0.025, 0.04), rng2.uniform(1.6, 2.2)) * rng2.uniform(0.6, 1), tt))
+        tt += rng2.uniform(0.05, 0.09)
+    return sala(junta(*pedacos), 0.4, 0.15)
+
+
+def racao_terra():
+    """Pão caindo na terra: um "puf" abafado e uns farelos."""
+    n = int(0.12 * SR)
+    puf = filtra(rng2.standard_normal(n), 80, 450) * np.exp(-np.arange(n) / (n / 4))
+    pedacos = [(puf, 0.0)]
+    for _ in range(4):
+        k = int(0.006 * SR)
+        pedacos.append((filtra(rng2.standard_normal(k), 2500, 6000) * np.exp(-np.arange(k) / (k / 4)) * 0.3, rng2.uniform(0.05, 0.25)))
+    return sala(junta(*pedacos), 0.3, 0.1)
+
+
+def porta():
+    """Porta do laboratório (alguém entra ou sai no Mundo): o trinco da maçaneta e a porta fechando macia."""
+    k = int(0.012 * SR)
+    n = np.arange(k)
+    trinco = filtra(rng2.standard_normal(k), 1500, 6000) * np.exp(-n / (k / 5))
+    trinco = trinco + 0.5 * np.sin(2 * np.pi * 2300 * n / SR) * np.exp(-n / (k / 3))
+    m = int(0.18 * SR)
+    fecha = filtra(rng2.standard_normal(m), 60, 260) * np.exp(-np.arange(m) / (m / 6))
+    return sala(junta((trinco * 0.6, 0.0), (fecha, 0.55), (trinco * 0.4, 0.6)), 0.5, 0.2)
+
+
+def novos_2026_11_22():
+    escreve("amb_laboratorio", amb_laboratorio(), fundo=True)
+    for v in (1, 2, 3):
+        escreve(f"teclado_{v}", teclado(v))
+    escreve("fossil", fossil())
+    escreve("racao_agua", racao_agua())
+    escreve("racao_terra", racao_terra())
+    escreve("porta", porta())
+
+
 def main():
     fundos = {"amb_classico": amb_classico, "amb_inverno": amb_inverno, "amb_deserto": amb_deserto,
               "amb_vulcao": amb_vulcao, "amb_oceano": amb_oceano, "amb_marte": amb_marte,
@@ -581,7 +663,12 @@ def main():
     escreve("bicho_tubarao", reamostra(s, sr, 0.82))
     escreve("bicho_barco", barco())
     escreve("bicho_carro", carrinho())
+    novos_2026_11_22()
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    if "--novos" in sys.argv:   # só os de 22/11/2026 (os antigos ficam como estão)
+        novos_2026_11_22()
+    else:
+        main()

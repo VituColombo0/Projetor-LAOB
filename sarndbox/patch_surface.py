@@ -9,7 +9,7 @@ def rep(s, old, new, count=1):
 h = open("SurfaceRenderer.h").read()
 if "FaceImage" not in h:
     h = rep(h, "class DEM;\n", "class DEM;\nclass FaceImage;\n")
-    # 48: com tudo ligado o shader pede 21 + Extras::NUM_UNIFORMS localizações (41 desde 20/11/2026; o static_assert
+    # 48: com tudo ligado o shader pede 22 + Extras::NUM_UNIFORMS localizações (42 desde 22/11/2026; o static_assert
     # abaixo para a compilação se faltar lugar, em vez de escrever por cima das variáveis seguintes)
     h = rep(h, "GLint heightMapShaderUniforms[16];", "GLint heightMapShaderUniforms[48];")
     h = rep(h, "\tGLfloat demDistScale; // Maximum deviation", "\tFaceImage* faceImage; // Foto projetada na areia (modo Rosto); 0 = desligado\n\tGLfloat demDistScale; // Maximum deviation")
@@ -20,7 +20,8 @@ if "FaceImage" not in h:
             "\tconst Extras* extras; // Tesouro, lago, peixes e carrinhos (Projetor-LAOB); 0 = desligado\n")
     h = rep(h, "\tvoid setFaceImage(FaceImage* newFaceImage); // Liga/desliga o modo Rosto\n",
             "\tvoid setFaceImage(FaceImage* newFaceImage); // Liga/desliga o modo Rosto\n"
-            "\tvoid setExtras(const Extras* newExtras); // Liga/desliga tesouro e animais\n")
+            "\tvoid setExtras(const Extras* newExtras); // Liga/desliga tesouro e animais\n"
+            "\tstatic GLfloat luzRealce[2]; // Projetor-LAOB: realce da luz (força da gama, saturação a mais; comando luz)\n")
     open("SurfaceRenderer.h", "w").write(h)
 
 c = open("SurfaceRenderer.cpp").read()
@@ -50,6 +51,10 @@ if "FaceImage" not in c:
 					\\n";
 """, """					vec4 baseColor=texture1D(heightColorMapSampler,heightColorMapTexCoord);\\n\\
 					\\n";
+				
+				/* Projetor-LAOB (22/11/2026): realce da luz (gama e saturação na cor final; comando "luz") */
+				fragmentUniforms+="\\
+					uniform vec2 luzRealce; // força (gama) e saturação a mais\\n";
 				
 				if(faceImage!=0)
 					{
@@ -85,6 +90,25 @@ if "FaceImage" not in c:
 			fragmentMain+="\\
 			/* Modo Foto: só a foto; o relevo só entra pela mistura: */\\n\\
 			gl_FragColor=mix(faceOut,baseColor,faceParams.z);\\n\\
+			if(luzRealce.x>0.0||luzRealce.y>0.0)\\n\\
+				{\\n\\
+				vec3 luzC=clamp(gl_FragColor.rgb,0.0,1.0);\\n\\
+				luzC=clamp(mix(vec3(dot(luzC,vec3(0.299,0.587,0.114))),luzC,1.0+0.6*luzRealce.y),0.0,1.0);\\n\\
+				gl_FragColor.rgb=pow(luzC,vec3(1.0/(1.0+0.6*luzRealce.x)));\\n\\
+				}\\n\\
+			}\\n";
+		else if(fragmentUniforms.find("luzRealce")!=std::string::npos)
+		fragmentMain+="\\
+			/* Assign the final color to the fragment: */\\n\\
+			gl_FragColor=baseColor;\\n\\
+			/* Projetor-LAOB: luz mais forte (pedido do Victor, 22/11/2026): tons escuros e médios sobem (gama)\\n\\
+			   e as cores ficam mais vivas; o preto do projetor na areia vira só a cor da areia */\\n\\
+			if(luzRealce.x>0.0||luzRealce.y>0.0)\\n\\
+				{\\n\\
+				vec3 luzC=clamp(gl_FragColor.rgb,0.0,1.0);\\n\\
+				luzC=clamp(mix(vec3(dot(luzC,vec3(0.299,0.587,0.114))),luzC,1.0+luzRealce.y),0.0,1.0);\\n\\
+				gl_FragColor.rgb=pow(luzC,vec3(1.0/(1.0+luzRealce.x)));\\n\\
+				}\\n\\
 			}\\n";
 		else
 		fragmentMain+="\\
@@ -95,6 +119,7 @@ if "FaceImage" not in c:
     # localização dos uniforms (mesma ordem do envio)
     c = rep(c, """			*(ulPtr++)=glGetUniformLocationARB(result,"heightColorMapSampler");
 			}""", """			*(ulPtr++)=glGetUniformLocationARB(result,"heightColorMapSampler");
+			*(ulPtr++)=glGetUniformLocationARB(result,"luzRealce"); // Projetor-LAOB
 			if(faceImage!=0)
 				{
 				*(ulPtr++)=glGetUniformLocationARB(result,"faceTransform");
@@ -108,6 +133,7 @@ if "FaceImage" not in c:
 		}
 """, """		elevationColorMap->bindTexture(contextData);
 		glUniform1iARB(*(ulPtr++),1);
+		glUniform2fARB(*(ulPtr++),luzRealce[0],luzRealce[1]); // Projetor-LAOB: realce da luz
 		
 		if(faceImage!=0)
 			{
@@ -123,7 +149,9 @@ if "FaceImage" not in c:
 			}
 		}
 """)
-    c = rep(c, "void SurfaceRenderer::setDemDistScale(", """void SurfaceRenderer::setFaceImage(FaceImage* newFaceImage)
+    c = rep(c, "void SurfaceRenderer::setDemDistScale(", """GLfloat SurfaceRenderer::luzRealce[2]={0.5f,0.3f}; // Projetor-LAOB: realce padrão "forte" (comando "luz")
+
+void SurfaceRenderer::setFaceImage(FaceImage* newFaceImage)
 	{
 	/* Ligar/desligar (ou trocar a foto) muda o shader: */
 	faceImage=newFaceImage;
@@ -166,9 +194,9 @@ void SurfaceRenderer::setDemDistScale(""")
 				}
 """, """				*(ulPtr++)=glGetUniformLocationARB(result,"faceReference");
 				}
-			/* pior caso: 2 comuns + 2 do mapa de cores + 4 do Rosto + os Extras + 2 das curvas de nível + 2 do
+			/* pior caso: 2 comuns + 2 do mapa de cores + 1 da luz + 4 do Rosto + os Extras + 2 das curvas de nível + 2 do
 			   dipping bed + 2 da iluminação + 6 da água + 1 da projeção (o DEM, 3, entra no lugar do mapa) */
-			static_assert(21+Extras::NUM_UNIFORMS<=sizeof(DataItem::heightMapShaderUniforms)/sizeof(GLint),
+			static_assert(22+Extras::NUM_UNIFORMS<=sizeof(DataItem::heightMapShaderUniforms)/sizeof(GLint),
 			              "heightMapShaderUniforms pequeno demais para Extras::NUM_UNIFORMS");
 			if(extras!=0)
 				for(int k=0;k<Extras::NUM_UNIFORMS;++k)

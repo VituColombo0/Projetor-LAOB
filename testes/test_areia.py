@@ -856,9 +856,14 @@ class VigiaDoSom(Ambiente):
                 f.write("Tesouro: achou\nJogo: a terra tremeu! Uma boca de lava vai abrir\nChuva: nu")
             time.sleep(0.7)
             with open(log, "a") as f:
-                f.write("vem por 8 s\nFossil encontrado! (1 escavados)\n")
+                f.write("vem por 8 s\nFossil encontrado! (1 escavados)\nGesto: dedo em 1 2 (agua)\n"
+                        "Gesto: dedo em 3 4 (terra) nada caiu: ninguem come isso\nComida em x 1 y 2 por 20 s (terra)\n"
+                        "Mundo: MARIO entrou no laboratório\n")
             time.sleep(0.7)
         finally:
             som._vigia_ativo = False
             t.join(2)
-        self.assertEqual(tocados, ["alerta", "splash", "tesouro"])   # a linha cortada conta uma vez, inteira
+        # cada som com o que aparece (22/11/2026): a nuvem não faz splash (a chuva entra no fundo), fóssil não é
+        # baú, a ração na água faz plic-plic e o pão na terra faz puf; a linha cortada conta uma vez, inteira
+        self.assertEqual(tocados, ["alerta", "fossil", "racao_agua", "racao_terra", "porta"])
+        self.assertTrue(som.chovendo())

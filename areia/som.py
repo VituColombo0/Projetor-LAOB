@@ -199,7 +199,37 @@ def tocar(nome):
 # linhas do registro que mudam o fundo: o ambiente olha a areia de novo na hora
 _MUDA_O_AMBIENTE = ("Jogo pedido", "Jogo desligado", "Animais:", "Labirinto: nascente", "Labirinto desligado",
                     "Tesouro: escondendo", "Tesouro desligado", "Fossil: escondendo", "Fossil desligado",
-                    "Copia: forma", "Copia desligada", "Modo Rosto:", "Modo Esculpir:")
+                    "Copia: forma", "Copia desligada", "Modo Rosto:", "Modo Esculpir:", "Chuva:")
+
+# Chuva na areia agora (22/11/2026: o som da chuva só enquanto chove de verdade). O vigia do registro anota:
+# a mão chovendo ("Chuva: mao comecou/parou", do SARndbox) e a nuvem do painel ("Chuva: nuvem por N s").
+_chuva = {"mao": False, "nuvem_ate": 0.0}
+
+
+def _anota_chuva(linha):
+    """Atualiza _chuva com uma linha do registro; devolve em quantos segundos olhar de novo (fim da nuvem) ou None."""
+    if linha.startswith("Chuva: mao comecou"):
+        _chuva["mao"] = True
+    elif linha.startswith("Chuva: mao parou"):
+        _chuva["mao"] = False
+    elif linha.startswith("Chuva: nuvem por"):
+        m = re.search(r"por ([0-9.]+)", linha)
+        seg = float(m.group(1)) if m else 8.0
+        _chuva["nuvem_ate"] = max(_chuva["nuvem_ate"], time.monotonic() + seg + 0.9)   # a nuvem some em 0,9 s
+        return seg + 1.0
+    elif linha.startswith("Chuva: a água foi seca"):
+        _chuva["nuvem_ate"] = 0.0
+    return None
+
+
+def chovendo():
+    return _chuva["mao"] or time.monotonic() < _chuva["nuvem_ate"]
+
+
+def _esquece_chuva():
+    """A areia reabriu (registro novo): nada está chovendo."""
+    _chuva["mao"] = False
+    _chuva["nuvem_ate"] = 0.0
 
 
 def _loop_vigia():
@@ -223,6 +253,7 @@ def _loop_vigia():
             tam = os.path.getsize(log_path)
             if tam < pos:
                 pos, resto = 0, b""  # arquivo foi truncado/reiniciado (a areia reabriu)
+                _esquece_chuva()
                 _amb_acorda.set()
             if tam > pos:
                 with open(log_path, "rb") as f:
@@ -235,11 +266,23 @@ def _loop_vigia():
                     linha = linha.decode("utf-8", "replace").strip()
                     if not linha:
                         continue
+                    if linha.startswith("Chuva:"):
+                        depois = _anota_chuva(linha)
+                        if depois:
+                            acorda_ambiente(depois)   # a nuvem acabou: a chuva some do som também
                     if linha.startswith(_MUDA_O_AMBIENTE):
                         _amb_acorda.set()   # brincadeira ou bichos mudaram (também por voz ou terminal)
-                    # Detecção de eventos chave
-                    if "Tesouro encontrado" in linha or "Fossil encontrado" in linha:
-                        tocar("tesouro")
+                    # Detecção de eventos chave (22/11/2026: cada som com o que aparece na areia)
+                    if "Tesouro encontrado" in linha:
+                        tocar("tesouro")       # o baú abre: moedas e joias
+                    elif "Fossil encontrado" in linha:
+                        tocar("fossil")        # osso achado: pincel na terra e a descoberta (moedas não)
+                    elif ((linha.startswith("Gesto: dedo em") and "nada caiu" not in linha)
+                          or linha.startswith("Comida em x")):
+                        # a comida que cai do dedo ou do painel: ração na água (plic-plic), pão na terra (puf)
+                        tocar("racao_agua" if "(agua)" in linha else "racao_terra")
+                    elif linha.startswith("Mundo: ") and ("entrou no laboratório" in linha or "saiu do laboratório" in linha):
+                        tocar("porta")         # no laboratório LAOB, alguém passou pela porta
                     elif linha.startswith("Jogo: fim da rodada"):
                         # "N de M casas a salvo da lava"/"casas secas": ganhou se salvou alguma; empate e
                         # "o tempo acabou" (sem chegar) contam como derrota
@@ -258,7 +301,7 @@ def _loop_vigia():
                         tocar("alerta")
                     elif "passaro pescou um peixe" in linha:
                         tocar("passaro")
-                    elif "o tubarao pegou um peixe" in linha or "Chuva: nuvem" in linha:
+                    elif "o tubarao pegou um peixe" in linha:
                         tocar("splash")
         except Exception:
             time.sleep(1.0)
@@ -289,23 +332,30 @@ def _v(prefixo, n):
 # Ganhos: os fundos têm -20 dB de média no arquivo; com 0,15 ficam uns 20 dB abaixo dos efeitos
 # (vitória, tesouro: -16 dB de média). Os pontuais e os bichos têm pico -3 dB no arquivo.
 # tema: {"base": {fundo: ganho}, "pontuais": [[variações, ganho, intervalo mín, máx (s)]]}
+# 22/11/2026 (pedido do Victor: "os sons fazendo sentido com cada coisa que está sendo projetada"): cada
+# tema só toca o que a animação dele mostra. Saíram passarinho (clássico: não há pássaro desenhado; o
+# pássaro só canta quando está na areia), sino de vento e neve do galho (inverno: não há sino nem árvore),
+# cigarra (deserto), gaivota (oceano) e o eco (marte).
 AMBIENTE_TEMAS = {
-    "classico": {"base": {"amb_classico": 0.12}, "pontuais": [[_v("passarinho", 3), 0.16, 25, 70]]},
-    "inverno": {"base": {"amb_inverno": 0.15},
-                "pontuais": [[_v("sino_neve", 3), 0.10, 30, 80], [["neve_galho"], 0.22, 50, 120]]},
-    "deserto": {"base": {"amb_deserto": 0.16}, "pontuais": [[_v("cigarra", 2), 0.06, 30, 75]]},
-    "vulcao": {"base": {"amb_vulcao": 0.15}, "pontuais": [[_v("ronco_vulcao", 2), 0.30, 35, 90]]},
-    "oceano": {"base": {"amb_oceano": 0.16}, "pontuais": [[_v("gaivota", 2), 0.08, 50, 120]]},
-    "marte": {"base": {"amb_marte": 0.13}, "pontuais": [[_v("eco_marte", 2), 0.08, 45, 110]]},
-    "arco-iris": {"base": {"amb_arcoiris": 0.11}, "pontuais": [[_v("brilho", 3), 0.10, 25, 60]]},
+    "classico": {"base": {"amb_classico": 0.12}},                       # brisa leve no relevo
+    "inverno": {"base": {"amb_inverno": 0.15}},                         # vento frio com a neve caindo
+    "deserto": {"base": {"amb_deserto": 0.16}},                         # vento seco levando a areia
+    "vulcao": {"base": {"amb_vulcao": 0.15}, "pontuais": [[_v("ronco_vulcao", 2), 0.30, 35, 90]]},  # lava
+    "oceano": {"base": {"amb_oceano": 0.16}},                           # as ondas do mar
+    "marte": {"base": {"amb_marte": 0.13}},                             # vento ralo com a poeira
+    "arco-iris": {"base": {"amb_arcoiris": 0.11}, "pontuais": [[_v("brilho", 3), 0.10, 25, 60]]},  # estrelas piscando
 }
+# o laboratório LAOB (Mundo): sala fechada, sem o fundo do tema; o ar e os computadores e, de vez em
+# quando, alguém digitando (os membros trabalham nas bancadas)
+AMBIENTE_LABORATORIO = {"base": {"amb_laboratorio": 0.13}, "pontuais": [[_v("teclado", 3), 0.16, 14, 40]]}
+CHUVA = {"jogo_chuva": 0.14}   # enquanto chove (mão ou nuvem do painel)
 # brincadeira: camada própria por cima; "tema" = quanto do fundo do tema continua por baixo (os pontuais
 # do tema saem: fica só o da brincadeira). No vulcão o jogo é o mundo todo (escurece a areia).
 AMBIENTE_BRINCADEIRAS = {
     "corrida": {"base": {"jogo_correnteza": 0.13}, "tema": 0.5},
     "rota": {"base": {"jogo_riacho": 0.12}, "tema": 0.5},
     "labirinto": {"base": {"jogo_riacho": 0.12}, "pontuais": [[_v("gota", 2), 0.14, 12, 30]], "tema": 0.5},
-    "vila": {"base": {"jogo_chuva": 0.12}, "pontuais": [[_v("trovao", 2), 0.22, 40, 90]], "tema": 0.4},
+    "vila": {"base": {"jogo_riacho": 0.12}, "tema": 0.4},   # a água vem das nascentes (não é chuva: sem trovão)
     "vulcao": {"base": {"amb_vulcao": 0.13, "jogo_tensao": 0.11},
                "pontuais": [[_v("ronco_vulcao", 2), 0.30, 18, 40]], "tema": 0.0},
     "copia": {"base": {"jogo_atelie": 0.09}, "tema": 0.5},
@@ -323,9 +373,9 @@ SONS_BICHOS = {
 _BICHOS_DOS_ANIMAIS = {"peixes": ["peixe"], "carros": ["carro"], "pessoas": [], "todos": ["peixe", "carro"]}
 
 
-def monta_cena(tema, brincadeira=None, bichos=()):
+def monta_cena(tema, brincadeira=None, bichos=(), chuva=False, laboratorio=False):
     """O que deve soar: {"base": {fundo: ganho}, "pontuais": [...], "bichos": [[bicho, variações, ganho]]}."""
-    t = AMBIENTE_TEMAS.get(tema, {})
+    t = AMBIENTE_LABORATORIO if laboratorio else AMBIENTE_TEMAS.get(tema, {})
     b = AMBIENTE_BRINCADEIRAS.get(brincadeira)
     if b:
         f = b.get("tema", 0.5)
@@ -336,6 +386,9 @@ def monta_cena(tema, brincadeira=None, bichos=()):
     else:
         base = dict(t.get("base", {}))
         pontuais = t.get("pontuais", [])
+    if chuva:
+        for k, g in CHUVA.items():
+            base[k] = max(base.get(k, 0.0), g)
     return {"base": base, "pontuais": [[list(v), g, lo, hi] for v, g, lo, hi in pontuais],
             "bichos": [[k, list(SONS_BICHOS[k][0]), SONS_BICHOS[k][1]] for k in sorted(set(bichos)) if k in SONS_BICHOS]}
 
@@ -372,7 +425,8 @@ def cena_atual():
         return None
     if areia.estado().get("modo") in ("rosto", "esculpir"):
         return None
-    return monta_cena(areia.tema_atual(), brincadeira_atual(areia), bichos_atuais(areia))
+    return monta_cena(areia.tema_atual(), brincadeira_atual(areia), bichos_atuais(areia), chovendo(),
+                      areia.animais_situacao() == "mundo")
 
 
 def _tem_som(cena):

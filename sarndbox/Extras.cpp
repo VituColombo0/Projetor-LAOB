@@ -5296,13 +5296,15 @@ const char* Extras::glslFragmentMain=R"GLSL(
 		extrasMarca=max(extrasMarca,marcaAntes);
 		}
 	/* Ração na água (dedo apontado ou painel, 18/11/2026): bolinhas marrons boiando, com contorno escuro e
-	   um halo claro fino (lê em todos os temas, por cima da água e dos bichos que comem embaixo); ao cair, um
-	   respingo; a cada beliscada, uma ondinha e a bolinha encolhe. Fora da caixa que envolve todas elas
-	   não faz conta nenhuma. */
+	   um halo claro fino (lê em todos os temas, por cima da água e dos bichos que comem embaixo). Desde
+	   22/11/2026 (pedido do Victor: "a única animação deve ser da ração caindo, nada mais piscando em volta")
+	   a bolinha CAI: chega de cima, maior (perto do sensor) e com a sombra longe, e encolhe até pousar na
+	   água; os anéis brancos do respingo e da beliscada saíram. Na beliscada ela só encolhe. Fora da caixa
+	   que envolve todas elas não faz conta nenhuma. */
 	vec4 rcx=extrasRacao[0];
 	if(ep.x>rcx.x&&ep.y>rcx.y&&ep.x<rcx.z&&ep.y<rcx.w)
 		{
-		float dB=1e3,anel=0.0;
+		float dB=1e3,dS=1e3;
 		vec2 qB=vec2(0.0);
 		for(int k=1;k<25;++k)
 			{
@@ -5310,32 +5312,29 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			if(r.z<0.0)
 				continue;
 			vec2 q=ep.xy-r.xy;
-			if(dot(q,q)>4.0) // 2 cm: o maior respingo
+			if(dot(q,q)>4.0) // 2 cm: a bolinha caindo, ainda grande
 				continue;
-			float d=length(q);
 			float tam=floor(r.w)/20.0;                                   // 1 inteira .. 0 acabou (comida ou desmanchou)
 			float mord=fract(r.w);                                       // segundos desde a beliscada (0,99 = nenhuma)
-			if(r.z<0.7)
-				anel=max(anel,smoothstep(0.13,0.0,abs(d-0.3-1.5*r.z/0.7))*(1.0-r.z/0.7));        // respingo ao cair
-			if(mord<0.5)
-				anel=max(anel,0.85*smoothstep(0.1,0.0,abs(d-0.3-0.9*mord/0.5))*(1.0-mord/0.5)); // ondinha da beliscada
 			if(tam<=0.0)
 				continue;
 			float fk=float(k);
-			vec2 bob=0.06*vec2(sin(et*2.1+fk*1.7),cos(et*1.7+fk*2.3));     // balança de leve na água
-			float rb=0.4*tam*(mord<0.2?0.8+mord:1.0)*min(1.0,0.6+r.z*2.0); // encolhe na beliscada; cresce ao cair
+			/* caindo: 0,45 s; o tamanho vai de 2,2x a 1x e a sombra vem de longe até ficar embaixo */
+			float cai=1.0-clamp(r.z/0.45,0.0,1.0);
+			cai*=cai;
+			vec2 bob=cai>0.0?vec2(0.0):0.06*vec2(sin(et*2.1+fk*1.7),cos(et*1.7+fk*2.3)); // balança de leve na água
+			float rb=0.4*tam*(mord<0.2?0.8+mord:1.0)*(1.0+1.2*cai);     // encolhe na beliscada; maior lá no alto
 			float db=length(q-bob)-rb;
 			if(db<dB)
 				{
 				dB=db;
 				qB=(q-bob)/rb;
 				}
+			if(cai>0.0)
+				dS=min(dS,length(q-vec2(0.25,-0.25)*(1.0+3.5*cai))-0.4*tam); // a sombra na água, chegando
 			}
-		if(anel>0.3) // anel nítido de espuma (a água por cima deixaria um anel fraco da cor da areia)
-			{
-			baseColor.rgb=mix(vec3(0.7,0.86,1.0),vec3(1.0),smoothstep(0.3,1.0,anel));
-			extrasMarca=1.0;
-			}
+		if(dS<0.0&&dB>=0.08)
+			baseColor.rgb*=0.55; // sombra da bolinha caindo (sem piscar: só escurece onde ela vai pousar)
 		if(dB<0.08)
 			{
 			extrasMarca=1.0;

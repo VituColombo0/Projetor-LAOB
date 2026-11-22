@@ -103,6 +103,7 @@ case "${1:-estado}" in
       iniciar_original; espera original 5; exit 1
     fi
     manda "$FIFO" "efeito $(tema_nome)" || true   # animação do tema (lava, neve...)
+    [ -r "$D/luz.txt" ] && { manda "$FIFO" "luz $(head -c 40 "$D/luz.txt")" || true; }   # brilho escolhido no painel
     echo rosto ;;
   topografia)
     "$0" rosto >/dev/null 2>&1

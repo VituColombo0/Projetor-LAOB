@@ -365,13 +365,16 @@ class AmbienteDoSom(Ambiente):
         """Todo som citado nas tabelas existe, é 22,05 kHz mono 16 bits e tem menos de 1 MB."""
         import wave
         nomes = set()
-        for tabela in (self.som.AMBIENTE_TEMAS, self.som.AMBIENTE_BRINCADEIRAS):
+        for tabela in (self.som.AMBIENTE_TEMAS, self.som.AMBIENTE_BRINCADEIRAS,
+                       {"lab": self.som.AMBIENTE_LABORATORIO, "chuva": {"base": self.som.CHUVA}}):
             for c in tabela.values():
                 nomes |= set(c["base"])
                 for variantes, *_ in c.get("pontuais", []):
                     nomes |= set(variantes)
         for variantes, _ in self.som.SONS_BICHOS.values():
             nomes |= set(variantes)
+        for nome in ("tesouro", "fossil", "racao_agua", "racao_terra", "porta", "vitoria", "alerta", "inicio", "splash", "passaro"):
+            self.assertTrue(os.path.isfile(os.path.join(self.som._dir_sons(), nome + ".wav")), nome)   # efeitos do vigia (paplay: qualquer taxa)
         for nome in sorted(nomes):
             arq = os.path.join(self.som._dir_sons(), nome + ".wav")
             self.assertLess(os.path.getsize(arq), 1024 * 1024, nome)
@@ -394,16 +397,20 @@ class AmbienteDoSom(Ambiente):
     def test_cena_por_tema_jogo_e_bichos(self):
         m = self.som.monta_cena
         self.assertEqual(list(m("inverno")["base"]), ["amb_inverno"])
-        self.assertIn("sino_neve_1", m("inverno")["pontuais"][0][0])
+        # 22/11/2026: só o que aparece na areia (sem sino de vento, passarinho, gaivota, cigarra, eco)
+        for tema in ("inverno", "classico", "oceano", "deserto", "marte"):
+            self.assertEqual(m(tema)["pontuais"], [], tema)
+        self.assertIn("ronco_vulcao_1", m("vulcao")["pontuais"][0][0])   # a lava ronca
+        self.assertIn("brilho_1", m("arco-iris")["pontuais"][0][0])      # as estrelas piscam
         self.assertEqual(list(m("deserto")["base"]), ["amb_deserto"])
         self.assertEqual(list(m("vulcao")["base"]), ["amb_vulcao"])
         self.assertEqual(list(m("oceano")["base"]), ["amb_oceano"])
         self.assertEqual(list(m("arco-iris")["base"]), ["amb_arcoiris"])
         # jogo: camada própria por cima do tema mais baixo; os pontuais passam a ser os do jogo
         v = m("inverno", "vila")
-        self.assertEqual(set(v["base"]), {"amb_inverno", "jogo_chuva"})
+        self.assertEqual(set(v["base"]), {"amb_inverno", "jogo_riacho"})   # a água da vila vem das nascentes
         self.assertLess(v["base"]["amb_inverno"], m("inverno")["base"]["amb_inverno"])
-        self.assertEqual([p[0][0] for p in v["pontuais"]], ["trovao_1"])
+        self.assertEqual(v["pontuais"], [])                                 # sem trovão: não chove na vila
         self.assertEqual(set(m("classico", "labirinto")["base"]), {"amb_classico", "jogo_riacho"})
         self.assertIn("jogo_correnteza", m("classico", "corrida")["base"])
         self.assertIn("jogo_misterio", m("deserto", "fossil")["base"])
@@ -414,6 +421,26 @@ class AmbienteDoSom(Ambiente):
         self.assertEqual([x[0] for x in b], ["pato", "peixe"])
         self.assertEqual(m("classico", None, ["pessoa"])["bichos"], [])
         self.assertEqual(m("tema-novo")["base"], {})   # tema sem som próprio: silêncio (sem erro)
+        # chovendo: a chuva entra por cima; no laboratório, o som da sala no lugar do tema
+        self.assertIn("jogo_chuva", m("deserto", None, (), True)["base"])
+        self.assertNotIn("jogo_chuva", m("deserto")["base"])
+        lab = m("classico", None, (), False, True)
+        self.assertEqual(set(lab["base"]), {"amb_laboratorio"})
+        self.assertIn("teclado_1", lab["pontuais"][0][0])
+
+    def test_chuva_pelo_registro(self):
+        """A chuva do som segue o registro: a mão começa/para, a nuvem do painel dura o que pediram."""
+        s = self.som
+        s._esquece_chuva()
+        self.assertFalse(s.chovendo())
+        s._anota_chuva("Chuva: mao comecou")
+        self.assertTrue(s.chovendo())
+        s._anota_chuva("Chuva: mao parou")
+        self.assertFalse(s.chovendo())
+        self.assertAlmostEqual(s._anota_chuva("Chuva: nuvem por 8 s"), 9.0)
+        self.assertTrue(s.chovendo())
+        s._anota_chuva("Chuva: a água foi seca")
+        self.assertFalse(s.chovendo())
 
     def test_cena_pelo_que_esta_na_areia(self):
         self.assertIsNone(self.som.cena_atual())                              # areia fechada
@@ -427,7 +454,8 @@ class AmbienteDoSom(Ambiente):
         self.assertEqual(list(self.som.cena_atual()["base"]), ["amb_inverno"])
         self.abre("rosto", "relevo")
         self.escreve_log("Jogo pedido: vila (nível 2)\nJogo: salve a vila (4 casas)\n")
-        self.assertIn("jogo_chuva", self.som.cena_atual()["base"])
+        self.assertIn("jogo_riacho", self.som.cena_atual()["base"])   # a água da vila vem das nascentes
+        self.assertNotIn("jogo_chuva", self.som.cena_atual()["base"])
         self.escreve_log("Jogo pedido: vila (nível 2)\nJogo desligado\nLabirinto: nascente em x 1 y 2, alvo em x 3 y 4 (dificuldade 1)\n")
         self.assertIn("jogo_riacho", self.som.cena_atual()["base"])
         self.escreve_log("Tesouro: escondendo a 4 cm\n")

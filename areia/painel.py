@@ -93,6 +93,7 @@ def ver_estado():
     e["mar"] = areia.mar_escolhido()
     e["especies"] = [[k, r, f, areia.GRUPOS.get(k, "")] for k, (r, f) in areia.ESPECIES.items()]
     e["tema"] = areia.tema_atual()
+    e["luz"] = areia.luz_atual()
     e["temas"] = [[t, areia.NOMES_TEMAS.get(t, t)] for t in areia.temas()]
     e["fotos_salvas"] = [os.path.basename(f) for f in areia.imagens()]
     pw = areia.pasta_willbert()
@@ -425,6 +426,14 @@ def tema():
     def faz():
         t = areia.escolhe_tema((request.get_json(silent=True) or {}).get("tema") or "")
         return f"Cores: {areia.NOMES_TEMAS.get(t, t)}"
+    return resposta(faz)
+
+
+@app.post("/luz")
+def luz():
+    def faz():
+        n = areia.escolhe_luz(str((request.get_json(silent=True) or {}).get("luz") or ""))
+        return "Brilho: " + {"normal": "normal", "forte": "forte", "maximo": "máximo"}[n]
     return resposta(faz)
 
 
@@ -929,6 +938,12 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
   <section class="card" data-aba="projetor">
     <h2>Cores do relevo</h2>
     <div class="temas" id="temas"></div>
+    <h2 style="margin-top:14px">Brilho da imagem</h2>
+    <div class="grid" id="luz" style="grid-template-columns:repeat(3,1fr)">
+      <button data-luz="normal">Normal</button>
+      <button data-luz="forte">Forte</button>
+      <button data-luz="maximo">Máximo</button>
+    </div>
   </section>
 
   <section class="card" data-aba="projetor">
@@ -1194,6 +1209,7 @@ async function carrega() {
       }
     }
     T.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.t === E.tema));
+    $$('#luz button').forEach(b => b.classList.toggle('active', b.dataset.luz === E.luz));
 
     const fotos = [...(E.fotos_salvas || []), ...(E.fotos_willbert || [])];
     $('#box-fotos').hidden = !fotos.length;
@@ -1410,6 +1426,7 @@ $$('[data-b]').forEach(b => b.onclick = () => post('/brincar', {acao: b.dataset.
 $$('[data-w]').forEach(b => b.onclick = () => post('/willbert', {acao: b.dataset.w}));
 $$('[data-m]').forEach(b => b.onclick = () => post('/modo', {modo: b.dataset.m}));
 $('#reabrir').onclick = () => post('/reabrir', {});
+$$('#luz button').forEach(b => b.onclick = () => post('/luz', {luz: b.dataset.luz}));
 // som (cabeçalho): mudo e volume valem para o ambiente automático e para os efeitos
 let SOM_MEXENDO = false;   // enquanto o dedo está no volume, o /estado não puxa a barra de volta
 function mostraSom(s) {

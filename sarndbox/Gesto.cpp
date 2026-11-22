@@ -37,7 +37,7 @@ Limiares::Limiares(void)
 	 janela(7.0f),candidatosMax(3.0f),
 	 maoAreaMin(15.0f),dedoRaio(1.6f),corpoAreaMin(15.0f),dedoCompMin(2.5f),dedoCompMax(12.0f),
 	 dedoLargMin(0.7f),outroDedo(2.0f),anguloMax(50.0f),alvoMax(5.0f),semBracoAlto(6.0f),bracoAlto(6.0f),
-	 folga(1.3f)
+	 travaMax(15.0f),folga(1.3f)
 	{
 	}
 
@@ -63,6 +63,7 @@ const NomeLimiar nomesLimiares[]={
 	{"dedoCompMax",&Limiares::dedoCompMax,2.0f,30.0f},{"dedoLargMin",&Limiares::dedoLargMin,0.0f,3.0f},
 	{"outroDedo",&Limiares::outroDedo,0.5f,10.0f},{"anguloMax",&Limiares::anguloMax,10.0f,180.0f},
 	{"alvoMax",&Limiares::alvoMax,0.0f,15.0f},{"semBracoAlto",&Limiares::semBracoAlto,0.0f,40.0f},{"bracoAlto",&Limiares::bracoAlto,0.0f,40.0f},
+	{"travaMax",&Limiares::travaMax,0.0f,120.0f},
 	{"folga",&Limiares::folga,1.0f,2.0f}};
 }
 
@@ -93,6 +94,56 @@ std::string Limiares::texto(void) const
 	}
 
 /* ------------------------------- areia de referência (congelada embaixo da mão) */
+
+template<class Dados>
+void Detector::atualizaTrava(const Quadro& q,int x0,int y0,double t,size_t nComps,Dados dados)
+	{
+	/* Relevo travado (22/11/2026): as silhuetas que encostam na borda do retângulo (o braço entra por ali) e
+	   têm tamanho de mão viram a trava, com 2 pontos de folga em volta (a borda da mão é borrada e fica
+	   abaixo do contornoMin); cada ponto só fica travado até travaMax segundos de mão em cima */
+	int P=refP,gw=refW,gh=refH;
+	size_t n=size_t(gw)*size_t(gh);
+	trava.assign(n,0);
+	bool alguma=false;
+	for(size_t i=0;i<nComps;++i)
+		{
+		int id,nb,sx,sy,cn;
+		dados(i,id,nb,sx,sy,cn);
+		if(nb<=0)
+			continue;
+		float cp=q.cmPorPixel(x0+sx*P,y0+sy*P);
+		if(!(cp>0.0f)||float(cn)*float(P*P)*cp*cp<0.5f*lim.maoAreaMin)
+			continue;
+		for(size_t k=0;k<n;++k)
+			if(rot[k]==id&&refDesde[k]>=0.0&&t-refDesde[k]<double(lim.travaMax))
+				{
+				trava[k]=1;
+				alguma=true;
+				}
+		}
+	if(!alguma)
+		{
+		trava.clear();
+		return;
+		}
+	/* folga de 2 pontos (linha e depois coluna) */
+	for(int volta=0;volta<2;++volta)
+		{
+		oc.assign(n,0);
+		for(int gy=0;gy<gh;++gy)
+			for(int gx=0;gx<gw;++gx)
+				{
+				size_t k=size_t(gy)*gw+gx;
+				oc[k]=trava[k]|(gx>0?trava[k-1]:0)|(gx<gw-1?trava[k+1]:0);
+				}
+		for(int gy=0;gy<gh;++gy)
+			for(int gx=0;gx<gw;++gx)
+				{
+				size_t k=size_t(gy)*gw+gx;
+				trava[k]=oc[k]|(gy>0?oc[k-gw]:0)|(gy<gh-1?oc[k+gw]:0);
+				}
+		}
+	}
 
 void Detector::atualizaAreia(const Quadro& q,int x0,int y0,int x1,int y1,double t)
 	{
@@ -413,6 +464,7 @@ void Detector::procura(const Quadro& q,int x0,int y0,int x1,int y1,double t,floa
 		comps.push_back(c);
 		}
 	std::sort(comps.begin(),comps.end(),[](const Comp& u,const Comp& v){return u.n>v.n;});
+	atualizaTrava(q,x0,y0,t,comps.size(),[&](size_t i,int& id,int& nb,int& sx,int& sy,int& cn){const Comp& c=comps[i];id=c.id;nb=c.nb;sx=c.sx;sy=c.sy;cn=c.n;});
 	for(size_t i=0;i<comps.size()&&i<4;++i)
 		{
 		const Comp& c=comps[i];
@@ -1210,7 +1262,7 @@ void Detector::passo(const Quadro& q,int x0,int y0,int x1,int y1,double t,const 
 /* ------------------------------- tempo */
 
 Rastro::Rastro(void)
-	:ativo(false),x(0.0f),y(0.0f),conta(0),acertos(4),raio(5.0f),solta(0.4f),falhas(0),visto(0.0)
+	:ativo(false),x(0.0f),y(0.0f),conta(0),acertosMin(3),confirma(0.2f),raio(5.0f),solta(0.35f),suave(0.09f),visto(-1e9),primeiro(0.0)
 	{
 	}
 
@@ -1229,23 +1281,24 @@ Rastro::Evento Rastro::passo(double t,bool viu,float nx,float ny)
 			{
 			x=nx;
 			y=ny;
+			primeiro=t;
 			}
 		else
 			{
-			x=0.6f*nx+0.4f*x;
-			y=0.6f*ny+0.4f*y;
+			/* suavização pelo tempo (a mesma a 12 ou a 30 quadros por segundo) */
+			float a=1.0f-std::exp(-float(std::max(0.0,t-visto))/suave);
+			x=a*nx+(1.0f-a)*x;
+			y=a*ny+(1.0f-a)*y;
 			}
 		++conta;
-		falhas=0;
 		visto=t;
-		if(!ativo&&conta>=acertos)
+		if(!ativo&&conta>=acertosMin&&t-primeiro>=double(confirma)-1e-6)
 			{
 			ativo=true;
 			return CONFIRMOU;
 			}
 		return ativo?CONTINUA:NADA;
 		}
-	++falhas;
 	if(ativo)
 		{
 		if(t-visto>solta)
@@ -1254,8 +1307,8 @@ Rastro::Evento Rastro::passo(double t,bool viu,float nx,float ny)
 			return SOLTOU;
 			}
 		}
-	else if(falhas>=2)
-		conta=0; // antes de confirmar, só uma falha no meio
+	else if(conta>0&&t-visto>0.15)
+		conta=0; // antes de confirmar, só falhas curtas (até 0,15 s) no meio
 	return NADA;
 	}
 

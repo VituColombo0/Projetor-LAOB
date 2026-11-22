@@ -29,8 +29,17 @@ embaixo da mão (até 8 s): parado, o filtro aceita a mão como areia em ~1 s
 e a mão sumiria. Para o pico ainda vale a mediana da areia em volta.
 Pixels sem medida (0 ou 0x7ff no Kinect v1: borda do dedo, sombra do
 infravermelho, superfície inclinada) são ignorados, nunca reprovam.
-Tempo (Rastro): 4 acertos (~0,3 s a 12 Hz) confirmam, com limiares mais
-folgados perto do dedo já visto (histerese); 0,4 s sem ver solta.
+Tempo (Rastro): visto por 0,2 s (pelo menos 3 acertos) confirma, com limiares
+mais folgados perto do dedo já visto (histerese); 0,35 s sem ver solta. Desde
+22/11/2026 a procura roda em todo quadro do sensor (~30 Hz; antes 12 Hz e 4
+acertos = 0,33 s): confirma mais rápido e com mais quadros de prova.
+Relevo travado (22/11/2026, pedido do Victor: "nada piscando em volta"): a mão
+que chega pela beirada (silhueta da grade grossa encostando na borda do
+retângulo) vira uma máscara (Detector::trava) que o FrameFilter do SARndbox
+respeita: ali o relevo não aceita a mão parada como areia (antes, em ~1 s a mão
+virava montanha colorida, a água fugia dela e tudo piscava quando ela mexia).
+Um monte de areia novo não encosta na borda e entra no relevo como sempre; a
+trava de cada ponto vale no máximo travaMax segundos.
 Gravação (Gravador): quadro cru + filtrado + matriz + mãos para analisar
 depois fora do SARndbox (testes/analisa_gesto.cpp).
 Não depende do SARndbox: os testes (testes/teste_gesto.cpp) passam mãos
@@ -194,6 +203,8 @@ struct Limiares
 	float alvoMax;        // apontando para baixo: a comida cai até isso à frente da ponta, onde o dedo aponta
 	float semBracoAlto;   // silhueta sem o braço chegando à borda (monte de areia com crista?): só vale com a ponta isso acima da areia em volta
 	float bracoAlto;      // o braço na borda: mediana da silhueta ali pelo menos isso acima da areia (muro de areia saindo da beirada não conta)
+	/* relevo travado embaixo da mão (Detector::trava) */
+	float travaMax;       // a trava de um ponto dura no máximo isso (s) de mão em cima; depois o relevo aceita (mão esquecida, areia nova na beirada)
 	/* tempo */
 	float folga;          // perto do dedo já visto os limiares ficam essa vez mais folgados (histerese)
 	Limiares(void);
@@ -262,13 +273,22 @@ class Detector
 	/* A areia de referência no pixel (cm acima do plano base; congelada embaixo da mão); sem procura ainda, a
 	   do quadro filtrado */
 	float areia(const Quadro& q,int x,int y) const;
-	void esquece(void) {ref.clear();refW=refH=0;rastroPx=rastroPy=-1.0f;} // volta a areia ao filtro
+	void esquece(void) {ref.clear();trava.clear();refW=refH=0;rastroPx=rastroPy=-1.0f;} // volta a areia ao filtro
+	/* Relevo travado: na grade da areia (gradeP px a partir de gradeX0, gradeY0; gradeW x gradeH pontos), 1 = mão
+	   chegando pela beirada em cima (o relevo do SARndbox não aceita). Vazia = nada travado. */
+	std::vector<unsigned char> trava;
+	int gradeP(void) const {return refP;}
+	int gradeX0(void) const {return refX0;}
+	int gradeY0(void) const {return refY0;}
+	int gradeW(void) const {return refW;}
+	int gradeH(void) const {return refH;}
 	private:
 	bool anelGrossoOk(const Quadro& q,int x0,int y0,int x1,int y1,int x,int y,float a) const;
 	float areiaRapida(const Quadro& q,int x,int y) const; // o ponto da grade mais perto (laços por pixel)
 	float medianaEmVolta(const Quadro& q,int x0,int y0,int x1,int y1,float px,float py,float cp);
 	void contorno(const Quadro& q,int x0,int y0,int x1,int y1,int gx0,int gy0,int gx1,int gy1,const bool corte[4],float rastroX,float rastroY,std::vector<Medida>& saida);
 	void atualizaAreia(const Quadro& q,int x0,int y0,int x1,int y1,double t);
+	template<class Dados> void atualizaTrava(const Quadro& q,int x0,int y0,double t,size_t nComps,Dados dados); // a trava das silhuetas que vêm da beirada
 	/* areia congelada, numa grade de refP px a partir de (refX0, refY0) */
 	int refP,refX0,refY0,refW,refH;
 	std::vector<float> ref;
@@ -288,7 +308,9 @@ class Detector
 	std::vector<Candidato> cands;
 	};
 
-/* Tempo: 4 acertos no mesmo lugar (uma falha no meio é tolerada) confirmam; 0,4 s sem ver solta */
+/* Tempo: visto no mesmo lugar por "confirma" segundos (pelo menos acertosMin vezes; falhas curtas, até 0,15 s,
+   são toleradas) confirma; "solta" segundos sem ver solta. Pelo tempo e não pela contagem: vale igual a 12 ou a
+   30 quadros por segundo. */
 class Rastro
 	{
 	public:
@@ -296,15 +318,16 @@ class Rastro
 	bool ativo;     // dedo confirmado
 	float x,y;      // posição suavizada (cm, espaço da caixa)
 	int conta;      // acertos seguidos
-	int acertos;    // quantos acertos confirmam
+	int acertosMin; // pelo menos tantos acertos para confirmar
+	float confirma; // visto por tanto tempo (s) confirma
 	float raio;     // acerto a menos disso do anterior = mesmo dedo (cm)
 	float solta;    // segundos sem ver para soltar
+	float suave;    // constante de tempo (s) da suavização da posição
 	Rastro(void);
 	Evento passo(double t,bool viu,float nx,float ny);
-	void larga(void) {ativo=false;conta=0;falhas=0;}
+	void larga(void) {ativo=false;conta=0;}
 	private:
-	int falhas;
-	double visto;
+	double visto,primeiro;
 	};
 
 /* Gravação para analisar a mão de verdade depois (comando "gestoGrava <s>"): numa pasta nova

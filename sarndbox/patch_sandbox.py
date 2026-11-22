@@ -15,6 +15,7 @@
    chuva <x 0-1> <y 0-1> [s] / secar                         nuvem de chuva num ponto; tira toda a água
    aguaNivel auto|mapa|areia|<cm> [absorção] / aguaInfo     nível do mar do lago dos bichos; diagnóstico da água
    efeito <tema>                                           animação do tema (lava, neve, poeira...)
+   luz <força 0-1,5> [saturação 0-1]                        realce da luz (padrão 0,5 0,3; 0 0 = sem realce)
    gestoTeste <x 0-1> <y 0-1> [s] / gestoDiag [n] / gestoAjuste [nome valor] / gestoGrava [s]
                                                            dedo apontado (Gesto.cpp): de mentira; medidas das
                                                            próximas n procuras no log; limiares; grava até 20 s
@@ -84,6 +85,9 @@ if "FaceImage" not in h:
 	float gestoLugarX=0.0f,gestoLugarY=0.0f; bool gestoAgua=false,gestoCaiu=false; // Onde a comida caiu, se foi na água e se caiu (alguém come)
 	int gestoDiag=0; // Quantas procuras ainda imprimir no log (gestoDiag)
 	int gestoRet[4]={0,0,0,0}; // Pixels da área iluminada: x0, y0, x1, y1 (x1 = 0: ainda não medido)
+	bool gestoTravou=false; // O relevo está travado embaixo de alguma mão (FrameFilter::trava)
+	mutable double chuvaMaoVista=-100.0; bool chuvaMaoLigada=false; // A mão fez chover por último quando; avisado no log (o som da chuva)
+	void gestoTrava(bool liga); // Passa a trava do detector (a mão que vem da beirada) ao FrameFilter
 """)
     open("Sandbox.h", "w").write(h)
 
@@ -520,6 +524,14 @@ void Sandbox::toggleDEM(DEM* dem)
 					extras.mar(q);
 					std::cout<<"Animais: mar ("<<std::min(total,int(Extras::MAX_AGENTES))<<")"<<std::endl;
 					}
+				else if(isToken(tokens[0],"luz")&&tokens.size()>=2)
+					{
+					/* luz <força 0-1,5> [saturação 0-1]: realce da luz na cor final (22/11/2026; 0 0 = como o SARndbox) */
+					SurfaceRenderer::luzRealce[0]=GLfloat(std::max(0.0,std::min(1.5,atof(tokens[1].c_str()))));
+					if(tokens.size()>=3)
+						SurfaceRenderer::luzRealce[1]=GLfloat(std::max(0.0,std::min(1.0,atof(tokens[2].c_str()))));
+					std::cout<<"Luz: forca "<<SurfaceRenderer::luzRealce[0]<<" saturacao "<<SurfaceRenderer::luzRealce[1]<<std::endl;
+					}
 				else if(isToken(tokens[0],"chuva")&&tokens.size()>=3)
 					{
 					/* chuva <x 0-1> <y 0-1> [segundos]: uma nuvem joga água nesse ponto da areia */
@@ -727,6 +739,39 @@ void Sandbox::gestoEvento(double agora,int ev)
 		}
 	}
 
+void Sandbox::gestoTrava(bool liga)
+	{
+	/* Relevo travado embaixo da mão (22/11/2026, pedido do Victor: com o dedo apontado "nada piscando em
+	   volta"): o FrameFilter não aceita como areia o que está embaixo da mão que veio da beirada (Gesto.h).
+	   Escreve pixel a pixel, sem zerar antes: o filtro (outra linha) nunca vê um quadro sem a trava no meio. */
+	if(frameFilter==0||frameFilter->trava==0||gestoRet[2]==0)
+		return;
+	unsigned char* tr=frameFilter->trava;
+	int w=int(frameSize[0]);
+	const std::vector<unsigned char>& g=gestoDetector.trava;
+	if(!liga||g.empty())
+		{
+		if(gestoTravou)
+			for(int y=gestoRet[1];y<gestoRet[3];++y)
+				std::fill(tr+size_t(y)*w+gestoRet[0],tr+size_t(y)*w+gestoRet[2],(unsigned char)0);
+		gestoTravou=false;
+		return;
+		}
+	int P=gestoDetector.gradeP(),X0=gestoDetector.gradeX0(),Y0=gestoDetector.gradeY0();
+	int GW=gestoDetector.gradeW(),GH=gestoDetector.gradeH();
+	if(P<1||size_t(GW)*size_t(GH)!=g.size())
+		return;
+	for(int y=gestoRet[1];y<gestoRet[3];++y)
+		{
+		int gy=std::max(0,std::min(GH-1,(y-Y0+P/2)/P));
+		unsigned char* l=tr+size_t(y)*w;
+		const unsigned char* gl=&g[size_t(gy)*GW];
+		for(int x=gestoRet[0];x<gestoRet[2];++x)
+			l[x]=gl[std::max(0,std::min(GW-1,(x-X0+P/2)/P))];
+		}
+	gestoTravou=true;
+	}
+
 void Sandbox::atualizaGesto(double agora)
 	{
 	/* Dedo apontado (Projetor-LAOB, 18/11/2026; refeito em 19/11 depois de não funcionar com a mão de verdade;
@@ -745,6 +790,7 @@ void Sandbox::atualizaGesto(double agora)
 			std::cout<<"Gesto: dedo solto"<<std::endl;
 		gestoRastro.larga();
 		gestoTesteAte=0.0;
+		gestoTrava(false);
 		if(!grava)
 			{
 			gestoRastroGrava.larga();
@@ -755,7 +801,8 @@ void Sandbox::atualizaGesto(double agora)
 			return;
 			}
 		}
-	if(agora-gestoTempo<1.0/12.0)
+	/* todo quadro novo do sensor (~30 por segundo; até 22/11/2026 eram 12): confirma mais rápido e com mais prova */
+	if(agora-gestoTempo<1.0/40.0)
 		return;
 	gestoTempo=agora;
 	if(quer&&agora<gestoTesteAte)
@@ -829,6 +876,7 @@ void Sandbox::atualizaGesto(double agora)
 	gestoDetector.medeTudo=gestoDiag>0;
 	Gesto::Passo p;
 	gestoDetector.passo(q,gestoRet[0],gestoRet[1],gestoRet[2],gestoRet[3],agora,area,gestoMaos,rastro,p);
+	gestoTrava(quer);
 	if(gestoDiag>0)
 		{
 		--gestoDiag;
@@ -1369,13 +1417,30 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
 	extras.mensagens.clear();
 
 	/* Movimento dos peixes e carrinhos: */
-	extras.passo(dt);""")
+	extras.passo(dt);
+	
+	/* Chuva pela mão (22/11/2026): avisa no log quando começa e quando para (1 s sem chover), para o som
+	   da chuva tocar só enquanto chove */
+	{
+	double agoraChuva=Vrui::getApplicationTime();
+	bool chove=agoraChuva-chuvaMaoVista<(chuvaMaoLigada?1.0:0.2);
+	if(chove!=chuvaMaoLigada)
+		{
+		chuvaMaoLigada=chove;
+		std::cout<<(chove?"Chuva: mao comecou":"Chuva: mao parou")<<std::endl;
+		}
+	}""")
     # Chuva pela mão: uma "mão" na beirada da área iluminada (ou fora dela) não chove. Em 16/11/2026 o
     # sensor via a borda da caixa como mão aberta e chovia sem parar num canto; a água acumulada ali,
     # funda, deixava a simulação inteira em câmera lenta (66% do tempo real) e os jogos de água lentos.
     c = rep(c, """			/* Render a rain disk approximating the hand: */
 			glBegin(GL_POLYGON);
-""", """			/* Projetor-LAOB: só chove com a mão sobre a areia (a mais de 4 cm da beirada iluminada) */
+""", """			/* Projetor-LAOB: no laboratório LAOB (Mundo) a mão não faz chover (22/11/2026, pedido do Victor:
+			   a planta do laboratório não tem água; antes a mão em cima dela chovia) */
+			if(extras.modo==Extras::MUNDO)
+				continue;
+			
+			/* Projetor-LAOB: só chove com a mão sobre a areia (a mais de 4 cm da beirada iluminada) */
 			if(faceBoxMin[0]<faceBoxMax[0])
 				{
 				Point pm=boxTransform.transform(hIt->center);
@@ -1391,8 +1456,9 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
 				if((pd[0]-gestoRastro.x)*(pd[0]-gestoRastro.x)+(pd[1]-gestoRastro.y)*(pd[1]-gestoRastro.y)<100.0)
 					continue;
 				}
-			
+
 			/* Render a rain disk approximating the hand: */
+			chuvaMaoVista=Vrui::getApplicationTime(); // Projetor-LAOB: para o som da chuva (log "Chuva: mao")
 			glBegin(GL_POLYGON);
 """)
     # Dedo apontado (18/11/2026): o quadro cru do sensor vai também para o detector, só enquanto ele quer
@@ -1455,6 +1521,30 @@ GLfloat WaterTable2::runSimulationStep(""")
     if "#include <algorithm>" not in wc:
         wc = "#include <algorithm>\n" + wc
     open("WaterTable2.cpp", "w").write(wc)
+
+# FrameFilter (Projetor-LAOB, 22/11/2026): a trava do relevo embaixo da mão (Sandbox::gestoTrava, Gesto.h).
+# Ponto travado: o relevo fica como estava (a mão parada não vira areia); as estatísticas seguem normais, então
+# quando a mão sai o ponto fica instável até o filtro ver só areia de novo, como sempre.
+fh = open("FrameFilter.h").read()
+if "trava" not in fh:
+    fh = rep(fh, "\t/* Constructors and destructors: */\n\tpublic:\n",
+             "\t/* Constructors and destructors: */\n\tpublic:\n"
+             "\tunsigned char* trava; // Projetor-LAOB: 1 = mão em cima, o relevo não muda (um byte por pixel; escrito pelo Sandbox)\n")
+    open("FrameFilter.h", "w").write(fh)
+fc = open("FrameFilter.cpp").read()
+if "trava" not in fc:
+    fc = rep(fc, "\t:pixelDepthCorrection(sPixelDepthCorrection),\n", "\t:pixelDepthCorrection(sPixelDepthCorrection),\n\t trava(0),\n")
+    fc = rep(fc, "\t/* Initialize the averaging buffer: */\n",
+             "\t/* Projetor-LAOB: trava do relevo, nada travado */\n\ttrava=new unsigned char[size[1]*size[0]];\n"
+             "\tfor(unsigned int i=0;i<size[1]*size[0];++i)\n\t\ttrava[i]=0;\n\t\n\t/* Initialize the averaging buffer: */\n")
+    fc = rep(fc, "\tdelete[] validBuffer;\n", "\tdelete[] validBuffer;\n\tdelete[] trava;\n")
+    fc = rep(fc, "\t\tconst PixelDepthCorrection* pdcPtr=pixelDepthCorrection;\n",
+             "\t\tconst PixelDepthCorrection* pdcPtr=pixelDepthCorrection;\n\t\tconst unsigned char* tPtr=trava; // Projetor-LAOB\n")
+    fc = rep(fc, "++ofPtr,++nofPtr)\n", "++ofPtr,++nofPtr,++tPtr)\n")
+    fc = rep(fc, "\t\t\t\tif(sPtr[0]>=minNumSamples&&sPtr[2]*sPtr[0]<=maxVariance*sPtr[0]*sPtr[0]+sPtr[1]*sPtr[1])\n",
+             "\t\t\t\tif(*tPtr)\n\t\t\t\t\t{\n\t\t\t\t\t/* Projetor-LAOB: mão em cima, o relevo fica como estava */\n\t\t\t\t\t*nofPtr=*ofPtr;\n\t\t\t\t\t}\n"
+             "\t\t\t\telse if(sPtr[0]>=minNumSamples&&sPtr[2]*sPtr[0]<=maxVariance*sPtr[0]*sPtr[0]+sPtr[1]*sPtr[1])\n")
+    open("FrameFilter.cpp", "w").write(fc)
 
 m = open("makefile").read()
 if "FaceImage.cpp" not in m:
