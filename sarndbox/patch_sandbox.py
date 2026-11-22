@@ -50,7 +50,7 @@ if "FaceImage" not in h:
 	float measureSandHeight(void) const; // Altura mediana da areia (cm acima do plano base)
 """)
     # Extras (Projetor-LAOB): tesouro, peixes e carrinhos
-    h = rep(h, '#include "Types.h"\n', '#include "Types.h"\n#include "Extras.h"\n')
+    h = rep(h, '#include "Types.h"\n', '#include "Types.h"\n#include "Extras.h"\n#include "Perfil.h"\n')
     h = rep(h, "\tdouble faceRefTime; // Última medição da altura média da areia\n", """\tdouble faceRefTime; // Última medição da altura média da areia
 	mutable Extras extras; // Tesouro, lago, peixes, carrinhos e labirinto sobre o relevo
 	mutable double labLeitura; // Labirinto: última medição da água no alvo
@@ -58,6 +58,7 @@ if "FaceImage" not in h:
 	mutable unsigned int quadrosAgua,atrasosAgua; // Desempenho: passos de água e quantos atrasaram
 	mutable double aguaPedida,aguaFaltou; // Desempenho: tempo de água que devia ser simulado e o que ficou para trás
 	double desempenhoTempo; unsigned int quadros; // Desempenho: quadros desde a última linha no log
+	mutable Perfil perfil; // Desempenho: tempo de cada quadro (p95/p99) e das passadas de CPU/GPU (Perfil.h)
 	double extrasMapaTempo,extrasUltimoPasso; // Última atualização do mapa e do movimento
 	float tesouroPedido; // Profundidade do tesouro pedido antes de haver mapa (<0 = nenhum)
 """)
@@ -1395,6 +1396,7 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
 		double dt=Vrui::getApplicationTime()-desempenhoTempo;
 		std::cout<<"Desempenho: "<<int(quadros/dt+0.5)<<" quadros/s; água atrasada em "<<atrasosAgua<<" de "<<quadrosAgua<<" passos"
 		         <<"; a água andou "<<(aguaPedida>0.0?int(100.0*(1.0-aguaFaltou/aguaPedida)+0.5):100)<<"% do tempo real"<<std::endl;
+		std::cout<<perfil.relatorio(quadros)<<std::endl;
 		quadros=0;
 		quadrosAgua=0;
 		atrasosAgua=0;
@@ -1471,6 +1473,38 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
 	if(brutoQuer)
 		brutoFrames.postNewValue(frameBuffer); // Projetor-LAOB: dedo apontado (Gesto.cpp)
 	}
+""")
+    # Perfil (22/11/2026): tempo de cada quadro e das passadas principais (linha "Perfil:" junto do
+    # "Desempenho:"). Sem isso só havia a média de quadros/s, que esconde travadinhas.
+    c = rep(c, """void Sandbox::frame(void)
+	{
+""", """void Sandbox::frame(void)
+	{
+	/* Projetor-LAOB: intervalo desde o quadro anterior e CPU do frame() inteiro (Perfil.h) */
+	{
+	double lento=perfil.quadro();
+	if(lento>0.0)
+		std::cout<<"Perfil: quadro lento de "<<int(lento+0.5)<<" ms"<<std::endl;
+	}
+	struct PerfilFrame { Perfil& p; PerfilFrame(Perfil& sp):p(sp) {p.cpuIni(Perfil::C_FRAME);} ~PerfilFrame(void) {p.cpuFim(Perfil::C_FRAME);} } perfilFrame(perfil);
+""")
+    c = rep(c, """		/* Update the water table's bathymetry grid: */
+""", """		perfil.cpuIni(Perfil::C_AGUA); perfil.gpuIni(Perfil::G_AGUA); // Projetor-LAOB: Perfil
+		/* Update the water table's bathymetry grid: */
+""")
+    c = rep(c, """		/* Check if the grid request is active and wants water level data: */
+""", """		perfil.gpuFim(Perfil::G_AGUA); perfil.cpuFim(Perfil::C_AGUA);
+		perfil.cpuIni(Perfil::C_LEITURA); // Projetor-LAOB: leituras GPU->CPU (água dos bichos, jogos, labirinto)
+		/* Check if the grid request is active and wants water level data: */
+""")
+    c = rep(c, """		/* Mark the water simulation state as up-to-date for this frame: */
+""", """		perfil.cpuFim(Perfil::C_LEITURA);
+		/* Mark the water simulation state as up-to-date for this frame: */
+""")
+    c = rep(c, """		rs.surfaceRenderer->renderSinglePass(ds.viewport,projection,ds.modelviewNavigational,contextData);
+""", """		perfil.cpuIni(Perfil::C_RELEVO); perfil.gpuIni(Perfil::G_RELEVO); // Projetor-LAOB: Perfil
+		rs.surfaceRenderer->renderSinglePass(ds.viewport,projection,ds.modelviewNavigational,contextData);
+		perfil.gpuFim(Perfil::G_RELEVO); perfil.cpuFim(Perfil::C_RELEVO);
 """)
     open("Sandbox.cpp", "w").write(c)
 

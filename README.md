@@ -161,6 +161,21 @@ verdade, terminando na topografia):
 bash testes/integracao.sh
 ```
 
+Medidas e prints no laob (usam o projetor por alguns minutos e terminam na topografia):
+
+```bash
+bash testes/medir.sh
+```
+
+```bash
+bash testes/prancha.sh
+```
+
+O `medir.sh` passa por cada tema e brincadeira e grava em `~/medidas/<data>/medidas.tsv` o tempo da troca,
+quadros/s, tempo de quadro (p50/p95/p99/máx), água em % do tempo real, GPU por passada, CPU e memória. O
+`prancha.sh` tira um print de cada tema × brincadeira; `python3 testes/monta_prancha.py <pasta> prancha.jpg`
+junta tudo numa grade.
+
 ## Como funciona por dentro
 
 **Modo Foto** (`sarndbox/FaceImage.*`, `patch_surface.py`, `patch_sandbox.py`): a imagem vira
@@ -196,6 +211,7 @@ na CPU e desenho no shader. Comandos pelo cano (`./sandbox.sh cmd "..."`): `teso
 - **Copie o relevo:** o alvo é a soma de até 4 gaussianas (morros e buracos) sobre a altura mediana da areia no começo, igual no C++ e no shader. A cada mapa de alturas (2× por segundo), nota = 1 − Σ max(0, |erro| − folga) / Σ max(0, |alvo| − folga): areia lisa dá 0%, cópia perfeita 100%, mexer onde não devia desconta. Folga de 1,5 / 1,1 / 0,8 cm por nível. A nota vai para o `sandbox.log` como `Copia: N%`, e o alvo como `Copia: alvo x,y,altura,largura …` (frações da área iluminada) para a miniatura do painel; o shader só desenha a barra e o número (algarismos 3×5).
 - **Transição:** quando a brincadeira muda, o desenho novo entra por cima do relevo em 0,6 s (`extrasMundo2.w`).
 - **Jogos de água** (`sarndbox/Jogos.cpp`): até 4 nascentes e 16 peças (casa, portão, bandeira, placar) desenhadas no shader; fazenda, lago, barquinho e resgate foram retirados em 14/11/2026 (o código foi apagado em 18/11/2026). 2× por segundo a GPU devolve a água (`glGetTexImage` só do canal do nível, e do fundo) e mede a maior profundidade em cada peça; com 0,3 cm conta como molhada. Toda nascente é multiplicada por `fatorVazao` (1,32 = o dobro da calibração de 16/11/2026; `jogoVazao <f>` troca); a boca tem 3,2 cm de raio e a água por cm² é reduzida na mesma proporção, para o total não mudar com o tamanho. Vila e vulcão começam sem contagem: a água desce desde o início. Durante os jogos e o labirinto o lago dos bichos fica desligado. No vulcão, `extrasEfeito.w` escurece o relevo e pinta a água de lava em qualquer tema. Os avisos vão para o `sandbox.log` como linhas `Jogo: …`, que o painel e `areia-jogo placar` leem.
+- **Medidas:** junto do `Desempenho:`, a linha `Perfil:` (`sarndbox/Perfil.h`) dá o tempo de cada quadro (p50, p95, p99, máximo e quantos passaram de 50 ms), o tempo de CPU do quadro, da água, do relevo e das leituras GPU→CPU, e o tempo de GPU da água e do relevo (consultas `GL_TIME_ELAPSED` lidas sem esperar). Quadro acima de 100 ms vira `Perfil: quadro lento de N ms`.
 - **Fluidez:** grade de água em 320×240 (`-wts 320 240`; 640×480 não dava conta na GTX 750 Ti). O log mostra a cada 30 s `Desempenho: N quadros/s` e quanto a água acompanhou o tempo real (`a água andou X% do tempo real`). `AREIA_GRADE_AGUA` e `AREIA_PASSOS_AGUA` trocam a grade e os passos por quadro para testes.
 
 **Chuva pela mão:** só com a mão a mais de 4 cm da beirada iluminada (em 16/11/2026 a borda da caixa
