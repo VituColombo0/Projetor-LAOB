@@ -20,8 +20,8 @@ for B in "${BRINC[@]}"; do
   areia-tema classico >/dev/null
   case "$B" in
     topografia) areia-topografia >/dev/null ;;
-    tesouro) areia-tesouro normal >/dev/null; cmd tesouroTeste ;;
-    fossil) areia-fossil trex facil >/dev/null; cmd tesouroTeste ;;
+    tesouro) areia-tesouro normal >/dev/null ;;
+    fossil) areia-fossil trex facil >/dev/null ;;
     labirinto) areia-labirinto normal >/dev/null ;;
     corrida|vila|rota|vulcao) areia-jogo "$B" normal >/dev/null ;;
     copia) areia-jogo copia sorteio normal >/dev/null ;;
@@ -30,6 +30,10 @@ for B in "${BRINC[@]}"; do
   sleep 6
   for T in "${TEMAS[@]}"; do
     areia-tema "$T" >/dev/null
+    # tesouro/fóssil: mostrar sem cavar ANTES de cada print. Com um tesouroTeste só, no início, o achado
+    # reaparecia enterrado em outro lugar 20 s depois (por volta do 7º tema) e o baú "sumia" no
+    # Arco-íris (auditoria 23/11/2026: não era defeito do shader).
+    case "$B" in tesouro|fossil) cmd tesouroTeste ;; esac
     sleep 2
     print "${B}__${T}"
   done

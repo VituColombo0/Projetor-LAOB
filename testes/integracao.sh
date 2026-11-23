@@ -26,6 +26,9 @@ trap 'cp -p "$TMP/estado.json" "$D/estado.json" 2>/dev/null; rm -rf "$TMP"' EXIT
 
 echo "== instalação"
 confere "compila do zero a partir do repositório" "bash '$R/instalar.sh' --compilar '$TMP/build' >/dev/null 2>&1"
+# a máquina inteira (Kinect, placa, calibração, venv, serviços, painel...): só lê; as FALTA aparecem aqui
+confere "instalar.sh --verificar sem FALTA" "bash '$R/instalar.sh' --verificar > '$TMP/verificar.txt' 2>&1"
+grep -E '^(FALTA|AVISO) ' "$TMP/verificar.txt" | sed 's/^/      /'
 # textos de recursos recentes nos dois binários (antes só a contagem de "faceOut", igual em toda versão desde
 # o modo foto: um binário velho passava)
 tem_texto() { grep -qF "$1" <(strings "$2"); }
