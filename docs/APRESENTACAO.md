@@ -29,7 +29,7 @@ na areia.
 ### 1. Topografia
 
 Peça a alguém para fazer uma montanha com as mãos. As cores mudam na hora: cada cor é uma altura, como
-num mapa, e as linhas finas são curvas de nível a cada 1 cm (a mais forte, a cada 5 cm).
+num mapa, e as linhas finas são curvas de nível a cada 0,75 cm.
 
 > **O que falar:** um Kinect em cima da caixa mede a altura da areia 30 vezes por segundo e o projetor pinta
 > a cor certa em cada ponto. É o AR Sandbox da UC Davis, com o que o laboratório acrescentou por cima.

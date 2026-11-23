@@ -30,8 +30,6 @@ p99 do quadro em ~34 ms em todos os modos, sem nenhum quadro acima de 50 ms.
 
 - Leitura de longe: fóssil sépia no chão claro, baú e fóssil sem curvas por cima, cartão claro e grande no
   Copie o relevo, água dos jogos azul em todo tema e leito seco pela altura.
-- Curvas de nível sem serrilhado, a cada 1 cm, com a principal mais forte a cada 5 cm.
-- Relevo 3D: sombreamento suave pela inclinação da areia.
 - Água com fundo azul firme, margem clara e brilho que anda com a correnteza.
 - Placares com algarismos grandes e contorno, uma paleta única de interface e a mesma comemoração em todos
   os jogos (`copiaTeste` para conferir).

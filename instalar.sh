@@ -389,7 +389,10 @@ ETAPA="2/8 patches e compilação"
 echo "[2/8] modo Foto: patches e compilação"
 PROGRAMA_ANTES=$(md5sum "$DEST/bin/SARndbox" 2>/dev/null | cut -d" " -f1 || true)
 cp "$REPO"/sarndbox/{FaceImage.h,FaceImage.cpp,Perfil.h,Gesto.h,Gesto.cpp,Extras.h,Extras.cpp,Jogos.cpp,Mundo.cpp,MundoPlanta.h,patch_surface.py,patch_sandbox.py,patch_agua.py,projetor.cfg} "$DEST/"
-for S in share/SARndbox-2.8/Shaders/SurfaceAddWaterColor.fs share/SARndbox-2.8/Shaders/Water2WaterUpdateShader.fs share/SARndbox-2.8/Shaders/SurfaceAddContourLines.fs; do
+# SurfaceAddContourLines.fs não tem patch: as curvas de nível são as do SARndbox original (as curvas novas de
+# 23/11/2026 saíram a pedido do Victor); copiar do original apaga a versão mudada de instalações anteriores.
+for S in share/SARndbox-2.8/Shaders/SurfaceAddWaterColor.fs share/SARndbox-2.8/Shaders/Water2WaterUpdateShader.fs \
+         share/SARndbox-2.8/Shaders/SurfaceAddContourLines.fs; do
   mkdir -p "$DEST/$(dirname "$S")" && cp "$ORIG/$S" "$DEST/$S"   # sempre do original, antes do patch
 done
 ( cd "$DEST" && python3 patch_surface.py >/dev/null && python3 patch_sandbox.py >/dev/null && python3 patch_agua.py >/dev/null )

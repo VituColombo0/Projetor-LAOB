@@ -83,9 +83,6 @@ PASSOS_AGUA=${AREIA_PASSOS_AGUA:-30}
 
 CORES=(-uhm)
 [ -f "$TEMA" ] && CORES=(-uhm "$(readlink -f "$TEMA")")
-# Curvas de nível da versão completa a cada 1 cm (o padrão do SARndbox é 0,75): a principal, mais forte,
-# cai a cada 5 cm (23/11/2026; o desenho está no patch_agua.py). A reserva (original) fica como veio.
-CURVAS=(-ucl 1.0)
 
 tema_nome() { local t; t=$(readlink "$TEMA" 2>/dev/null); t=${t##*/}; t=${t%.cpt}; echo "${t:-classico}"; }
 
@@ -160,7 +157,7 @@ case "${1:-estado}" in
     # O programa escreve com >> (O_APPEND): assim o vigia pode esvaziar o registro grande sem fechar a areia.
     [ -s "$LOG" ] && mv -f "$LOG" "$LOG.1"
     : > "$LOG"
-    ( cd "$HOME" && exec setsid nohup "${ESCOPO[@]}" "${ACORDADO[@]}" "$ROSTO" "${TELA[@]}" "${CORES[@]}" "${CURVAS[@]}" -wts $GRADE_AGUA -ws 1.0 "$PASSOS_AGUA" -fpv -cp "$FIFO" ) >> "$LOG" 2>&1 < /dev/null 9>&- &
+    ( cd "$HOME" && exec setsid nohup "${ESCOPO[@]}" "${ACORDADO[@]}" "$ROSTO" "${TELA[@]}" "${CORES[@]}" -wts $GRADE_AGUA -ws 1.0 "$PASSOS_AGUA" -fpv -cp "$FIFO" ) >> "$LOG" 2>&1 < /dev/null 9>&- &
     sleep 8  # o Kinect e a janela levam uns segundos para ficar prontos para comandos
     if [ "$(qual)" != rosto ]; then
       echo "a versão com Foto não subiu (veja $D/sandbox.falhou.log); voltando à topografia"

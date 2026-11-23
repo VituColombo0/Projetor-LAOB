@@ -2523,6 +2523,10 @@ void mFolha(vec2 dob,vec2 dirAberta,vec2 dirFechada,float comp)
 		mG*=0.6;
 	}
 
+/* Piso das três salas (23/11/2026, pedido do Victor): era cinza 0,70, que com o realce de luz e a lâmpada
+   do projetor virava quase branco e os móveis "flutuavam"; cinza médio dá chão e destaca o que está em cima. */
+const vec3 M_PISO=vec3(0.46,0.47,0.49);
+
 /* ---------------------------------------------------------- corredor (Fy 0 a 0,120) */
 void mCorredor()
 	{
@@ -2674,7 +2678,7 @@ void mParede()
 /* ---------------------------------------------------------- FORENSE (Fx 0,020-0,255, Fy 0,147-0,529) */
 void mForense()
 	{
-	mPoe(vec3(0.70,0.71,0.70));
+	mPoe(M_PISO);
 #if MUNDO_NIVEL>=3
 	if(mBit(1.0)>0.5)
 		mG+=vec3(0.04)*(smoothstep(6.0,0.0,length(mL(vec2(0.161,0.300))))+smoothstep(6.0,0.0,length(mL(vec2(0.102,0.319)))));
@@ -2908,7 +2912,7 @@ void mForense()
 /* ---------------------------------------------------------- MINIAUDITÓRIO (Fx 0,020-0,255, Fy 0,556-0,973) */
 void mMini()
 	{
-	vec3 piso=vec3(0.70,0.71,0.70);
+	vec3 piso=M_PISO;
 	float dl=(mF.y-MP_DIVISORIA_Y1)*mK.y;                              // até a parede L (divisória)
 	float dsx=(MP_PAREDE_F_X0-mF.x)*mK.x;                              // até a parede S (porta)
 	float ddx=(mF.x-MP_EXTERNA_X)*mK.x;                                // até a parede D (tela)
@@ -3934,7 +3938,7 @@ void mFundoB()
 	}
 void mPrincipal()
 	{
-	mPoe(vec3(0.70,0.71,0.70));
+	mPoe(M_PISO);
 #if MUNDO_NIVEL>=3
 	if(mBit(0.0)>0.5||mDia<0.5)
 		{

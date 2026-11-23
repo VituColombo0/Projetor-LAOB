@@ -1,10 +1,6 @@
-"""Shaders do SARndbox mudados pelo Projetor-LAOB (rodar na pasta da cópia, depois de copiar os originais
-para share/.../Shaders; o instalar.sh faz isso):
-- SurfaceAddWaterColor.fs: a água (chuva, jogos, lago dos bichos) acompanha o tema de cor (vulcão = lava,
-  inverno = azul glacial, marte = ciano, deserto = oásis, arco-íris = colorida só na chuva solta);
-- Water2WaterUpdateShader.fs: o lençol do lago dos bichos;
-- SurfaceAddContourLines.fs: curvas de nível sem serrilhado e com a linha principal a cada 5 cm, e o
-  sombreamento do relevo (relevoLuz, chamado do patch_surface.py) (23/11/2026)."""
+"""A água do SARndbox (a chuva da mão aberta) acompanha o tema de cor (Projetor-LAOB):
+vulcão = lava, inverno = neve, marte = lama vermelha, deserto = oásis, arco-íris = colorida.
+Rodar na pasta da cópia, depois de copiar o shader original para share/.../Shaders."""
 import sys
 
 ATUAL = ""  # o shader sendo mudado (para a mensagem de erro)
@@ -146,55 +142,4 @@ uniform vec3 lencolTaxa; // ligado, fração que brota neste passo, cm absorvido
 	/* Write the updated quantity: */
 """)
     open(ARQ2, "w").write(u)
-# Curvas de nível (23/11/2026, direção de arte V2): o original pinta 1 pixel preto onde a curva passa
-# (serrilhado, e some de longe na areia). Agora: espessura certa pela distância em pixels até a curva
-# (diferença de altura / gradiente), borda suave, e a cada 5 cm a linha principal, mais grossa e firme.
-# A linha é o próprio chão bem mais escuro (no chão escuro, mais claro), não um preto chapado.
-ARQ3 = "share/SARndbox-2.8/Shaders/SurfaceAddContourLines.fs"
-ATUAL = ARQ3
-c = open(ARQ3).read()
-if "Projetor-LAOB" not in c:
-    i = c.index("void addContourLines(in vec2 fragCoord,inout vec4 baseColor)")
-    c = c[:i] + """/* Projetor-LAOB (23/11/2026): curvas de nível sem serrilhado, com espessura constante, e a principal a cada 5 cm */
-void addContourLines(in vec2 fragCoord,inout vec4 baseColor)
-	{
-	/* altura (em número de curvas) no meio do pixel e quanto ela muda por pixel, pelos 4 cantos */
-	float c0=texture2DRect(pixelCornerElevationSampler,vec2(fragCoord.x,fragCoord.y)).r;
-	float c1=texture2DRect(pixelCornerElevationSampler,vec2(fragCoord.x+1.0,fragCoord.y)).r;
-	float c2=texture2DRect(pixelCornerElevationSampler,vec2(fragCoord.x,fragCoord.y+1.0)).r;
-	float c3=texture2DRect(pixelCornerElevationSampler,vec2(fragCoord.x+1.0,fragCoord.y+1.0)).r;
-	float e=(c0+c1+c2+c3)*0.25*contourLineFactor;
-	float g=max(length(vec2(c1-c0+c3-c2,c2-c0+c3-c1))*0.5*contourLineFactor,0.004);
-	/* distância (pixels) até a curva mais perto e se ela é a principal (a cada 5 cm) */
-	float d=abs(fract(e+0.5)-0.5)/g;
-	float cada=max(floor(5.0*contourLineFactor+0.5),1.0);
-	float principal=1.0-step(0.5,mod(floor(e+0.5),cada));
-	float meia=mix(1.0,1.45,principal);
-	float a=(1.0-smoothstep(meia-0.6,meia+0.6,d))*mix(0.8,0.88,principal);
-	a*=1.0-smoothstep(0.3,0.6,g);                    // encosta tão íngreme que as curvas se juntam: sem mancha escura
-	float lum=dot(baseColor.rgb,vec3(0.3,0.59,0.11));
-	vec3 linha=mix(baseColor.rgb*0.5+vec3(0.26),baseColor.rgb*mix(0.3,0.14,principal),smoothstep(0.1,0.22,lum));
-	baseColor.rgb=mix(baseColor.rgb,linha,a);
-	}
-
-/* Projetor-LAOB (23/11/2026, direção de arte V1): sombreamento suave do relevo, para a areia parecer 3D.
-   Inclinação pela altura 4 e 8 pixels para cada lado (~0,5 cm: o ruído do sensor e a areia
-   granulada quase não aparecem), luz de cima à
-   esquerda da imagem; devolve o fator da cor: 0,85 (encosta de costas para a luz) a 1,10 (de frente), 1 no plano. */
-float relevoLuz(in vec2 fragCoord)
-	{
-	vec2 c=fragCoord+vec2(0.5);
-	float ex=texture2DRect(pixelCornerElevationSampler,c+vec2(8.0,0.0)).r-texture2DRect(pixelCornerElevationSampler,c-vec2(8.0,0.0)).r
-	        +2.0*(texture2DRect(pixelCornerElevationSampler,c+vec2(4.0,0.0)).r-texture2DRect(pixelCornerElevationSampler,c-vec2(4.0,0.0)).r);
-	float ey=texture2DRect(pixelCornerElevationSampler,c+vec2(0.0,8.0)).r-texture2DRect(pixelCornerElevationSampler,c-vec2(0.0,8.0)).r
-	        +2.0*(texture2DRect(pixelCornerElevationSampler,c+vec2(0.0,4.0)).r-texture2DRect(pixelCornerElevationSampler,c-vec2(0.0,4.0)).r);
-	vec3 n=normalize(vec3(-vec2(ex,ey)*(17.0/32.0),1.0));   // (16 + 2*8 pixels) e ~17 pixels por cm na areia
-	const vec3 L=vec3(-0.485,0.485,0.728);
-	return 1.0+clamp((dot(n,L)-L.z)*0.5,-0.15,0.10);
-	}
-
-/* (o original, guardado sem uso) */
-void addContourLinesOriginal(in vec2 fragCoord,inout vec4 baseColor)
-""" + c[i+len("void addContourLines(in vec2 fragCoord,inout vec4 baseColor)\n"):]
-    open(ARQ3, "w").write(c)
-print("água e curvas ok")
+print("água ok")

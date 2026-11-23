@@ -18,7 +18,7 @@ dia a dia do laboratório, o [manual](MANUAL.md).
 
 ## Brincadeiras em detalhe
 
-- **Topografia:** o relevo colorido de sempre, com 7 temas de cor (Clássico, Vulcão, Inverno, Marte, Deserto, Oceano e Arco-íris) e animação por tema (lava, neve, poeira, vento, mar, estrelas); o Clássico é o visual original, sem efeito. O relevo tem sombreamento suave (a areia parece 3D) e curvas de nível a cada 1 cm, sem serrilhado, com a linha principal mais forte a cada 5 cm.
+- **Topografia:** o relevo colorido de sempre, com 7 temas de cor (Clássico, Vulcão, Inverno, Marte, Deserto, Oceano e Arco-íris) e animação por tema (lava, neve, poeira, vento, mar, estrelas); o Clássico é o visual original, sem efeito. Curvas de nível como no SARndbox original, a cada 0,75 cm (o sombreamento 3D e as curvas de 1 cm de 23/11/2026 saíram a pedido do Victor: o relevo perdia detalhe).
 - **Foto:** a imagem é projetada sobre a areia, amplia onde está alta (efeito lente) e ganha a sombra do relevo; rosto sai recortado, sem fundo.
 - **Esculpir:** o rosto vira relevo-alvo; o projetor pinta onde falta areia (vermelho) e onde sobra (azul).
 - **Caça ao tesouro** e **fósseis de dinossauro** (T-Rex, Triceratops, Pterodáctilo, pegada): cave para achar.
