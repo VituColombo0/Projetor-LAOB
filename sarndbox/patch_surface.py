@@ -249,20 +249,31 @@ void SurfaceRenderer::setDemDistScale(""")
 				/* Modulate the base color by contour line color: */\\n\\
 				addContourLines(gl_FragCoord.xy,baseColor);\\n\\
 				\\n";
-""", """			if((chaveCompila&0x100u)&&dem==0&&elevationColorMap!=0) // só onde as declarações dos extras entram (no Esculpir, com o DEM, não: 19/11/2026)
+""", """			/* Relevo 3D (23/11/2026, V1): sombreamento suave pela inclinação da areia (relevoLuz, no
+			   SurfaceAddContourLines.fs do patch_agua.py), antes das curvas; não nos objetos (bichos, baú,
+			   placares: extrasObjeto), no laboratório, na foto nem no Esculpir */
+			fragmentDeclarations+="\\
+				float relevoLuz(in vec2);\\n";
+			if((chaveCompila&0x100u)&&dem==0&&elevationColorMap!=0) // só onde as declarações dos extras entram (no Esculpir, com o DEM, não: 19/11/2026)
 				fragmentMain+="\\
 				if(extrasMundo.w<0.5)\\n\\
 					{\\n\\
+					baseColor.rgb*=mix(relevoLuz(gl_FragCoord.xy),1.0,extrasObjeto);\\n\\
 					vec4 exSemCurva=baseColor;\\n\\
 					addContourLines(gl_FragCoord.xy,baseColor);\\n\\
 					baseColor=mix(baseColor,exSemCurva,extrasLimpa);\\n\\
 					}\\n\\
 				\\n";
 			else
+				{
+				if(dem==0&&elevationColorMap!=0&&(chaveCompila&0x200u)==0)
+					fragmentMain+="\\
+				baseColor.rgb*=relevoLuz(gl_FragCoord.xy);\\n";
 				fragmentMain+="\\
 				/* Modulate the base color by contour line color: */\\n\\
 				addContourLines(gl_FragCoord.xy,baseColor);\\n\\
 				\\n";
+				}
 """)
     c = rep(c, "void SurfaceRenderer::setFaceImage(FaceImage* newFaceImage)", """void SurfaceRenderer::setExtras(const Extras* newExtras)
 	{

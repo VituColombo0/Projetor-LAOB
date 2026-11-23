@@ -3,7 +3,8 @@ para share/.../Shaders; o instalar.sh faz isso):
 - SurfaceAddWaterColor.fs: a água (chuva, jogos, lago dos bichos) acompanha o tema de cor (vulcão = lava,
   inverno = azul glacial, marte = ciano, deserto = oásis, arco-íris = colorida só na chuva solta);
 - Water2WaterUpdateShader.fs: o lençol do lago dos bichos;
-- SurfaceAddContourLines.fs: curvas de nível sem serrilhado e com a linha principal a cada 5 cm (23/11/2026)."""
+- SurfaceAddContourLines.fs: curvas de nível sem serrilhado e com a linha principal a cada 5 cm, e o
+  sombreamento do relevo (relevoLuz, chamado do patch_surface.py) (23/11/2026)."""
 import sys
 
 ATUAL = ""  # o shader sendo mudado (para a mensagem de erro)
@@ -137,6 +138,22 @@ void addContourLines(in vec2 fragCoord,inout vec4 baseColor)
 	float lum=dot(baseColor.rgb,vec3(0.3,0.59,0.11));
 	vec3 linha=mix(baseColor.rgb*0.5+vec3(0.26),baseColor.rgb*mix(0.3,0.14,principal),smoothstep(0.1,0.22,lum));
 	baseColor.rgb=mix(baseColor.rgb,linha,a);
+	}
+
+/* Projetor-LAOB (23/11/2026, direção de arte V1): sombreamento suave do relevo, para a areia parecer 3D.
+   Inclinação pela altura 4 e 8 pixels para cada lado (~0,5 cm: o ruído do sensor e a areia
+   granulada quase não aparecem), luz de cima à
+   esquerda da imagem; devolve o fator da cor: 0,85 (encosta de costas para a luz) a 1,10 (de frente), 1 no plano. */
+float relevoLuz(in vec2 fragCoord)
+	{
+	vec2 c=fragCoord+vec2(0.5);
+	float ex=texture2DRect(pixelCornerElevationSampler,c+vec2(8.0,0.0)).r-texture2DRect(pixelCornerElevationSampler,c-vec2(8.0,0.0)).r
+	        +2.0*(texture2DRect(pixelCornerElevationSampler,c+vec2(4.0,0.0)).r-texture2DRect(pixelCornerElevationSampler,c-vec2(4.0,0.0)).r);
+	float ey=texture2DRect(pixelCornerElevationSampler,c+vec2(0.0,8.0)).r-texture2DRect(pixelCornerElevationSampler,c-vec2(0.0,8.0)).r
+	        +2.0*(texture2DRect(pixelCornerElevationSampler,c+vec2(0.0,4.0)).r-texture2DRect(pixelCornerElevationSampler,c-vec2(0.0,4.0)).r);
+	vec3 n=normalize(vec3(-vec2(ex,ey)*(17.0/32.0),1.0));   // (16 + 2*8 pixels) e ~17 pixels por cm na areia
+	const vec3 L=vec3(-0.485,0.485,0.728);
+	return 1.0+clamp((dot(n,L)-L.z)*0.5,-0.15,0.10);
 	}
 
 /* (o original, guardado sem uso) */
