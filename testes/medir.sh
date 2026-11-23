@@ -63,8 +63,10 @@ for M in "${MODOS[@]}"; do
   a2=$(ticks "$SB"); b2=$(ticks "$PN"); c2=$(ticks "$SO"); read -r T2 I2 < <(total)
   HZ=$(getconf CLK_TCK); NC=$(nproc)
   dt=$(echo "($T2 - $T1) / $NC" | bc -l)   # em ticks de um núcleo
-  pct() { echo "scale=1; 100 * ($2 - $1) / $dt" | bc -l; }
-  ctot=$(echo "scale=1; 100 - 100 * ($I2 - $I1) / ($T2 - $T1)" | bc -l)
+  pct() { printf '%.1f' "$(echo "100 * ($2 - $1) / $dt" | bc -l)"; }
+  # CPU da máquina toda (os 4 núcleos) = 1 - ocioso/total na janela; conferido em 23/11/2026 contra a soma
+  # dos processos. Arredonda com printf (o "scale=1" do bc truncava: 8,9% saía 9,0 e 17,96% saía 17,9).
+  ctot=$(printf '%.1f' "$(echo "100 - 100 * ($I2 - $I1) / ($T2 - $T1)" | bc -l)")
   rss=$(awk '/VmRSS/{printf "%.0f", $2/1024}' "/proc/$SB/status" 2>/dev/null)
   des=$(grep '^Desempenho' "$LOG" | tail -1); per=$(grep '^Perfil: quadro p50' "$LOG" | tail -1)
   qps=$(echo "$des" | grep -o '^Desempenho: [0-9]*' | grep -o '[0-9]*$')
