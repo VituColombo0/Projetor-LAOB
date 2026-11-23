@@ -2160,7 +2160,7 @@ uniform vec4 extrasTesouro;  // x, y, raio (cm), altura a alcançar cavando (cm)
 uniform vec4 extrasInfo;     // tempo para fract/floor/ruído (s; Extras::tempoFracao, nunca 0), achou, tesouro ligado, nível do lago (cm; -1000 = sem lago)
 uniform vec4 extrasEfeito;   // efeito do tema (0 nenhum, 1 lava, 2 neve, 3 poeira, 4 areia, 5 ondas, 6 brilho), altura média da areia (cm), tempo para sin/cos (s; Extras::tempoSeno), jogo do vulcão (1)
 uniform vec4 extrasLab;      // labirinto: nascente (x, y) e alvo (x, y), cm
-uniform vec4 extrasLab2;     // labirinto: raio do alvo, estado (0 desligado, 1 correndo, 2 chegou), segundos no estado, (livre)
+uniform vec4 extrasLab2;     // labirinto: raio do alvo, estado (0 desligado, 1 correndo, 2 chegou), segundos no estado, água de jogo (1 = jogo ou labirinto: a água é a azul padrão em todo tema; patch_agua.py)
 uniform vec4 extrasJogo[32]; // jogos de água: por peça (x, y, raio, tipo) e (estado, livre, ordem, time)
 uniform vec4 extrasJogoInfo; // jogo (0 nenhum), fase, segundos na fase, vencedor ou próximo portão
 uniform float extrasNomes[72]; // membros: por pessoa, nº de letras e 8 letras (desenho 3x5 em bits)
@@ -4014,13 +4014,24 @@ const char* Extras::glslFragmentMain=R"GLSL(
 	else if(extrasJogoInfo.x>0.5)
 		{
 		/* Jogos de água (corrida, vila, rota, labirinto): tira a água do mapa para não
-		   confundir os jogadores. As valas e cotas baixas viram leito seco de terra/areia,
-		   deixando apenas a água que sai das nascentes visível como água */
-		if(baseColor.b>baseColor.r+0.08&&baseColor.b>baseColor.g*0.85)
+		   confundir os jogadores. As cotas abaixo de 0 cm (o azul do mapa) viram leito seco de
+		   terra/areia, deixando apenas a água que sai das nascentes visível como água.
+		   23/11/2026: decidido pela ALTURA (antes era pela cor azul, e no Arco-íris e no Oceano quase
+		   tudo é azul: o relevo virava um oliva liso). O leito escurece no fundo e clareia no alto,
+		   então o relevo continua legível; a passagem é suave (sem borda dura). Nos temas em que o
+		   azul do mapa não é só abaixo de 0 cm, a faixa azul ganha um leito próprio: no Oceano, fundo
+		   de mar seco (areia); no Arco-íris, lilás (o tema continua colorido, mas nada parece água). */
+		float abaixo=1.0-smoothstep(-0.4,0.0,ep.z);
+		float azulM=smoothstep(0.04,0.2,baseColor.b-max(baseColor.r,baseColor.g));
+		float alto=smoothstep(ref-5.0,ref+3.0,ep.z);
+		vec3 leito=mix(vec3(0.34,0.25,0.14),vec3(0.80,0.70,0.50),alto);
+		if(ef>5.5&&ef<6.5)
 			{
-			vec3 leito=mix(vec3(0.22,0.48,0.25),vec3(0.52,0.48,0.34),clamp(baseColor.b*1.2-0.2,0.0,1.0));
-			baseColor=vec4(leito,1.0);
+			baseColor.rgb=mix(baseColor.rgb,mix(vec3(0.42,0.20,0.50),vec3(0.86,0.70,0.92),alto),azulM*(1.0-abaixo));
+			baseColor.rgb=mix(baseColor.rgb,leito,abaixo);
 			}
+		else
+			baseColor.rgb=mix(baseColor.rgb,leito,max(abaixo,(ef>4.5&&ef<5.5)?azulM:0.0));
 		}
 	else if(ef>0.5&&ef<1.5)
 		{
@@ -4081,32 +4092,43 @@ const char* Extras::glslFragmentMain=R"GLSL(
 		   no meio da areia e o painel mostra a miniatura dele. */
 		float nota=mod(extrasCopiaInfo.w,1000.0);
 		bool feito=extrasCopiaInfo.w>=1000.0;
-		vec2 pb=ep.xy-(extrasMundo2.xy+vec2(3.0,2.5));
-		if(pb.x>-0.7&&pb.x<31.0&&pb.y>-0.8&&pb.y<2.8)
+		/* 23/11/2026 (leitura de longe): projetor não pinta preto, então o quadro escuro de antes sumia na
+		   areia. Agora é um cartão CLARO com moldura escura, trilho de 3 cm e algarismos de 4 cm escuros;
+		   sem curvas de nível nem água por cima (extrasLimpa/extrasMarca) */
+		vec2 pb=ep.xy-(extrasMundo2.xy+vec2(3.0,3.0));
+		float cel=0.8;                                                   // algarismo 2,4 x 4 cm
+		float fimB=21.0+15.0*cel;                                        // trilho 20 cm + 3 algarismos e o %
+		if(pb.x>-1.0&&pb.x<fimB+1.0&&pb.y>-1.5&&pb.y<4.5)
 			{
-			vec3 corB=vec3(0.05,0.06,0.09);                              // fundo do quadro
-			if(pb.x>0.0&&pb.x<22.0&&pb.y>0.0&&pb.y<2.0)
+			vec3 corB=vec3(0.95,0.92,0.84);                              // cartão creme
+			if(pb.x<-0.65||pb.x>fimB+0.65||pb.y<-1.15||pb.y>4.15)
+				corB=vec3(0.12,0.11,0.10);                               // moldura
+			if(pb.x>0.0&&pb.x<20.0&&pb.y>0.0&&pb.y<3.0)
 				{
-				corB=vec3(0.16,0.17,0.22);                               // trilho vazio
-				if(pb.x<nota*0.22)
-					corB=feito?mix(vec3(1.0,0.78,0.2),vec3(1.0,0.97,0.7),0.5+0.5*sin(es*6.0)):
+				corB=vec3(0.52,0.53,0.57);                               // trilho vazio
+				if(pb.x<nota*0.2)
+					corB=feito?mix(vec3(1.0,0.78,0.2),vec3(1.0,0.95,0.65),smoothstep(0.6,1.0,sin(pb.x*0.5-es*2.0))):
 					     mix(mix(vec3(0.92,0.25,0.18),vec3(0.98,0.78,0.15),smoothstep(25.0,55.0,nota)),vec3(0.25,0.86,0.38),smoothstep(55.0,85.0,nota));
-				if(abs(pb.x-18.7)<0.1)
-					corB=vec3(0.9);                                      // marca dos 85%
+				if(abs(pb.x-17.0)<0.15)
+					corB=vec3(0.1);                                      // marca dos 85%
 				}
+			if((pb.x>-0.15&&pb.x<0.0||pb.x>20.0&&pb.x<20.15)&&pb.y>-0.15&&pb.y<3.15||(pb.y>-0.15&&pb.y<0.0||pb.y>3.0&&pb.y<3.15)&&pb.x>-0.15&&pb.x<20.15)
+				corB=vec3(0.12,0.11,0.10);                               // contorno do trilho
 			/* número: até 3 algarismos e o % */
 			float n=floor(nota+0.5);
 			float c0=floor(n/100.0),c1=floor(mod(n,100.0)/10.0),c2=mod(n,10.0);
-			float cel=0.5;
-			vec2 t=vec2(pb.x-23.0,2.25-pb.y)/cel;                        // coluna, linha (0 = em cima)
+			vec2 t=vec2(pb.x-21.0,3.5-pb.y)/cel;                         // coluna, linha (0 = em cima)
 			float tinta=0.0;
 			if(c0>0.5) tinta=max(tinta,exDigito(c0,t));
 			if(c0>0.5||c1>0.5) tinta=max(tinta,exDigito(c1,t-vec2(4.0,0.0)));
 			tinta=max(tinta,exDigito(c2,t-vec2(8.0,0.0)));
 			tinta=max(tinta,exDigito(10.0,t-vec2(12.0,0.0)));
 			if(tinta>0.5)
-				corB=feito?vec3(1.0,0.9,0.4):vec3(1.0);
+				corB=feito?vec3(0.05,0.42,0.16):vec3(0.1,0.09,0.08);
 			baseColor=vec4(corB,1.0);
+			extrasLimpa=1.0;
+			extrasObjeto=1.0;
+			extrasMarca=1.0;
 			}
 		}
 	if(extrasInfo.z>0.5)
@@ -4196,6 +4218,10 @@ const char* Extras::glslFragmentMain=R"GLSL(
 						}
 					else if(exCaixa(p-vec2(0.08,-0.08),vec2(0.8,0.52),0.07)<0.0)
 						baseColor.rgb*=0.55;                                                               // sombra na areia
+					/* 23/11/2026: o baú é objeto (a luz do fim o destaca) e as curvas de nível não passam por cima */
+					if(tampaEmPe||dentro||corpo<0.0)
+						extrasObjeto=1.0;
+					extrasLimpa=max(extrasLimpa,smoothstep(0.25,0.0,corpo));
 					/* moedas que saltam do baú e ficam espalhadas em volta */
 					if(achou&&ta>1.0)
 						for(int k=0;k<9;++k)
@@ -4206,8 +4232,12 @@ const char* Extras::glslFragmentMain=R"GLSL(
 							vec2 pm=vec2(0.0,0.25)+vec2(cos(ak),sin(ak)*0.8)*vai;
 							float dm=distance(p,pm);
 							if(dm<0.07)
+								{
 								baseColor=vec4(mix(vec3(1.0,0.86,0.3),vec3(0.7,0.48,0.08),smoothstep(0.03,0.07,dm))
 								               +vec3(0.5)*pow(0.5+0.5*sin(es*6.0+fk*1.7),10.0),1.0);
+								extrasObjeto=1.0;
+								extrasLimpa=1.0;
+								}
 							}
 					if(achou)
 						baseColor.rgb+=vec3(1.0,0.9,0.5)*pow(max(0.0,sin(atan(q.y,q.x)*7.0+es*2.0)),40.0)*smoothstep(1.25,0.3,r)*ab;
@@ -4323,6 +4353,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 						marca=max(marca,exOsso(q,vec2(0.06,-0.15),vec2(0.42,0.42),0.085));
 						float garras=max(smoothstep(0.05,0.02,distance(q,vec2(0.0,0.76))),max(smoothstep(0.05,0.02,distance(q,vec2(-0.5,0.53))),smoothstep(0.05,0.02,distance(q,vec2(0.5,0.53)))));
 						marca=clamp(max(marca,garras),0.0,1.0);
+						extrasLimpa=max(extrasLimpa,smoothstep(0.1,0.35,marca));
 						vec3 lama=mix(vec3(0.33,0.25,0.17),vec3(0.2,0.15,0.1),exRuido(q*13.0));
 						baseColor.rgb=mix(baseColor.rgb,lama,smoothstep(0.35,0.7,marca)*0.9);
 						baseColor.rgb+=vec3(0.22,0.18,0.12)*smoothstep(0.1,0.35,marca)*(1.0-smoothstep(0.35,0.6,marca))*step(0.0,q.x+q.y);  // borda iluminada
@@ -4339,8 +4370,15 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					marfim*=1.0-0.35*smoothstep(0.86,0.93,exRuido(q*46.0+vec2(1.7,9.2)));                      // poros
 					marfim*=1.0-0.4*smoothstep(0.03,0.0,abs(exRuido(q*9.0)-0.5))*step(0.5,exRuido(q*3.0));     // rachaduras
 					marfim+=vec3(0.12)*smoothstep(0.8,1.0,osso)*smoothstep(0.3,0.7,exRuido(q*30.0+vec2(4.0)));  // brilho do polimento
-					baseColor.rgb*=1.0-0.45*smoothstep(0.02,0.3,osso)*(1.0-miolo);                          // sombra em volta de cada osso
+					/* 23/11/2026: no chão claro (Deserto, Inverno, topo dos morros) o marfim tinha a mesma luz da areia
+					   e sumia: ali o osso fica cor de osso fossilizado (castanho), escuro contra o chão; no chão
+					   escuro continua marfim. A sombra em volta ficou mais forte e um pouco mais larga. */
+					float lf=dot(baseColor.rgb,vec3(0.3,0.59,0.11));
+					marfim=mix(marfim,marfim*vec3(0.56,0.43,0.30),smoothstep(0.55,0.8,lf));
+					baseColor.rgb*=1.0-0.6*smoothstep(0.0,0.3,osso)*(1.0-miolo);                            // sombra em volta de cada osso
 					baseColor.rgb=mix(baseColor.rgb,marfim,miolo);
+					extrasObjeto=max(extrasObjeto,miolo);
+					extrasLimpa=max(extrasLimpa,smoothstep(0.0,0.3,osso));
 					if(achou)
 						baseColor.rgb+=vec3(0.3,0.24,0.1)*(0.6+0.4*sin(es*5.0))*miolo;
 					}
@@ -5371,7 +5409,6 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				if(ef>1.5&&ef<2.5)      { raso=vec3(0.20,0.65,0.96); prof=vec3(0.05,0.28,0.65); }
 				else if(ef>2.5&&ef<3.5) { raso=vec3(0.18,0.72,0.82); prof=vec3(0.05,0.35,0.48); }
 				else if(ef>3.5&&ef<4.5) { raso=vec3(0.16,0.78,0.90); prof=vec3(0.02,0.40,0.52); }
-				else if(ef>5.5&&ef<6.5) { raso=vec3(0.6); prof=vec3(0.33); }
 				chao=mix(raso,prof,clamp((extrasInfo.w-ep.z)/2.0,0.0,1.0))+vec3(0.03);
 				}
 			float lf=dot(chao,vec3(0.3,0.59,0.11));
@@ -5416,7 +5453,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			if(a.w<2.0||(a.w>=4.0&&a.w<11.0))
 				{
 				vec3 aguaEst=extrasEfeito.w>0.5?vec3(0.82,0.24,0.06):(ef>1.5&&ef<2.5)?vec3(0.11,0.38,0.74):(ef>2.5&&ef<3.5)?vec3(0.11,0.45,0.58):
-				             (ef>3.5&&ef<4.5)?vec3(0.08,0.51,0.63):(ef>5.5&&ef<6.5)?vec3(0.38):vec3(0.07,0.23,0.55);
+				             (ef>3.5&&ef<4.5)?vec3(0.08,0.51,0.63):vec3(0.07,0.23,0.55);
 				cr=clamp((cr-0.21*aguaEst)/0.79,0.0,1.0);
 				}
 			baseColor.rgb=cr;
@@ -5686,7 +5723,8 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 	               jogo==VULCAO&&jogoFase>0?1.0f:0.0f); // .z: tempo de sin/cos; .w: jogo do vulcão (a água é lava; sem lava de enfeite)
 	glUniform4fARB(locations[5],lsx,lsy,ltx,lty);
 	glUniform4fARB(locations[6],lraio,labirinto?GLfloat(labEstado):0.0f,
-	               labEstado==2?GLfloat(tempo-labChegou):GLfloat(tempo-labInicio),0.0f);
+	               labEstado==2?GLfloat(tempo-labChegou):GLfloat(tempo-labInicio),
+	               (jogo!=SEM_JOGO||labirinto)?1.0f:0.0f); // .w: água de jogo (sem as faixas do Arco-íris; 23/11/2026)
 	/* nomes dos membros: cada letra é um desenho de 3x5 pontos (bit = linha*3 + coluna, de cima para baixo) */
 	static const unsigned short LETRAS[26]={
 		0x5BEA,0x3AEB,0x624E,0x3B6B,0x72CF,0x12CF,0x6B4E,0x5BED,0x7497,0x2B24,0x5AED,0x7249,0x5BFD,

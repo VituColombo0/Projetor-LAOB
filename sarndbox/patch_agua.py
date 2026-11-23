@@ -42,7 +42,7 @@ uniform vec4 extrasEfeito; // Projetor-LAOB: efeito do tema (0 = água normal)
 			{ rasoA=vec3(0.18,0.72,0.82); profA=vec3(0.05,0.35,0.48); brilhoA=0.65; } // marte: água mineral ciano (destaca do vermelho)
 		else if(efA>3.5&&efA<4.5)
 			{ rasoA=vec3(0.16,0.78,0.90); profA=vec3(0.02,0.40,0.52); brilhoA=0.70; } // deserto: oásis nítido (destaca da areia)
-		else if(efA>5.5&&efA<6.5)
+		else if(efA>5.5&&efA<6.5&&!lagoA&&extrasLab2.w<0.5) // 23/11/2026: só a chuva solta; jogo, labirinto e lago dos bichos ficam azuis
 			{
 			rasoA=vec3(0.6)+0.4*cos(6.2832*(vec3(fragCoord.x*0.004+waterAnimationTime*0.15)+vec3(0.0,0.33,0.67)));
 			profA=rasoA*0.55;                                                        // arco-íris
@@ -63,6 +63,7 @@ uniform vec4 extrasEfeito; // Projetor-LAOB: efeito do tema (0 = água normal)
 """)
     s = rep(s, "uniform vec4 extrasEfeito; // Projetor-LAOB: efeito do tema (0 = água normal)\n", """uniform vec4 extrasEfeito; // Projetor-LAOB: efeito do tema (0 = água normal)
 uniform vec4 extrasInfo;   // .x = tempo dos extras (0 = extras desligados)
+uniform vec4 extrasLab2;   // .w = 1 nos jogos de água e no labirinto (a água é a azul padrão em todo tema)
 float extrasMarca;         // posta em 1 pelo shader dos extras onde há um animal marinho
 float extrasAguaSombra;    // sombra na água em volta dos bichos (shader dos extras)
 """)
