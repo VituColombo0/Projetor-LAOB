@@ -4430,13 +4430,14 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					   e sumia: ali o osso fica cor de osso fossilizado (castanho), escuro contra o chão; no chão
 					   escuro continua marfim. A sombra em volta ficou mais forte e um pouco mais larga. */
 					float lf=dot(baseColor.rgb,vec3(0.3,0.59,0.11));
-					marfim=mix(marfim,marfim*vec3(0.56,0.43,0.30),smoothstep(0.55,0.8,lf));
+					float claroF=smoothstep(0.55,0.8,lf);
+					marfim=mix(marfim,vec3(0.34,0.25,0.16)*(marfim/0.85),claroF);                       // sépia escuro (as manchas continuam)
 					baseColor.rgb*=1.0-0.6*smoothstep(0.0,0.3,osso)*(1.0-miolo);                            // sombra em volta de cada osso
 					baseColor.rgb=mix(baseColor.rgb,marfim,miolo);
-					extrasObjeto=max(extrasObjeto,miolo);
+					extrasObjeto=max(extrasObjeto,miolo*(1.0-0.7*claroF));                              // (a luz do fim não o deixa laranja)
 					extrasLimpa=max(extrasLimpa,smoothstep(0.0,0.3,osso));
 					if(achou)
-						baseColor.rgb+=vec3(0.3,0.24,0.1)*(0.6+0.4*sin(es*5.0))*miolo;
+						baseColor.rgb+=vec3(0.3,0.24,0.1)*(0.6+0.4*sin(es*5.0))*miolo*(1.0-0.75*claroF); // no chão claro o brilho não clareia o osso até sumir
 					}
 				else if(falta<3.0)
 					{
