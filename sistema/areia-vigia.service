@@ -9,3 +9,11 @@ ExecStart=%h/SARndbox-rosto/areia-vigia
 # matava a areia quando o vigia terminava a checagem (ela ficava abrindo e fechando a cada 2 min)
 # e quando o painel reiniciava. Sem Nice: a areia herdaria a prioridade menor.
 KillMode=process
+# Calado quando está tudo bem (23/11/2026: eram ~1.350 linhas por dia de "Starting/Finished" no journal).
+# LogLevelMax=notice tira as linhas "Starting/Finished" que o systemd escreve sobre a unidade; a saída
+# padrão NÃO passa por esse filtro nos serviços de usuário (conferido no systemd 249 do laob com unidades
+# de teste), então vai para o nada: o vigia anota o que faz em inicio.log. StandardError é dito à parte
+# porque, sem ele, a saída de erro seguiria a padrão para o nada: erros e "Failed" continuam no journal.
+LogLevelMax=notice
+StandardOutput=null
+StandardError=journal

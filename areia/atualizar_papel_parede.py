@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Atualiza o papel de parede da Área de Trabalho com o IP e porta atuais do painel.
-Roda pelo timer de usuário atualizar-papel-parede (a cada minuto) e quando o painel abre;
-só redesenha quando o endereço muda. Base: ~/Pictures/logo-original.png (logo do LAOB)."""
+Roda pelo timer de usuário atualizar-papel-parede (a cada 5 minutos) e quando o painel abre;
+só redesenha (e só escreve no journal) quando o endereço muda. Base: ~/Pictures/logo-original.png (logo do LAOB)."""
 import os
 import socket
 import subprocess
@@ -116,5 +116,15 @@ if __name__ == "__main__":
     import sys
     # sem --forcar: só redesenha se o endereço mudou. Antes forçava a cada minuto, e o GNOME
     # recarregava a imagem de fundo o tempo todo (em 13/11 o gnome-shell travou)
+    def _anotado():
+        try:
+            with open(LAST_IP_FILE) as f:
+                return f.read().strip()
+        except OSError:
+            return None
+    antes = _anotado()
     ip = atualizar(forcar="--forcar" in sys.argv[1:])
-    print(f"Endereço do painel: http://{ip}:{PORTA}")
+    # 23/11/2026: pelo timer, só diz algo quando o endereço mudou (antes eram ~770 linhas por dia no journal
+    # repetindo o mesmo endereço); no terminal, sempre
+    if sys.stdout.isatty() or _anotado() != antes:
+        print(f"Endereço do painel: http://{ip}:{PORTA}")

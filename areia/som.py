@@ -52,23 +52,81 @@ _ultimo_toque_geral = 0.0
 _tocando = set()   # paplay em andamento: o mudo mata na hora
 
 
-def _garantir_sink_combinado():
-    """Garante que a saída combinada (HDMI + analógica) existe no PulseAudio sem duplicatas."""
-    if _falso():
-        return
+# Saída combinada (HDMI do projetor + caixas analógicas P2). Ela só existe enquanto o PulseAudio não
+# reinicia: não fica no default.pa porque, com o HDMI ausente quando ele sobe (projetor desligado), o
+# load-module falharia e derrubaria o som todo. Por isso é refeita aqui quando falta: ao abrir o painel,
+# quando um efeito ou o motor do ambiente falham e, de tempos em tempos, pelo vigia do registro e pelo motor
+# preso na saída padrão (23/11/2026: depois de um reboot do PulseAudio, ou com o projetor ligado só depois
+# do painel, o HDMI ficava mudo até alguém mexer no som). Não mexe em volume nem no mudo.
+# Escravos: os do laob primeiro; noutra máquina, o primeiro HDMI e a primeira analógica que o PulseAudio listar.
+ESCRAVOS_LAOB = ("alsa_output.pci-0000_01_00.1.hdmi-stereo", "alsa_output.pci-0000_00_1b.0.analog-stereo")
+REVE_COMBINADO = 60.0    # s entre uma conferida e outra quando nada falhou
+_combinado = {"quando": -1e9, "falta": None}
+_combinado_trava = threading.Lock()
+
+
+def _saidas():
+    """Nomes das saídas (sinks) do PulseAudio, ou None se o pactl não respondeu."""
     try:
-        res = subprocess.run(["pactl", "list", "short", "sinks"],
-                             capture_output=True, text=True, timeout=1.5)
-        if "combinado" not in res.stdout:
-            subprocess.run([
-                "pactl", "load-module", "module-combine-sink",
-                "sink_name=combinado",
-                "slaves=alsa_output.pci-0000_01_00.1.hdmi-stereo,alsa_output.pci-0000_00_1b.0.analog-stereo"
-            ], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2.0)
-            subprocess.run(["pactl", "set-sink-mute", "alsa_output.pci-0000_00_1b.0.analog-stereo", "0"],
-                           check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1.0)
-    except Exception:
-        pass
+        r = subprocess.run(["pactl", "list", "short", "sinks"], capture_output=True, text=True, timeout=1.5)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:
+        return None
+    return [c[1] for c in (l.split("\t") for l in r.stdout.splitlines()) if len(c) > 1]
+
+
+def escravos_do_combinado(saidas):
+    """(hdmi, analógica) para o combinado, ou None no lugar da que não existe agora."""
+    def acha(laob, pedaco):
+        if laob in saidas:
+            return laob
+        return next((s for s in saidas if pedaco in s and not s.startswith("combinado")), None)
+    return acha(ESCRAVOS_LAOB[0], ".hdmi"), acha(ESCRAVOS_LAOB[1], ".analog")
+
+
+def _garantir_sink_combinado(intervalo=3.0):
+    """Cria a saída "combinado" se ela não existe e as duas saídas de verdade existem. Devolve True se ela
+    existe (já existia ou acabou de ser criada). No máximo uma conferida a cada `intervalo` s (vários efeitos
+    falhando juntos fazem uma só); duas linhas ao mesmo tempo não criam duas."""
+    if _falso():
+        return True
+    trava = _combinado_trava   # (a própria, mesmo se o módulo for recarregado no meio, como nos testes)
+    if not trava.acquire(blocking=False):
+        return False   # outra linha está conferindo agora
+    try:
+        agora = time.monotonic()
+        if agora - _combinado["quando"] < intervalo:
+            return False
+        _combinado["quando"] = agora
+        saidas = _saidas()
+        if saidas is None:
+            return False
+        if "combinado" in saidas:
+            _combinado["falta"] = None
+            return True
+        hdmi, analog = escravos_do_combinado(saidas)
+        if not (hdmi and analog):
+            falta = "do projetor (HDMI)" if not hdmi else "analógica (caixas P2)"
+            if _combinado["falta"] != falta:   # avisa uma vez, não a cada minuto
+                print(f"som: sem a saída {falta}; o combinado fica para quando ela aparecer", file=sys.stderr)
+                _combinado["falta"] = falta
+            return False
+        r = subprocess.run(["pactl", "load-module", "module-combine-sink", "sink_name=combinado",
+                            f"slaves={hdmi},{analog}"],
+                           check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2.0)
+        if r.returncode != 0:
+            print("som: o PulseAudio não criou a saída combinado", file=sys.stderr)
+            return False
+        subprocess.run(["pactl", "set-sink-mute", analog, "0"],
+                       check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1.0)
+        print(f"som: saída combinado criada ({hdmi} + {analog})", file=sys.stderr)
+        _combinado["falta"] = None
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+    finally:
+        trava.release()
 
 
 def estado():
@@ -232,6 +290,16 @@ def _esquece_chuva():
     _chuva["nuvem_ate"] = 0.0
 
 
+def _registro_encolhido(arq):
+    """O registro foi encolhido pelo areia-vigia (passou de 5 MB) e não recomeçado pela areia reabrindo: a
+    1ª linha é a "Registro: continua de sandbox.log.1" e as de baixo são as de antes (não tocar de novo)."""
+    try:
+        with open(arq, "rb") as f:
+            return f.readline(80).startswith(b"Registro: continua")
+    except OSError:
+        return False
+
+
 def _loop_vigia():
     global _vigia_ativo
     _vigia_ativo = True
@@ -243,18 +311,26 @@ def _loop_vigia():
             pos = os.path.getsize(log_path)
         except Exception:
             pos = 0
+    # decidido uma vez: uma linha que sobrou de um teste (AREIA_SOM_FALSO) não passa a mexer no som de verdade
+    confere_saida = not _falso()
 
     while _vigia_ativo:
         time.sleep(0.3)
+        if confere_saida and time.monotonic() - _combinado["quando"] > REVE_COMBINADO:
+            _garantir_sink_combinado(REVE_COMBINADO)   # o PulseAudio reiniciou ou o projetor ligou depois
         log_path = _caminho_log()
         if not os.path.isfile(log_path):
             continue
         try:
             tam = os.path.getsize(log_path)
             if tam < pos:
-                pos, resto = 0, b""  # arquivo foi truncado/reiniciado (a areia reabriu)
-                _esquece_chuva()
-                _amb_acorda.set()
+                resto = b""
+                if _registro_encolhido(log_path):
+                    pos = tam   # o vigia da areia só encolheu o registro grande: o que está lá já tocou
+                else:
+                    pos = 0     # arquivo novo (a areia reabriu)
+                    _esquece_chuva()
+                    _amb_acorda.set()
             if tam > pos:
                 with open(log_path, "rb") as f:
                     f.seek(pos)
@@ -693,6 +769,7 @@ class _Saida:
         self.nulo = nulo        # medir CPU sem tocar nada: só segue o relógio
         self.proc = None
         self.falhas = 0
+        self.na_padrao = False  # aberto sem --device porque a saída escolhida falhou
         self.espera = 0.0
         self.aberta_em = 0.0
         self.t0 = None
@@ -710,6 +787,7 @@ class _Saida:
         saida = estado().get("saida") or ""
         cmd = ["pacat", "--playback", f"--rate={TAXA}", "--channels=1", "--format=s16le", "--latency-msec=250",
                "--client-name=Caixa de Areia", "--stream-name=ambiente"]
+        self.na_padrao = bool(saida) and self.falhas >= 2
         if saida and self.falhas < 2:   # duas falhas seguidas: tenta a saída padrão
             cmd.append(f"--device={saida}")
         try:
@@ -740,6 +818,12 @@ class _Saida:
             self.proc.stdin.write(pcm)   # bloqueia quando o buffer enche: é isso que dá o ritmo
             if self.falhas and time.monotonic() - self.aberta_em > 10:
                 self.falhas = 0
+            if (self.na_padrao and time.monotonic() - self.aberta_em > REVE_COMBINADO
+                    and time.monotonic() - _combinado["quando"] > REVE_COMBINADO):
+                # tocando na saída padrão porque o combinado faltou: quando ele voltar (ou for refeito
+                # aqui), fecha para a próxima volta abrir nele (o fundo some por ~0,3 s e volta)
+                if _garantir_sink_combinado(REVE_COMBINADO):
+                    self.fecha()
             return True
         except (OSError, ValueError):
             self._morreu()

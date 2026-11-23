@@ -1,25 +1,141 @@
 #!/bin/bash
 # Vigia da caixa de areia: se o programa da areia fechou sozinho (travou, caiu), abre a
 # topografia de novo. Roda a cada 2 minutos pelo serviço de usuário areia-vigia.timer.
-#   areia-vigia           confere agora (o que o timer faz)
-#   areia-vigia pausa     o vigia para de reabrir (ex.: para usar o PC para outra coisa)
-#   areia-vigia liga      volta a vigiar
-#   areia-vigia estado    diz se está vigiando
+#   areia-vigia                  confere agora (o que o timer faz)
+#   areia-vigia pausa            o vigia para de reabrir por 2 horas (ex.: para usar o PC para outra coisa);
+#                                depois volta sozinho
+#   areia-vigia pausa 30m|3h     pausa por outro tempo
+#   areia-vigia pausa sempre     pausa até alguém religar (ex.: projetor desligado de propósito)
+#   areia-vigia liga             volta a vigiar
+#   areia-vigia estado           "vigiando", "pausado até HH:MM" ou "pausado sempre"; com a topografia de
+#                                reserva no projetor, uma 2ª linha "reserva desde HH:MM: <motivo>"
+#   areia-vigia estado --json    o mesmo para o painel (uma linha JSON)
+# Arquivos (na pasta do programa): sem-vigia = "ate=<segundos desde 1970>" ou "ate=sempre" (vazio, da
+# versão antiga: 2 h depois de criado); reserva = desde=/ultima=/motivo= (escrito pelo sandbox.sh).
 set -uo pipefail
 D=$(dirname "$(readlink -f "$0")")
 PAUSA=$D/sem-vigia
+RESERVA=$D/reserva
+TENTATIVAS=$D/.vigia-reserva   # quando o vigia tentou sair da reserva (uma linha por tentativa)
+TRAVA=$D/.troca.lock           # a mesma do sandbox.sh: troca de programa em andamento
+SLOG=$D/sandbox.log
 LOG=$D/inicio.log
+PAUSA_PADRAO=7200              # 2 h: uma pausa esquecida não deixa a areia sem vigia para sempre (23/11/2026)
+registra() { echo "$(date '+%F %T') vigia: $*" >> "$LOG"; }
+
+hora_txt() {  # $1 = segundos desde 1970 -> HH:MM (ou DD/MM HH:MM se for daqui a mais de um dia)
+  if [ $(($1 - $(date +%s))) -lt 86400 ]; then date -d "@$1" '+%H:%M'; else date -d "@$1" '+%d/%m %H:%M'; fi
+}
+
+segundos() {  # "2h", "30m", "90min" -> segundos; "sempre" -> sempre
+  local a=${1:-2h}
+  if [ "$a" = sempre ]; then echo sempre
+  elif [[ $a =~ ^([0-9]+)h$ ]] && [ "${BASH_REMATCH[1]}" -gt 0 ]; then echo $((10#${BASH_REMATCH[1]} * 3600))
+  elif [[ $a =~ ^([0-9]+)(m|min)$ ]] && [ "${BASH_REMATCH[1]}" -gt 0 ]; then echo $((10#${BASH_REMATCH[1]} * 60))
+  else return 1; fi
+}
+
+# PAUSA_ATE: vazio (vigiando), "sempre" ou o fim da pausa em segundos desde 1970. Pausa vencida sai sozinha.
+pausa_situacao() {
+  PAUSA_ATE=
+  [ -e "$PAUSA" ] || return 0
+  local a
+  a=$(sed -n 's/^ate=//p' "$PAUSA" 2>/dev/null | head -n 1)
+  [ "$a" = sempre ] && { PAUSA_ATE=sempre; return 0; }
+  [[ $a =~ ^[0-9]+$ ]] || a=$(( $(stat -c %Y "$PAUSA" 2>/dev/null || date +%s) + PAUSA_PADRAO ))
+  if [ "$a" -le "$(date +%s)" ]; then
+    rm -f "$PAUSA"
+    registra "a pausa do vigia venceu; vigiando de novo"
+    return 0
+  fi
+  PAUSA_ATE=$a
+}
+
+campo() { sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n 1; }   # $1 = campo, $2 = arquivo chave=valor
+
+estado() {
+  pausa_situacao
+  local texto programa r_desde r_ultima r_motivo reserva_json=null
+  case "$PAUSA_ATE" in
+    "") texto=vigiando ;;
+    sempre) texto="pausado sempre" ;;
+    *) texto="pausado até $(hora_txt "$PAUSA_ATE")" ;;
+  esac
+  programa=$("$D/sandbox.sh" estado 2>/dev/null)
+  if [ "$programa" = original ] && [ -e "$RESERVA" ]; then
+    r_desde=$(campo desde "$RESERVA"); r_ultima=$(campo ultima "$RESERVA"); r_motivo=$(campo motivo "$RESERVA")
+    [[ $r_desde =~ ^[0-9]+$ ]] || r_desde=$(stat -c %Y "$RESERVA")
+    [[ $r_ultima =~ ^[0-9]+$ ]] || r_ultima=$r_desde
+    r_motivo=${r_motivo//[\"\\]/}
+    reserva_json="{\"desde\": $r_desde, \"ultima\": $r_ultima, \"motivo\": \"$r_motivo\", \"texto\": \"reserva desde $(date -d "@$r_desde" '+%H:%M')\"}"
+  fi
+  if [ "${1:-}" = --json ]; then
+    local ate=null
+    [ -n "$PAUSA_ATE" ] && [ "$PAUSA_ATE" != sempre ] && ate=$PAUSA_ATE
+    printf '{"vigia": "%s", "ate": %s, "sempre": %s, "texto": "%s", "programa": "%s", "reserva": %s}\n' \
+      "$([ -n "$PAUSA_ATE" ] && echo pausado || echo vigiando)" "$ate" \
+      "$([ "$PAUSA_ATE" = sempre ] && echo true || echo false)" "$texto" "${programa:-nenhum}" "$reserva_json"
+  else
+    echo "$texto"
+    [ "$reserva_json" = null ] || echo "reserva desde $(date -d "@$r_desde" '+%H:%M'): $r_motivo"
+  fi
+}
+
 case "${1:-}" in
-  pausa) touch "$PAUSA"; echo "Vigia pausado: a areia não reabre sozinha. Para voltar: areia-vigia liga"; exit 0 ;;
+  pausa)
+    s=$(segundos "${2:-}") || { echo "uso: areia-vigia pausa [30m|2h|sempre]"; exit 2; }
+    if [ "$s" = sempre ]; then
+      echo "ate=sempre" > "$PAUSA"
+      echo "Vigia pausado até alguém religar: a areia não reabre sozinha. Para voltar: areia-vigia liga"
+    else
+      echo "ate=$(( $(date +%s) + s ))" > "$PAUSA"
+      echo "Vigia pausado até $(hora_txt $(( $(date +%s) + s ))): a areia não reabre sozinha até lá. Para voltar antes: areia-vigia liga"
+    fi
+    exit 0 ;;
   liga) rm -f "$PAUSA"; echo "Vigia ligado: se a areia fechar, ela abre de novo em até 2 minutos."; exit 0 ;;
-  estado) [ -e "$PAUSA" ] && echo "pausado" || echo "vigiando"; exit 0 ;;
+  estado) estado "${2:-}"; exit 0 ;;
   "") ;;
-  *) echo "uso: areia-vigia [pausa|liga|estado]"; exit 2 ;;
+  *) echo "uso: areia-vigia [pausa [30m|2h|sempre]|liga|estado [--json]]"; exit 2 ;;
 esac
-[ -e "$PAUSA" ] && exit 0
 U=$(id -u)
 export DISPLAY=${DISPLAY:-:0} DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-unix:path=/run/user/$U/bus}
-registra() { echo "$(date '+%F %T') vigia: $*" >> "$LOG"; }
+
+# 0) Registro do programa grande demais (23/11/2026). Com a areia parada ele cresce ~1 MB por dia (as linhas
+#    Perfil/Desempenho de cada 30 s); acima de 5 MB vai inteiro para sandbox.log.1 e o arquivo encolhe SEM
+#    fechar a areia (o copytruncate do logrotate, feito aqui): ficam uma 1ª linha "Registro: continua..."
+#    (o som.py a reconhece e não toca de novo o que já tocou), TODAS as linhas que dizem o que está ligado
+#    (os prefixos de areia._PREFIXOS_REGISTRO: o painel tira delas o estado das brincadeiras) e as últimas
+#    4000 das outras, sem Perfil/Desempenho. O arquivo é reescrito no lugar (o programa segue com o mesmo
+#    arquivo aberto) e só depois cortado no tamanho novo, para ninguém ver um registro vazio no meio. Só
+#    com o programa escrevendo com >> (O_APPEND, desde 23/11/2026): com o > antigo ele continuaria na
+#    posição velha, deixando um buraco. As linhas escritas nos poucos milissegundos da troca se perdem.
+gira_registro() {
+  local tam pid fl novo
+  tam=$(stat -c %s "$SLOG" 2>/dev/null) || return 0
+  [ "$tam" -gt $((5 * 1024 * 1024)) ] || return 0
+  pid=$(pgrep -f "^$D/bin/SARndbox" | head -n 1)
+  if [ -n "$pid" ]; then
+    fl=$(sed -n 's/^flags:[[:space:]]*//p' "/proc/$pid/fdinfo/1" 2>/dev/null)
+    [ -n "$fl" ] && (( 8#$fl & 8#2000 )) || return 0
+  fi
+  novo=$SLOG.novo
+  cp -f "$SLOG" "$SLOG.1" || return 0
+  { echo "Registro: continua de sandbox.log.1 (o vigia encolheu o registro em $(date '+%F %T'); abaixo, as linhas de antes sem Perfil/Desempenho)"
+    awk -v max=4000 '
+      /^(Perfil|Desempenho):/ { next }
+      NR == FNR { n++; next }
+      { i++; if (i > n - max || /^(Tesouro|Fossil|Labirinto|Animais|Jogo|Mundo|Copia|Modo Rosto:|Modo Esculpir:)/) print }
+    ' "$SLOG.1" "$SLOG.1"; } > "$novo"
+  if [ "$(stat -c %s "$novo")" -lt "$tam" ]; then
+    dd if="$novo" of="$SLOG" conv=notrunc status=none && truncate -s "$(stat -c %s "$novo")" "$SLOG"
+    registra "o sandbox.log passou de 5 MB: cópia inteira em sandbox.log.1"
+  fi
+  rm -f "$novo"
+}
+gira_registro
+
+pausa_situacao
+[ -n "$PAUSA_ATE" ] && exit 0
 
 # 1) GNOME travado (13/11/2026: o gnome-shell congelou e a tela parou de ser redesenhada; a areia
 #    "travava" e não respondia aos botões). Duas perguntas sem resposta seguidas = travado:
@@ -33,23 +149,49 @@ if pgrep -u "$U" -x gnome-shell >/dev/null && ! gnome_responde; then
     touch "$MARCA"
     pkill -KILL -u "$U" -x gnome-shell
     sleep 15
-    "$D/sandbox.sh" original >/dev/null 2>&1   # a janela antiga ficou presa ao GNOME travado
+    "$D/sandbox.sh" parar >/dev/null 2>&1   # a janela antiga ficou presa ao GNOME travado
     exec "$D/areia-topografia"
   fi
 fi
 
+# Troca de programa em andamento (painel, terminal, areia-topografia): deixa para a próxima volta.
+if command -v flock >/dev/null 2>&1 && ! flock -n -s "$TRAVA" true 2>/dev/null; then
+  exit 0
+fi
+
 # 2) Areia aberta mas parada: o programa escreve "Desempenho" no registro a cada 30 s; sem nada
-#    há mais de 2 min, não está desenhando (Kinect ou tela presos). Fecha e abre de novo.
-if [ "$("$D/sandbox.sh" estado)" = rosto ] && [ -z "$(find "$D/sandbox.log" -mmin -2 2>/dev/null)" ]; then
+#    há mais de 2 min, não está desenhando (Kinect ou tela presos). Fecha e abre de novo (sem abrir o
+#    original só para fechá-lo em seguida, como antes de 23/11/2026).
+programa=$("$D/sandbox.sh" estado)
+if [ "$programa" = rosto ] && [ -z "$(find "$SLOG" -mmin -2 2>/dev/null)" ]; then
   registra "a areia está aberta mas parada há mais de 2 min; reabrindo"
-  "$D/sandbox.sh" original >/dev/null 2>&1
+  "$D/sandbox.sh" parar >/dev/null 2>&1
   exec "$D/areia-topografia"
 fi
 
-[ "$("$D/sandbox.sh" estado)" = nenhum ] || exit 0
+# 3) Topografia de reserva (o SARndbox original, sem efeitos) porque a versão com Foto não subiu (o
+#    sandbox.sh anota em ./reserva): tenta de novo a versão completa 10 min depois da última queda, no
+#    máximo 3 vezes por hora. Cada tentativa apaga o projetor uns 10 s; com a cópia quebrada, o vigia não
+#    fica piscando a areia. Sem ./reserva, o original foi aberto de propósito (sandbox.sh original): fica.
+if [ "$programa" = original ]; then
+  [ -e "$RESERVA" ] || exit 0
+  agora=$(date +%s)
+  ultima=$(campo ultima "$RESERVA")
+  [[ $ultima =~ ^[0-9]+$ ]] || ultima=$(stat -c %Y "$RESERVA")
+  recentes=$(awk -v l=$((agora - 3600)) '$1 > l' "$TENTATIVAS" 2>/dev/null)
+  n=$(printf '%s' "$recentes" | grep -c .)
+  if [ $((agora - ultima)) -ge 600 ] && [ "$n" -lt 3 ]; then
+    { [ -n "$recentes" ] && echo "$recentes"; echo "$agora"; } > "$TENTATIVAS.tmp" && mv -f "$TENTATIVAS.tmp" "$TENTATIVAS"
+    registra "a areia está na topografia de reserva desde $(date -d "@$(campo desde "$RESERVA")" '+%H:%M' 2>/dev/null); tentando a versão completa de novo ($((n + 1))ª vez nesta hora)"
+    exec "$D/areia-topografia"
+  fi
+  exit 0
+fi
+
+[ "$programa" = nenhum ] || exit 0
 # pode ser uma troca em andamento (o sandbox.sh fecha um e abre o outro): confere de novo
 sleep 20
 [ "$("$D/sandbox.sh" estado)" = nenhum ] || exit 0
-pgrep -u "$(id -u)" -f "areia-topografia|sandbox.sh (rosto|original|topografia)" >/dev/null && exit 0
-echo "$(date '+%F %T') vigia: a areia estava fechada; abrindo a topografia" >> "$LOG"
+pgrep -u "$(id -u)" -f "areia-topografia|sandbox.sh (rosto|original|topografia|reabrir)" >/dev/null && exit 0
+registra "a areia estava fechada; abrindo a topografia"
 exec "$D/areia-topografia"

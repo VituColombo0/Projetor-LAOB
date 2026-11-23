@@ -3,7 +3,8 @@ Description=Timer para verificar IP do papel de parede
 
 [Timer]
 OnBootSec=10s
-OnUnitActiveSec=60s
+# a cada 5 min (era 1 min, 23/11/2026): o painel também confere ao abrir, e um IP novo é raro
+OnUnitActiveSec=5min
 
 [Install]
 WantedBy=timers.target
