@@ -340,6 +340,305 @@ class Painel(Ambiente):
         self.assertTrue(self.comandos()[-2].endswith(" 270 0"))
 
 
+class PainelRevisao(Painel):
+    """Revisão final (23/11/2026): câmera e Willbert fora da trava, foto pelo nome exato, upload que não
+    abre, números com limite, POST só da própria página, linha de saúde e textos da página."""
+
+    def setUp(self):
+        super().setUp()
+        self.painel._willbert_cache[:] = [0.0, None]
+        # nunca o Willbert nem a câmera de verdade nos testes (no laob eles existem)
+        falso = os.path.join(self.tmp, "willbert-falso")
+        with open(falso, "w") as f:
+            f.write('#!/bin/sh\necho "$1" >> "$(dirname "$0")/willbert.log"\n')
+        os.chmod(falso, 0o755)
+        self.painel.WILLBERT = [falso]
+        self.painel.areia.foto_da_camera = lambda: self.fail("câmera de verdade chamada no teste")
+        self.painel.VIGIA = os.path.join(self.tmp, "sem-vigia-de-verdade")
+        self.painel.NVIDIA_SMI = os.path.join(self.tmp, "sem-nvidia-smi")
+
+    def tearDown(self):
+        self.painel.TAREFA.espera()
+        super().tearDown()
+
+    def json_cru(self, url, texto, **kw):
+        return self.c.post(url, data=texto, content_type="application/json", environ_base=TAILSCALE, **kw)
+
+    def test_camera_fora_da_trava_e_uma_tarefa_por_vez(self):
+        import threading
+        import time
+        foto = self.poe("camera-teste.jpg")
+        solta = threading.Event()
+
+        def camera_lenta():
+            solta.wait(20)
+            return foto
+        self.painel.areia.foto_da_camera = camera_lenta
+        r = self.post("/foto", data={}, content_type="multipart/form-data")
+        self.assertEqual(r.status_code, 200, r.get_json())
+        n = r.get_json()["tarefa"]
+        self.assertIn("Tirando a foto", r.get_json()["msg"])
+        t0 = time.monotonic()
+        r = self.post("/tema", json={"tema": "oceano"})                  # a trava geral está livre
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertLess(time.monotonic() - t0, 5)
+        r = self.post("/foto", data={}, content_type="multipart/form-data")
+        self.assertEqual(r.status_code, 409)                             # uma tarefa por vez
+        self.assertIn("tirando a foto", r.get_json()["msg"])
+        self.assertEqual(self.post("/willbert", json={"acao": "ligar"}).status_code, 409)
+        t = self.get("/estado").get_json()["tarefa"]
+        self.assertEqual((t["id"], t["acao"], t["rodando"]), (n, "foto", True))
+        solta.set()
+        self.painel.TAREFA.espera()
+        t = self.get("/estado").get_json()["tarefa"]
+        self.assertEqual((t["rodando"], t["ok"]), (False, True), t)
+        self.assertIn("camera-teste.jpg", t["msg"])
+        self.assertEqual(self.rodando(), "rosto")                        # projetou
+
+    def test_camera_que_falha_diz_por_que(self):
+        def sem_camera():
+            raise self.areia.Erro("a câmera não respondeu")
+        self.painel.areia.foto_da_camera = sem_camera
+        self.assertEqual(self.post("/foto", data={}, content_type="multipart/form-data").status_code, 200)
+        self.painel.TAREFA.espera()
+        t = self.get("/estado").get_json()["tarefa"]
+        self.assertEqual((t["ok"], t["msg"]), (False, "a câmera não respondeu"))
+
+    def test_willbert_em_segundo_plano(self):
+        r = self.post("/willbert", json={"acao": "ligar"})
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertIn("tarefa", r.get_json())
+        self.painel.TAREFA.espera()
+        t = self.get("/estado").get_json()["tarefa"]
+        self.assertEqual((t["acao"], t["ok"]), ("ligar", True), t)
+        self.assertIn("Willbert ligado", t["msg"])
+        with open(os.path.join(self.tmp, "willbert.log")) as f:
+            self.assertEqual(f.read().split(), ["ligar"])
+        self.assertEqual(self.post("/willbert", json={"acao": "rm -rf"}).status_code, 400)
+        quebrado = os.path.join(self.tmp, "willbert-quebrado")
+        with open(quebrado, "w") as f:
+            f.write('#!/bin/sh\necho "sem permissão" >&2\nexit 1\n')
+        os.chmod(quebrado, 0o755)
+        self.painel.WILLBERT = [quebrado]
+        self.assertEqual(self.post("/willbert", json={"acao": "desligar"}).status_code, 200)
+        self.painel.TAREFA.espera()
+        t = self.get("/estado").get_json()["tarefa"]
+        self.assertEqual(t["ok"], False)
+        self.assertIn("sem permissão", t["msg"])
+
+    def test_escolher_pelo_nome_exato(self):
+        self.poe("ana.png")
+        self.poe("mariana.png")
+        os.makedirs(os.path.join(self.PASTA, self.areia.PASTA_WILLBERT), exist_ok=True)
+        imagem_wb = self.poe(os.path.join(self.areia.PASTA_WILLBERT, "willbert-ana.png"))
+        for nome, caminho in (("ana.png", os.path.join(self.PASTA, "ana.png")),
+                              ("mariana.png", os.path.join(self.PASTA, "mariana.png")),
+                              ("willbert-ana.png", imagem_wb)):
+            r = self.post("/escolher", json={"imagem": nome})
+            self.assertEqual(r.status_code, 200, (nome, r.get_json()))
+            self.assertEqual(self.areia.estado()["imagem"], caminho)
+        for ruim in ("ana", "1", "an", "nada.png", "", None):
+            r = self.post("/escolher", json={"imagem": ruim})
+            self.assertEqual(r.status_code, 400, ruim)
+
+    def test_upload_que_nao_abre_nao_fica_na_galeria(self):
+        for nome, dados in (("IMG_1.HEIC", b"ftypheic nada de imagem"), ("foto.jpg", b"\xff\xd8 quebrada"),
+                            ("x.gif", b"GIF89a quebrado"), ("blob", b"nada")):
+            r = self.post("/foto", data={"foto": (io.BytesIO(dados), nome)}, content_type="multipart/form-data")
+            self.assertEqual(r.status_code, 400, nome)
+            self.assertIn("não consegui abrir essa imagem", r.get_json()["msg"])
+        self.assertEqual([n for n in os.listdir(self.PASTA) if not os.path.isdir(os.path.join(self.PASTA, n))], [])
+        self.assertNotIn("rosto", self.comandos())
+        # o que o OpenCV lê, mas sem extensão conhecida (alguns apps mandam "blob"), vira PNG
+        ok, png = cv2.imencode(".png", np.full((120, 90, 3), 200, np.uint8))
+        r = self.post("/foto", data={"foto": (io.BytesIO(png.tobytes()), "blob")}, content_type="multipart/form-data")
+        self.assertEqual(r.status_code, 200, r.get_json())
+        guardadas = [n for n in os.listdir(self.PASTA) if not os.path.isdir(os.path.join(self.PASTA, n))]
+        self.assertEqual(len(guardadas), 1)
+        self.assertTrue(guardadas[0].endswith(".png"), guardadas)
+        self.assertIsNotNone(cv2.imread(os.path.join(self.PASTA, guardadas[0])))
+
+    def test_foto_boa_fica_mesmo_se_o_projetor_falhar(self):
+        def projetor_quebrado(*a, **kw):
+            raise self.areia.Erro("o SARndbox não aceitou o comando")
+        ok, png = cv2.imencode(".png", np.full((120, 90, 3), 150, np.uint8))
+        with mock.patch.object(self.painel.areia, "aplica", projetor_quebrado):
+            r = self.post("/foto", data={"foto": (io.BytesIO(png.tobytes()), "boa.png")}, content_type="multipart/form-data")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(len([n for n in os.listdir(self.PASTA) if n.endswith(".png")]), 1)   # a foto é boa: fica
+
+    def test_numeros_com_limite(self):
+        self.areia.mostra(self.poe("a.jpg"))
+        antes = self.areia.estado()["ajuste"]
+        for texto in ('{"zoom": NaN}', '{"zoom": Infinity}', '{"zoom": -Infinity}', '{"zoom": "nan"}',
+                      '{"zoom": 9}', '{"sombra": -1}', '{"giro": 45}', '{"giro": NaN}', '{"giro": 1e400}',
+                      '{"espelho": "sim"}', '{"zoom": true}'):
+            r = self.json_cru("/ajuste", texto)
+            self.assertEqual(r.status_code, 400, texto)
+            self.assertFalse(r.get_json()["ok"], texto)
+        self.assertEqual(self.areia.estado()["ajuste"], antes)          # nada gravado
+        for texto in ('{"volume": "x"}', '{"volume": NaN}', '{"volume": Infinity}', '{"volume": [1]}',
+                      '{"mudo": "talvez"}'):
+            r = self.json_cru("/som", texto)
+            self.assertEqual(r.status_code, 400, texto)                  # antes: página 500 em HTML
+            self.assertIn("som", r.get_json())
+        self.assertEqual(self.post("/som", json={"volume": 33.6}).get_json()["som"]["volume"], 34)
+        for url, texto in (("/chuva", '{"x": NaN, "y": 0.5}'), ("/chuva", '{"x": 0.5, "y": Infinity}'),
+                           ("/chuva", '{"x": 0.5, "y": 0.5, "segundos": 1e9}'), ("/chuva", '{"x": true, "y": 0.5}'),
+                           ("/comida", '{"x": NaN, "y": 0.5}'), ("/comida", '{"x": 0.5, "y": -Infinity}'),
+                           ("/mar", '{"peixe": 1e400}'), ("/mar", '{"peixe": NaN}'), ("/luz", '{"luz": NaN}'),
+                           ("/luz", '{"luz": "fortissimo"}')):
+            r = self.json_cru(url, texto)
+            self.assertEqual(r.status_code, 400, (url, texto))
+        self.assertFalse([c for c in self.comandos() if "nan" in c.lower() or "inf" in c.lower()])
+
+    def test_post_so_da_propria_pagina(self):
+        for cab in ({"Origin": "http://exemplo.com"}, {"Origin": "null"},
+                    {"Referer": "http://exemplo.com/ataque.html"}, {"Origin": "http://localhost:9999"},
+                    {"Origin": "https://localhost"}, {"Sec-Fetch-Site": "cross-site"}):
+            r = self.c.post("/reabrir", environ_base=TAILSCALE, headers=cab)
+            self.assertEqual(r.status_code, 403, cab)
+            r = self.c.post("/tema", json={"tema": "oceano"}, environ_base=TAILSCALE, headers=cab)
+            self.assertEqual(r.status_code, 403, cab)
+        self.assertEqual([c for c in self.comandos() if c != "estado"], [])   # nada chegou ao projetor
+        # a própria página (Origin ou Referer do painel) e quem não é navegador (Willbert, curl) passam
+        for cab in ({"Origin": "http://localhost"}, {"Referer": "http://localhost/#chuva"},
+                    {"Sec-Fetch-Site": "same-origin", "Origin": "http://localhost"}, {}):
+            r = self.c.post("/tema", json={"tema": "oceano"}, environ_base=TAILSCALE, headers=cab)
+            self.assertEqual(r.status_code, 200, cab)
+        r = self.c.post("/tema", json={"tema": "vulcao"}, environ_base=TAILSCALE,
+                        headers={"Host": "100.101.0.1:8090", "Origin": "http://100.101.0.1:8090"})   # segredo-ok (IP inventado)
+        self.assertEqual(r.status_code, 200)
+        # a foto do Willbert: POST de 127.0.0.1, sem Origin (test_foto_do_willbert cobre o resto)
+        ok, jpg = cv2.imencode(".jpg", np.full((80, 60, 3), 90, np.uint8))
+        r = self.c.post("/foto", environ_base={"REMOTE_ADDR": "127.0.0.1"}, headers={"Host": "127.0.0.1:8090"},
+                        data={"foto": (io.BytesIO(jpg.tobytes()), "willbert-Ana.jpg")}, content_type="multipart/form-data")
+        self.assertEqual(r.status_code, 200, r.get_json())
+
+    def test_host_esperado_contra_dns_rebinding(self):
+        for host in ("localhost", "localhost:8090", "127.0.0.1:8090", "100.101.0.1:8090", "192.168.0.10:8090",   # segredo-ok (IPs inventados)
+                     "laob:8090", "laob", "laob.local:8090", "laob.tail1234.ts.net", "[::1]:8090",
+                     "[fd7a:115c:a1e0::1]:8090", "LAOB:8090"):
+            self.assertTrue(self.painel.host_esperado(host), host)
+            self.assertEqual(self.c.get("/estado", environ_base=TAILSCALE, headers={"Host": host}).status_code, 200, host)
+        for host in ("ataque.exemplo.com", "ataque.exemplo.com:8090", "8.8.8.8:8090", "laob:porta", "",
+                     "[2001:db8::1]:8090", "a b", "laob.exemplo.com.br"):
+            self.assertFalse(self.painel.host_esperado(host), host)
+        r = self.c.get("/previa.png", environ_base=TAILSCALE, headers={"Host": "ataque.exemplo.com:8090"})
+        self.assertEqual(r.status_code, 403)
+
+    def test_linha_de_saude(self):
+        with open(os.path.join(self.D, "sandbox.log"), "w") as f:
+            f.write("Desempenho: 30 quadros/s; água atrasada em 0 de 900 passos; a água andou 100% do tempo real\n"
+                    "Perfil: quadro p50 33.9 p95 34.1 p99 34.2 max 35 ms, 0 acima de 50 ms; CPU frame 0.01\n"
+                    "Animais: mar (3)\n"
+                    "Desempenho: 28 quadros/s; água atrasada em 9 de 900 passos; a água andou 97% do tempo real\n")
+        with open(os.path.join(self.D, "inicio.log"), "w") as f:
+            f.write("2026-11-22 20:13:16 topografia aberta (tentativa 1)\n"
+                    "2026-11-23 00:30:10 vigia: a areia estava fechada; abrindo a topografia\n"
+                    "2026-11-23 00:40:50 topografia aberta (tentativa 1)\n")
+        smi = os.path.join(self.tmp, "nvidia-smi")
+        with open(smi, "w") as f:
+            f.write('#!/bin/sh\necho "47, 12"\n')
+        os.chmod(smi, 0o755)
+        vigia = os.path.join(self.tmp, "areia-vigia")
+        with open(vigia, "w") as f:
+            f.write('#!/bin/sh\n[ "$1" = estado ] && echo "pausado até 14:30"\n')
+        os.chmod(vigia, 0o755)
+        self.painel.NVIDIA_SMI, self.painel.VIGIA = smi, vigia
+        s = self.get("/saude").get_json()
+        self.assertEqual((s["qps"], s["agua"], s["p99"]), (28, 97, 34.2))
+        self.assertEqual((s["gpu_temp"], s["gpu_uso"]), (47, 12))
+        self.assertEqual(s["vigia"], {"estado": "pausado", "ate": "14:30", "reserva": False})
+        self.assertIn("a areia estava fechada", s["ultimo_aviso"])
+        self.assertGreater(s["disco_livre_gb"], 0)
+        self.assertGreater(s["ligado_s"], 0)
+        self.assertFalse(s["reserva"])
+        self.assertEqual(self.get("/estado").get_json()["vigia"]["estado"], "pausado")   # resumo no /estado
+        # guardado: o nvidia-smi não roda a cada pergunta
+        os.remove(smi)
+        self.assertEqual(self.get("/saude").get_json()["gpu_temp"], 47)
+        # sem nada (máquina sem placa, registro vazio): tudo vazio, nunca erro
+        self.painel._caches.clear()
+        os.remove(os.path.join(self.D, "sandbox.log"))
+        self.painel.VIGIA = os.path.join(self.tmp, "nao-existe")
+        s = self.get("/saude").get_json()
+        self.assertEqual((s["qps"], s["agua"], s["p99"], s["gpu_temp"]), (None, None, None, None))
+        self.assertEqual(s["vigia"]["estado"], None)
+        with open(os.path.join(self.D, "sem-vigia"), "w"):
+            pass
+        self.painel._caches.clear()
+        self.assertEqual(self.get("/saude").get_json()["vigia"]["estado"], "pausado")
+        # areia de reserva (o SARndbox original)
+        with open(os.path.join(self.FALSO, "qual"), "w") as f:
+            f.write("original\n")
+        self.areia._qual_cache[0] = 0.0
+        self.painel._caches.clear()
+        self.assertTrue(self.get("/saude").get_json()["reserva"])
+        self.assertTrue(self.get("/estado").get_json()["reserva"])
+
+    def test_estado_do_vigia_novo_e_antigo(self):
+        vigia = os.path.join(self.tmp, "areia-vigia")
+        self.painel.VIGIA = vigia
+        for saida, esperado in (("vigiando", ("vigiando", None, False)),
+                                ("pausado", ("pausado", None, False)),
+                                ("pausado até 9:05", ("pausado", "09:05", False)),
+                                ("pausado até às 23h40 (volta sozinho)", ("pausado", "23:40", False)),
+                                ("vigiando\nreserva", ("vigiando", None, True)),
+                                ("vigiando\nreserva: tentando voltar à versão completa", ("vigiando", None, True)),
+                                ("vigiando\nreserva: não", ("vigiando", None, False)),
+                                ("vigiando\nreserva=0", ("vigiando", None, False)),
+                                ("sem reserva\nvigiando", ("vigiando", None, False)),
+                                ("", (None, None, False))):
+            with open(vigia, "w") as f:
+                f.write("#!/bin/sh\ncat <<'FIM'\n" + saida + "\nFIM\n")
+            os.chmod(vigia, 0o755)
+            v = self.painel._le_vigia()
+            self.assertEqual((v["estado"], v["ate"], v["reserva"]), esperado, saida)
+
+    def test_mensagens_de_retorno(self):
+        r = self.post("/brincar", json={"acao": "tesouro"})
+        self.assertIn("5,5 cm", r.get_json()["msg"])                    # vírgula, não ponto
+        r = self.post("/chuva", json={"tudo": True})
+        self.assertEqual(r.get_json()["msg"], "Chovendo na areia toda")
+        self.assertEqual([c for c in self.comandos() if c.startswith("cmd chuva")][-4:],
+                         ["cmd chuva 0.250 0.300 10", "cmd chuva 0.750 0.300 10",
+                          "cmd chuva 0.250 0.700 10", "cmd chuva 0.750 0.700 10"])
+        self.areia.mostra(self.poe("a.jpg"))
+        self.assertEqual(self.post("/ajuste", json={"espelho": True}).get_json()["msg"], "Foto espelhada")
+        self.assertEqual(self.post("/ajuste", json={"giro": 90}).get_json()["msg"], "Foto girada: 90°")
+        # comida na terra: a tigela de ração (o pão saiu em 22/11/2026)
+        log = os.path.join(self.D, "sandbox.log")
+        self.painel.areia.ESPERA_COMIDA = 0.05
+        self.assertEqual(self.post("/mar", json={"passaro": 2}).status_code, 200)
+        comando = self.painel.areia._comando
+
+        def com_resposta(*linhas):
+            comando(*linhas)
+            with open(log, "a") as f:
+                f.write("Comida em x 3 y 2 por 20 s (terra)\n")
+        with open(log, "w") as f:
+            f.write("Animais: mar (2)\n")
+        with mock.patch.object(self.painel.areia, "_comando", com_resposta):
+            r = self.post("/comida", json={"x": 0.5, "y": 0.5})
+        self.assertEqual(r.get_json()["msg"], "Tigela de ração na areia: os pássaros vêm comer")
+
+    def test_pagina_acabamento(self):
+        p = self.get("/").get_data(as_text=True)
+        self.assertEqual(p.count('class="toque"'), 2)                   # "toque na imagem" em Chuva e Vida
+        self.assertIn('id="cam-motivo"', p)                             # câmera desligada diz por quê
+        self.assertIn("Câmera indisponível: o Willbert está desligado", p)
+        self.assertIn('id="saude"', p)
+        self.assertIn("tag.type = 'button'", p)                          # chips das fotos pelo teclado
+        self.assertIn("document.addEventListener('click'", p)            # ✓ no botão ativado pelo teclado
+        self.assertIn("Espere: ainda fazendo o pedido anterior", p)
+        self.assertIn("Máximo de 32 bichos", p)
+        self.assertIn("--ok: #24733d", p)                                # contraste da mensagem de sucesso
+        self.assertNotRegex(p, r"min-height: 3[0-9]px")                  # alvos de toque com 44 px
+        for aba in ("jogos", "bichos", "chuva", "laob", "fotos", "projetor"):   # as seis abas de sempre
+            self.assertIn(f'data-ir="{aba}"', p)
+
+
 class AmbienteDoSom(Ambiente):
     """som.py: o fundo automático (tema, brincadeira e bichos), o fade do motor e o mudo (AREIA_SOM_FALSO)."""
 
