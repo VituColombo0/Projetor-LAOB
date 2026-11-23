@@ -99,6 +99,21 @@ if command -v g++ >/dev/null; then
 else
   echo "  (g++ não instalado: pulei)"
 fi
+echo "== shader dos extras: variantes iguais pixel a pixel (testes/teste_shader.cpp, na GPU por EGL, sem Kinect)"
+# Só onde há EGL e uma placa com OpenGL (o laob); pode rodar com a areia aberta. Sem isso, pula sem falhar.
+if command -v g++ >/dev/null && printf '#include <EGL/egl.h>\n#include <GL/gl.h>\n' | g++ -E -x c++ - >/dev/null 2>&1; then
+  BIN=$(mktemp)
+  if g++ -O1 -Wall -Wextra -I "$R/sarndbox" "$R/testes/teste_shader.cpp" -o "$BIN" -lEGL -lGL; then
+    SAIDA=$("$BIN" "$R/sarndbox/Extras.cpp" 2>&1); rc=$?
+    if [ $rc = 2 ]; then echo "  (sem GPU/EGL utilizável nesta máquina: pulei)"
+    else echo "$SAIDA" | tail -n 4; [ $rc = 0 ] || { echo "  FALHA no teste do shader"; falhas=1; }; fi
+  else
+    echo "  ERRO ao compilar o teste do shader"; falhas=1
+  fi
+  rm -f "$BIN"
+else
+  echo "  (sem g++ ou sem os cabeçalhos do EGL/GL: pulei)"
+fi
 echo "== testes Python ($PY)"
 ( cd "$R/testes" && "$PY" -m unittest -v test_rosto test_areia test_painel ) || falhas=1
 "$PY" -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$R/areia/atualizar_papel_parede.py" || falhas=1

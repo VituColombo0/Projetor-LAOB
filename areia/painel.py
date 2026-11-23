@@ -775,9 +775,17 @@ def vigia_estado():
 _INICIO_BOM = re.compile(r"topografia aberta|vigia (ligado|religado|voltou)|^\s*$")
 
 
+AVISO_VALE_S = 48 * 3600   # aviso mais velho que isso já não diz nada da saúde de agora (23/11/2026: aparecia um de 8 dias)
+
+
 def _ultimo_aviso():
     for l in reversed(_fim_do_arquivo(os.path.join(areia.D, "inicio.log"), 16384)):
         if not _INICIO_BOM.search(l):
+            try:
+                if time.time() - time.mktime(time.strptime(l[:19], "%Y-%m-%d %H:%M:%S")) > AVISO_VALE_S:
+                    return None
+            except ValueError:
+                pass   # linha sem data: vale
             return l.strip()[:160]
     return None
 
@@ -1151,7 +1159,7 @@ img#prev {
   background: repeating-conic-gradient(var(--surface2) 0 25%, var(--surface) 0 50%) 50% / 16px 16px;
 }
 /* saúde da areia (aba Projetor): uma linha compacta, com o que está fora do normal em vermelho */
-.saude { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: .8rem; color: var(--muted); margin-bottom: 10px;
+.saude { contain: inline-size; display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: .8rem; color: var(--muted); margin-bottom: 10px;
   font-variant-numeric: tabular-nums; }
 .saude b { color: var(--fg); font-weight: 700; }
 .saude .ruim, .saude .ruim b { color: var(--danger-fg); }

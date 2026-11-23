@@ -2,7 +2,7 @@
 
 > Caixa de areia de realidade aumentada do Laboratório LAOB: projeta relevo colorido, fotos que se deformam com a areia, bichos que vivem no relevo e vêm comer onde se joga comida (pelo painel ou apontando com o dedo), e brincadeiras e jogos de água a partir de um Kinect e um projetor, tudo controlado por um painel no navegador.
 
-![SARndbox](https://img.shields.io/badge/base-SARndbox%202.8-blue) ![Kinect](https://img.shields.io/badge/sensor-Kinect%20v1-lightgrey) ![Testes](https://img.shields.io/badge/testes-100-brightgreen) ![Licença GPL-2.0](https://img.shields.io/badge/licença-GPL--2.0-orange)
+![SARndbox](https://img.shields.io/badge/base-SARndbox%202.8-blue) ![Kinect](https://img.shields.io/badge/sensor-Kinect%20v1-lightgrey) ![Testes](https://img.shields.io/badge/testes-153-brightgreen) ![Licença GPL-2.0](https://img.shields.io/badge/licença-GPL--2.0-orange)
 
 ## Sumário
 
@@ -46,8 +46,9 @@ abre a **topografia** de sempre; por comando, atalho, painel do celular ou pelo
 
   Na vila e no vulcão, uma fila de casinhas num canto da areia (e o painel) mostra quantas estão de pé e quantas foram perdidas.
 - **Uma brincadeira por vez:** começar uma encerra as outras; o tema de cor fica.
-- **Painel no navegador** (:8090): organizado em abas (Jogos, Vida, Chuva, LAOB, Fotos, Projetor), cada uma cabendo numa tela; no computador, uma miniatura ao vivo do projetor fica no cabeçalho; cada botão mostra que está enviando e um ✓ quando a areia aceitou; trocas de brincadeira aparecem na areia com uma transição suave; `#chuva`, `#vida`... no endereço abre direto na aba; controla tudo (modos, temas, brilho da imagem, jogos em cartões com a descrição ao passar o mouse ou tocar, nível, fotos, Willbert, "Reabrir a areia"); a Área de Trabalho tem só o atalho para ele.
-- **Vigia:** reabre a topografia se ela fechar, se ficar parada (sem desenhar por 2 min) ou se o GNOME travar.
+- **Painel no navegador** (:8090): organizado em abas (Jogos, Vida, Chuva, LAOB, Fotos, Projetor), cada uma cabendo numa tela no computador (1366×768) e no celular (só a Vida, no celular, rola até o quadro da comida); no computador, a aba Vida tem os bichos à esquerda e a imagem ao vivo da comida à direita; uma miniatura ao vivo do projetor fica no cabeçalho; cada botão mostra que está enviando e um ✓ quando a areia aceitou; trocas de brincadeira aparecem na areia com uma transição suave; `#chuva`, `#vida`... no endereço abre direto na aba; controla tudo (modos, temas, brilho da imagem, jogos em cartões com a descrição ao passar o mouse ou tocar, nível, fotos, Willbert, "Reabrir a areia"); a Área de Trabalho tem só o atalho para ele. A foto pela câmera e o ligar/desligar do Willbert rodam em segundo plano (o resultado aparece em alguns segundos e os outros botões não ficam presos); com o Willbert desligado, o botão da câmera fica desabilitado com o motivo e a presença no LAOB fica desconhecida. A aba Projetor tem uma linha de saúde: quadros/s, água %, p99 do quadro, temperatura e uso da GPU, disco livre, tempo ligado, vigia (vigiando ou pausado até HH:MM), areia de reserva e o último aviso do `inicio.log` (também em `GET /saude`, JSON).
+- **Trocas rápidas:** trocar de brincadeira, voltar ao relevo ou abrir a foto não recompila o shader (as variantes comuns são compiladas ao abrir a areia); voltar à topografia com a areia aberta leva uns 0,2 s. Uma troca de programa por vez: painel, vigia e terminal esperam a vez.
+- **Vigia:** reabre a topografia se ela fechar, se ficar parada (sem desenhar por 2 min) ou se o GNOME travar. Se a versão com Foto não abrir, o SARndbox original entra como **topografia de reserva** (anotado em `~/SARndbox-rosto/reserva`, com o registro da falha em `sandbox.falhou.log`) e o vigia tenta voltar à versão completa a cada 10 min, no máximo 3 vezes por hora.
 
 ## Arquitetura
 
@@ -72,7 +73,11 @@ flowchart LR
 
 ## Requisitos
 
-- PC Ubuntu com o **SARndbox 2.8 compilado e calibrado** em `~/SARndbox-2.8`.
+- PC Ubuntu 22.04 com o **SARndbox 2.8 compilado** em `~/SARndbox-2.8`, o Vrui-8.0 e o Kinect-3.10 em `/usr/local`,
+  e a calibração em `/root/etc/SARndbox-2.8` (ou na pasta indicada por `SARNDBOX_CALIB`).
+- Pacotes obrigatórios: `build-essential python3-venv wget`. Opcionais: `ffmpeg` (imagem ao vivo),
+  `pulseaudio-utils` (som), `x11-utils x11-xserver-utils` e `curl` (testes). O `instalar.sh` confere tudo isso
+  antes de mudar qualquer coisa e diz o que falta, com a linha de `apt` pronta.
 - Kinect v1 e projetor (tela cheia no HDMI-0).
 - Placa NVIDIA com driver (no laob: GTX 750 Ti, driver 535, kernel fixado com `kernel-com-driver.sh` do Willbert).
 - PulseAudio ou PipeWire com `pactl`/`paplay` para os sons (opcional: sem eles, tudo funciona em silêncio).
@@ -95,7 +100,18 @@ flowchart LR
 O `instalar.sh` copia o SARndbox para `~/SARndbox-rosto`, aplica os patches e compila, cria o venv,
 baixa os modelos, instala os comandos em `~/.local/bin`, põe só o atalho do painel na Área de
 Trabalho (e leva fotos de versões antigas para `Imagens/Fotos na areia`), troca o autostart para abrir a topografia e liga o painel e o vigia.
-`bash instalar.sh --compilar /tmp/teste` só testa a compilação.
+`bash instalar.sh --compilar /tmp/teste` só testa a compilação. O instalador pode rodar de novo sem duplicar
+nada e termina com um resumo do que precisa de atenção (modelos sem rede, calibração ausente, systemd do
+usuário); nesse caso sai com erro. Uma recalibração feita pela cópia (`~/SARndbox-rosto/bin/CalibrateProjector`)
+e mais nova que a de `SARNDBOX_CALIB` não é sobrescrita. Se o programa da areia mudou, o instalador reabre a
+areia sozinho (sem reabrir, a areia aberta continua com o programa antigo).
+
+Para conferir a máquina antes e depois de instalar (só lê; uma linha OK/AVISO/FALTA por item e sai com erro se
+houver FALTA):
+
+```bash
+bash instalar.sh --verificar
+```
 
 > [!WARNING]
 > Antes de reinstalar no laob, compare o laob com o repositório: mudanças feitas direto na
@@ -124,12 +140,13 @@ O jeito normal é o painel (`http://localhost:8090`, atalho na Área de Trabalho
 | `areia-labirinto [facil\|normal\|dificil\|nova\|placar\|parar]` | Labirinto de água |
 | `areia-jogo copia [sorteio\|montanha\|duas\|vulcao\|cratera\|ilha\|serra] [nível]` | Copie o relevo (também `placar`, `nova`, `parar`) |
 | `areia-jogo <jogo> [facil\|normal\|dificil]` | Jogo de água: `corrida`, `vila`, `rota`, `vulcao` (também `placar`, `nova`, `parar`, `ajuda`) |
-| `areia-vigia pausa` / `liga` | Pausa ou religa o vigia da topografia |
+| `areia-vigia pausa [30m\|3h\|sempre]` / `liga` | Pausa o vigia (2 h por padrão, depois volta sozinho; `sempre` até `liga`, por exemplo com o projetor desligado de propósito) ou religa |
+| `areia-vigia estado` | `vigiando`, `pausado até HH:MM` ou `pausado sempre` e, com a reserva no projetor, `reserva desde HH:MM` (`--json` para o painel) |
 
 **Painel pelo celular ou por outro computador:** `http://<IP-DO-LAOB>:8090` — tudo o que a tabela
 acima faz, mais selfie, câmera do laboratório, imagem do projetor ao vivo e ligar/desligar o Willbert.
 `http://<IP-DO-LAOB>:8090/#vida` (ou `#jogos`, `#chuva`, `#laob`, `#fotos`, `#projetor`) abre direto na aba. O endereço aparece no canto do papel de parede do laob
-(`atualizar_papel_parede.py`, a cada minuto) e no atalho "Abrir painel da caixa de areia".
+(`atualizar_papel_parede.py`, confere a cada 5 min) e no atalho "Abrir painel da caixa de areia".
 
 ## Configuração
 
@@ -139,7 +156,8 @@ acima faz, mais selfie, câmera do laboratório, imagem do projetor ao vivo e li
 | `sarndbox/projetor.cfg` | Janela em tela cheia no projetor (HDMI-0) |
 | `PARAR_BRINCADEIRAS` em `areia/areia.py` | Quais brincadeiras se encerram entre si |
 | `areia/som.py` | Sons: efeitos e o fundo automático (motor que mistura as camadas num `pacat`), saída `combinado` (HDMI do projetor + analógica, criada com `module-combine-sink`), volume e mudo em `estado_som.json`; `python som.py cena` mostra o que tocaria agora. Os `.wav` saem de `areia/sons/gerar_sons.py` |
-| `/root/etc/SARndbox-2.8` | Calibração real do Kinect e do projetor |
+| `/root/etc/SARndbox-2.8` | Calibração real do Kinect e do projetor (`SARNDBOX_CALIB` troca a pasta; `testes/dados/` guarda a do laob, que só vale para a mesma caixa, Kinect e projetor na mesma posição) |
+| `deploy/laob/otimizar-projetor.sh` | Ajustes da máquina: com sudo, journal limitado a 500 MB e `apt-daily-upgrade` sem rodar no boot; sem sudo, tela do GNOME que não apaga. Tem `--simular` e `--desfazer` |
 
 Opções da foto: `--sem-fundo` recorta a pessoa mesmo sem rosto; `--com-fundo` nunca recorta. No
 painel, "mistura" traz o relevo de volta e deformação 0 + sombra 0 projeta a foto sem efeito
@@ -148,7 +166,8 @@ painel, "mistura" traz o relevo de volta e deformação 0 + sombra 0 projeta a f
 ## Testes
 
 Testes automáticos, com projetor falso (imagem, área iluminada, relevo, pasta, cache, comandos,
-painel, sintaxe/shellcheck dos scripts e o detector do dedo apontado com mãos sintéticas, compilado com g++):
+painel, sintaxe dos scripts, o instalador num ambiente falso e o detector do dedo apontado com mãos sintéticas, compilado com g++;
+onde há GPU com EGL, como no laob, também as variantes do shader dos extras, pixel a pixel):
 
 ```bash
 bash testes/rodar.sh
@@ -176,6 +195,14 @@ quadros/s, tempo de quadro (p50/p95/p99/máx), água em % do tempo real, GPU por
 `prancha.sh` tira um print de cada tema × brincadeira; `python3 testes/monta_prancha.py <pasta> prancha.jpg`
 junta tudo numa grade.
 
+O teste do shader (`testes/teste_shader.cpp`) roda na GPU sem janela e sem Kinect, então pode rodar com a areia
+aberta: compila as variantes do shader dos extras e compara cada uma, pixel a pixel, com o shader com tudo ligado
+(`--antes` compara também com um `Extras.cpp` antigo; `--gpu` mede o tempo de GPU):
+
+```bash
+g++ -O1 -I sarndbox testes/teste_shader.cpp -o /tmp/teste_shader -lEGL -lGL && /tmp/teste_shader sarndbox/Extras.cpp
+```
+
 ## Como funciona por dentro
 
 **Modo Foto** (`sarndbox/FaceImage.*`, `patch_surface.py`, `patch_sandbox.py`): a imagem vira
@@ -195,7 +222,7 @@ na CPU e desenho no shader. Comandos pelo cano (`./sandbox.sh cmd "..."`): `teso
 `labirintoTeste`, `jogo <nome> [1-3]`, `jogoNovo`, `jogoFim`, `jogoTeste`, `jogoInfo`, `jogoVazao <f>`,
 `copia [forma] [1-3]`, `copiaNova`, `copiaFim`, `comida x y s [terra|agua]` (decide pelo ponto; com terra/agua só cai se o ponto for assim), `racao x y s` (ração na água mais perto), `gestoTeste x y [s]` (dedo apontado de mentira),
 `gestoDiag [n]` (medidas de cada mão nas próximas n procuras, no log), `gestoAjuste [nome valor]` (limiares do dedo),
-`gestoGrava [s]` (grava 1 a 20 s do sensor em `/dev/shm/gesto-*/` para `testes/analisa_gesto.cpp`), `luz força [saturação]` (brilho da imagem).
+`gestoGrava [s]` (grava 1 a 20 s do sensor em `/dev/shm/gesto-*/` para `testes/analisa_gesto.cpp`, ~30 quadros/s, ~400 MB em 20 s; cada gravação nova apaga as anteriores, então analise antes de gravar de novo; precisa de 1 GB livre e para em 600 MB), `luz força [saturação]` (brilho da imagem).
 
 - **Tesouro:** sorteado onde há areia acima da média; ao cavar aparece só o baú (madeira, cintas de ferro, fechadura), sem disco em volta; achado, a tampa abre em 1,4 s, aparecem ouro e joias e moedas saltam para fora; grãozinhos dourados piscam a menos de 2,5 cm; "Tesouro encontrado!" vai para o `sandbox.log`. Achado, reaparece em outro lugar após 20 s.
 - **Fósseis:** mesmo mecanismo (`tipoTesouro` 2–5), raio maior; aparecem só os ossos em marfim com manchas, poros e rachaduras (Tiranossauro de corpo inteiro, crânio de Triceratops com escudo, Pterodáctilo de asas abertas, pegada calcada na lama) e, perto, o quadro de escavação com estacas e barbante; `tesouroTeste` mostra o desenho sem cavar; outro aparece em 30 s.
@@ -207,11 +234,13 @@ na CPU e desenho no shader. Comandos pelo cano (`./sandbox.sh cmd "..."`): `teso
 - **Mundo LAOB** (`sarndbox/Mundo.cpp`, `sarndbox/MundoPlanta.h`): a planta (três salas e o corredor) é desenhada no shader, uma função por sala, cada uma só onde o pixel cai nela (`MUNDO_NIVEL` 2 tira os detalhes menores). `MundoPlanta.h` é a fonte única das posições (paredes, portas, móveis, assentos e pontos), usada pelo shader e pelo C++; as rotas passam pelas portas e contornam os móveis (`testes/teste_mundo.cpp` confere todas). `extrasMundo.x` leva ao shader quem está onde (monitores acendem, slide troca mais rápido quando alguém apresenta). Os bonecos têm visual fixo por nome (`visual[]` em `copiaNomes`). A câmera do mundo é o uniform `extrasVista` (centro e zoom): todo o desenho do mundo sai de `ep.xy` já transformado; `mundoVista tudo|principal|forense|mini|NOME` troca em 0,6 s e segue o boneco (linha `Mundo: vista …`). Lugares fixos: Victor e Mario frente a frente na ilha da direita (3 monitores cada), Lucas na mesinha da parede atrás do carteado, Gazziro no miniauditório. Cada membro tem três estados: fora, dentro e saindo. Presente (visto pelo Willbert) entra logo e não sai; ausente entra, fica de 25 a 55 s e sai por 35 a 105 s. Dentro, alterna entre a própria bancada (60%) e os pontos da sala. O movimento não depende do relevo da areia. As linhas `Mundo: NOME entrou…/está…/foi…/saiu…` do `sandbox.log` alimentam a seção LAOB do painel; com o mundo aberto as linhas de relevo ficam desligadas (`extrasMundo.w`). `extrasMundo2.z` leva a hora local ao shader; `mundoHora <h|auto>` troca a hora para testes. Até 16/11/2026 havia uma cidade em volta do laboratório; foi retirada.
 - **Rostos dos membros:** `membros.py` acha o rosto de cada foto de `membros/` (YuNet), recorta em círculo e monta `fotos/membros.rgba` (8 quadros de 128 px, RGBA); o Sandbox lê esse arquivo (textura na unidade 6) e o shader mostra o quadro num balão quando o painel manda `mundoRosto NOME`. O nome é desenhado em letras de 3×5 pontos. O painel lê `present` do `status.json` do Willbert em `/dev/shm/visao/` a cada 5 s (`+` no nome = presente). As fotos ficam só na máquina, fora do repositório.
 - **Labirinto:** de 2 a 4 armadilhas (`P_PERIGO`) perto da reta nascente-alvo, medidas como as peças dos jogos; a nascente (disco de 3,2 cm) usa a água do próprio SARndbox (`addWater`); 2× por segundo mede a profundidade no alvo (`glGetTexImage`); com 0,25 cm escreve "Labirinto: a água chegou!", e após 20 s começa rodada nova.
-- **Bichos entre si e com a comida:** a mão de verdade não é seguida (desde 18/11/2026; custava CPU e deixava a água lenta); os da água fogem do tubarão (12 cm); o tubarão vai atrás do peixe mais perto (25 cm) e, depois de pegar um, fica satisfeito por 12 a 18 s; o pássaro escolhe um lugar em chão firme perto da comida, pousa e levanta voo se a comida acaba, chega um cachorro (7 cm) ou a água; sem comida, mergulha sobre um peixe (1,8 s, pega em 45% das vezes). O primeiro pato é a mãe e os outros, patinhos menores, seguem em fila. O cachorro senta a 3 cm da comida; sem comida, corre atrás de um pássaro por até 8 s. Ração (até 24 flocos, `extrasRacao`): cada floco vai com 90% da correnteza, se afasta das vizinhas e encosta na margem; se a água some embaixo, procura água por 1,5 s e some. Quem come vê a bolinha mais perto que alcança em linha reta pela água (peixe 12 cm, tartaruga e pato 11, tubarão 10 quando não está caçando, os outros 7 a 9) e belisca com a boca; cada grupo de bolinhas recebe no máximo 4, os mais perto. No pão: pássaros de até 10 cm e cachorros de até 8 cm, no máximo 4 juntos, e até 3 pessoas olhando. Encostados, os bichos escorregam de lado em vez de travar (cada espécie tem um corpo, e ninguém entra em 70% dele); na água todos desviam uns dos outros, com preferência pela direita, e rente à margem são puxados para o meio do lago. Linhas `Vida: …` vão para o `sandbox.log`.
+- **Bichos entre si e com a comida:** a mão de verdade não é seguida (desde 18/11/2026; custava CPU e deixava a água lenta); os da água fogem do tubarão (12 cm); o tubarão vai atrás do peixe mais perto (25 cm) e, depois de pegar um, fica satisfeito por 12 a 18 s; o pássaro escolhe um lugar em chão firme perto da comida, pousa e levanta voo se a comida acaba, chega um cachorro (7 cm) ou a água; sem comida, mergulha sobre um peixe (1,8 s, pega em 45% das vezes). O primeiro pato é a mãe e os outros, patinhos menores, seguem em fila. O cachorro senta a 3 cm da comida; sem comida, corre atrás de um pássaro por até 8 s. Ração (até 24 flocos, `extrasRacao`): cada floco vai com 90% da correnteza, se afasta das vizinhas e encosta na margem; se a água some embaixo, procura água por 1,5 s e some. Quem come vê a bolinha mais perto que alcança em linha reta pela água (peixe 12 cm, tartaruga e pato 11, tubarão 10 quando não está caçando, os outros 7 a 9) e belisca com a boca; cada grupo de bolinhas recebe no máximo 4, os mais perto. Na tigela: pássaros de até 10 cm e cachorros de até 8 cm, no máximo 4 juntos, e até 3 pessoas olhando. Encostados, os bichos escorregam de lado em vez de travar (cada espécie tem um corpo, e ninguém entra em 70% dele); na água todos desviam uns dos outros, com preferência pela direita, e rente à margem são puxados para o meio do lago. Linhas `Vida: …` vão para o `sandbox.log`.
 - **Copie o relevo:** o alvo é a soma de até 4 gaussianas (morros e buracos) sobre a altura mediana da areia no começo, igual no C++ e no shader. A cada mapa de alturas (2× por segundo), nota = 1 − Σ max(0, |erro| − folga) / Σ max(0, |alvo| − folga): areia lisa dá 0%, cópia perfeita 100%, mexer onde não devia desconta. Folga de 1,5 / 1,1 / 0,8 cm por nível. A nota vai para o `sandbox.log` como `Copia: N%`, e o alvo como `Copia: alvo x,y,altura,largura …` (frações da área iluminada) para a miniatura do painel; o shader só desenha a barra e o número (algarismos 3×5).
 - **Transição:** quando a brincadeira muda, o desenho novo entra por cima do relevo em 0,6 s (`extrasMundo2.w`).
 - **Jogos de água** (`sarndbox/Jogos.cpp`): até 4 nascentes e 16 peças (casa, portão, bandeira, placar) desenhadas no shader; fazenda, lago, barquinho e resgate foram retirados em 14/11/2026 (o código foi apagado em 18/11/2026). 2× por segundo a GPU devolve a água (`glGetTexImage` só do canal do nível, e do fundo) e mede a maior profundidade em cada peça; com 0,3 cm conta como molhada. Toda nascente é multiplicada por `fatorVazao` (1,32 = o dobro da calibração de 16/11/2026; `jogoVazao <f>` troca); a boca tem 3,2 cm de raio e a água por cm² é reduzida na mesma proporção, para o total não mudar com o tamanho. Vila e vulcão começam sem contagem: a água desce desde o início. Durante os jogos e o labirinto o lago dos bichos fica desligado. No vulcão, `extrasEfeito.w` escurece o relevo e pinta a água de lava em qualquer tema. Os avisos vão para o `sandbox.log` como linhas `Jogo: …`, que o painel e `areia-jogo placar` leem.
-- **Medidas:** junto do `Desempenho:`, a linha `Perfil:` (`sarndbox/Perfil.h`) dá o tempo de cada quadro (p50, p95, p99, máximo e quantos passaram de 50 ms), o tempo de CPU do quadro, da água, do relevo e das leituras GPU→CPU, e o tempo de GPU da água e do relevo (consultas `GL_TIME_ELAPSED` lidas sem esperar). Quadro acima de 100 ms vira `Perfil: quadro lento de N ms`.
+- **Medidas:** junto do `Desempenho:`, a linha `Perfil:` (`sarndbox/Perfil.h`) dá o tempo de cada quadro (p50, p95, p99, máximo e quantos passaram de 50 ms), o tempo de CPU do quadro, da água, do relevo e das leituras GPU→CPU, e o tempo de GPU da água e do relevo (consultas `GL_TIME_ELAPSED` lidas sem esperar). A CPU da água e do relevo vem com o máximo da janela; quando o shader da superfície foi compilado, a linha ganha `; shader compilado N vez(es), X ms (max Y)` e o tempo de GPU desse quadro é descartado. Quadro acima de 100 ms vira `Perfil: quadro lento de N ms` (com `(compilando o shader da superficie: M ms)` quando foi isso).
+- **Shader por brincadeira:** o shader dos extras só leva o código da brincadeira em uso (`#define EX_JOGOS`, `EX_BICHOS` ou `EX_MUNDO`; tema, tesouro, copie e chuva ficam sempre), sem mudar a imagem. Ao abrir a areia ficam compiladas a variante do estado atual, as 4 comuns (temas/tesouro/copie, jogos, vida, laboratório) e a da foto; a linha `Superficie: N programas prontos ao abrir (X ms)` vai para o `sandbox.log`. Depois de instalar, a 1ª abertura leva uns segundos a mais, uma vez, até o cache do driver guardar. Quem mexer no GLSL dos extras: tempo de `sin`/`cos` em `es` e de `fract`/`floor`/ruído em `et`, com coeficientes de 2 casas, senão a animação pula na virada do tempo (`Extras.h` explica).
+- **Brincadeira com o relevo de agora:** com os extras desligados o mapa de alturas é esquecido; a brincadeira nova mede o mapa no mesmo quadro do comando, e Copie, armadilhas do labirinto e bichos esperam por ele.
 - **Fluidez:** grade de água em 320×240 (`-wts 320 240`; 640×480 não dava conta na GTX 750 Ti). O log mostra a cada 30 s `Desempenho: N quadros/s` e quanto a água acompanhou o tempo real (`a água andou X% do tempo real`). `AREIA_GRADE_AGUA` e `AREIA_PASSOS_AGUA` trocam a grade e os passos por quadro para testes.
 
 **Chuva pela mão:** só com a mão a mais de 4 cm da beirada iluminada (em 16/11/2026 a borda da caixa
@@ -235,15 +264,27 @@ braço; a comida cai até 5 cm à frente da ponta). Confirma depois de 0,2 s ven
 contagem de quadros), solta depois de 0,35 s sem ver ou quando a mão abre. **Relevo travado:** a silhueta que
 chega pela beirada (o braço) vira uma máscara que o `FrameFilter` do SARndbox respeita (`FrameFilter::trava`,
 até 15 s por ponto): a mão parada não vira montanha colorida nem empurra a água; um monte de areia novo não
-encosta na beirada e entra no relevo como sempre. Na areia a comida é o pão do painel; na água, a ração (se a água sumiu embaixo, cai na água mais perto,
-até 6 cm; sem água, vira pão). Perto do dedo não chove. Linhas `Gesto: dedo em x y (terra|agua)` no
+encosta na beirada e entra no relevo como sempre (a trava só vale quando a borda da silhueta está bem acima da areia, como um braço; areia empurrada contra a beirada entra no relevo em ~1 s). Na areia a comida é a tigela de ração do painel; na água, a ração (se a água sumiu embaixo, cai na água mais perto,
+até 6 cm; sem água, vira tigela). Perto do dedo não chove. Linhas `Gesto: dedo em x y (terra|agua)` no
 `sandbox.log`. `testes/teste_gesto.cpp` testa com mãos sintéticas; `gestoGrava 20` grava a mão de verdade e
 `testes/analisa_gesto.cpp <pasta> --png N` passa o mesmo detector quadro a quadro, com motivo de cada recusa e PNGs.
 
 **Willbert:** o gesto das duas mãos manda a foto já recortada para `POST /foto` (só aceita a
 própria máquina). O painel lê se o Willbert está ligado com `systemctl show visao-detector` (sem sudo)
 e liga/desliga com `sudo -n willbert-controle`. Fotos `willbert-*` ficam na subpasta "Fotos do Willbert". O painel responde à
-própria máquina, à rede local e à Tailscale; o resto recebe 403.
+própria máquina, à rede local e à Tailscale; o resto recebe 403. O endereço pedido também é conferido: IP da rede local ou da
+Tailscale, `localhost`, nome da máquina ou nome `.local`/`.lan`/`.ts.net`; outro domínio recebe 403. Pedidos de mudança (POST)
+só valem vindos da própria página (`Origin`/`Referer`); scripts locais sem navegador (o Willbert, `curl`) continuam funcionando.
+
+**Fotos:** só formatos que abrem são aceitos; um que o OpenCV lê fora da lista (GIF, sem extensão) vira PNG, e o que não abre
+(HEIC, arquivo quebrado) é recusado sem gravar nada. O cache em `fotos/cache` (40 últimas) apaga também as cópias de fotos
+removidas da pasta (cada pasta do cache tem um `origem.txt`), a cada 10 min. A `fotos/camera.jpg` não fica guardada, e se a
+foto projetada for apagada a prévia (`rosto.png`) sai junto.
+
+**Registros:** o `sandbox.log` da vez anterior fica em `sandbox.log.1`; acima de 5 MB o vigia encolhe o `sandbox.log` sem
+fechar a areia (a cópia inteira vai para `sandbox.log.1`). O vigia e o papel de parede só escrevem erros no journal. A areia
+roda num escopo próprio do systemd do usuário (`areia-rosto-*.scope`): fechar uma sessão ssh ou reiniciar o painel não a derruba.
+A saída de som `combinado` (HDMI + caixas) é refeita sozinha se o PulseAudio reiniciar ou se o projetor for ligado depois.
 
 **Comandos internos** (`areia/sandbox.sh`):
 
@@ -251,7 +292,12 @@ própria máquina, à rede local e à Tailscale; o resto recebe 403.
 ./sandbox.sh rosto
 ./sandbox.sh cmd "relevo"
 ./sandbox.sh original
+./sandbox.sh parar
+./sandbox.sh reabrir
 ```
+
+`parar` fecha a areia; `reabrir` fecha mesmo travada, abre a topografia e religa o vigia. Se outra troca estiver em
+andamento, a resposta é `outra troca da areia em andamento; tente de novo`.
 
 ## Estrutura do projeto
 
@@ -263,7 +309,9 @@ Projetor-LAOB/
 ├── areia/               # areia.py, comandos areia-*, painel.py, som.py, rosto.py, temas/, sons/
 ├── area-de-trabalho/    # atalho .desktop do painel
 ├── sistema/             # serviços e timers de usuário (painel, vigia, papel de parede)
-└── testes/              # rodar.sh (automático, com teste_gesto.cpp e teste_mundo.cpp) e integracao.sh (no laob)
+├── deploy/laob/         # otimizar-projetor.sh (ajustes da máquina, com --simular e --desfazer)
+├── docs/RECUPERACAO.md  # plano "o disco do laob morreu" e o backup a guardar fora do laob
+└── testes/              # rodar.sh (automático, com teste_gesto, teste_mundo e teste_shader), integracao.sh, medir.sh e prancha.sh (no laob)
 ```
 
 No PC, tudo fica em `~/SARndbox-rosto` (cópia do SARndbox + estes arquivos, `venv/`, `modelos/`).
@@ -278,7 +326,10 @@ No PC, tudo fica em `~/SARndbox-rosto` (cópia do SARndbox + estes arquivos, `ve
 | Areia a 1 quadro/s, projetor sumiu | Kernel novo sem o driver NVIDIA | Rode `kernel-com-driver.sh` (Willbert-LAOB) e reinicie |
 | Foto aparece de lado | Orientação de quem olha a caixa | `areia-foto girar` |
 | "Ran out of time" no log | Grade de água grande demais | Mantenha `-wts 320 240` |
-| Integração acusa "vigia da areia agendado" | Vigia pausado num teste | `areia-vigia liga` |
+| Integração acusa "vigia da areia agendado" | Vigia pausado num teste | `areia-vigia liga` (a pausa comum volta sozinha em 2 h) |
+| Painel mostra "Topografia (reserva)" | A versão com Foto não abriu | Veja `~/SARndbox-rosto/sandbox.falhou.log`; o vigia tenta de novo a cada 10 min, ou "Reabrir a areia" |
+| `instalar.sh` parou na etapa X | Erro mostrado com a linha e o comando | Corrija e rode de novo (um venv pela metade é refeito sozinho) |
+| "outra troca da areia em andamento" | Duas trocas ao mesmo tempo | Espere alguns segundos e tente de novo |
 | `glPrintError: Invalid operation` ao abrir a foto | Aviso único do OpenGL na troca de shader | Inofensivo: a foto sai certa |
 
 ## Roadmap

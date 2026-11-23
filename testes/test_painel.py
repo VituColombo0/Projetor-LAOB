@@ -2,6 +2,7 @@
 import importlib
 import io
 import os
+import time
 import unittest
 from unittest import mock
 
@@ -144,7 +145,8 @@ class Painel(Ambiente):
         r = self.post("/reabrir", json={})
         self.assertEqual(r.status_code, 200, r.get_json())
         c = [x for x in self.comandos() if x != "estado"]
-        self.assertEqual(c[-2:], ["original", "topografia"])   # fecha o que estiver aberto e abre de novo
+        self.assertEqual(c[-1], "reabrir")   # um pedido só: fecha o que estiver aberto e abre a topografia
+        self.assertNotIn("original", c)      # sem passar pelo SARndbox original
         self.assertIn("willbert", self.get("/estado").get_json())
 
     def test_labirinto_pelo_painel(self):
@@ -534,9 +536,11 @@ class PainelRevisao(Painel):
                     "Animais: mar (3)\n"
                     "Desempenho: 28 quadros/s; água atrasada em 9 de 900 passos; a água andou 97% do tempo real\n")
         with open(os.path.join(self.D, "inicio.log"), "w") as f:
-            f.write("2026-11-22 20:13:16 topografia aberta (tentativa 1)\n"
-                    "2026-11-23 00:30:10 vigia: a areia estava fechada; abrindo a topografia\n"
-                    "2026-11-23 00:40:50 topografia aberta (tentativa 1)\n")
+            antes = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() - 600))
+            f.write("2026-11-15 16:00:23 projetor: sinal cortado (velho)\n"
+                    f"{antes} topografia aberta (tentativa 1)\n"
+                    f"{antes} vigia: a areia estava fechada; abrindo a topografia\n"
+                    f"{antes} topografia aberta (tentativa 1)\n")
         smi = os.path.join(self.tmp, "nvidia-smi")
         with open(smi, "w") as f:
             f.write('#!/bin/sh\necho "47, 12"\n')
@@ -551,6 +555,9 @@ class PainelRevisao(Painel):
         self.assertEqual((s["gpu_temp"], s["gpu_uso"]), (47, 12))
         self.assertEqual(s["vigia"], {"estado": "pausado", "ate": "14:30", "reserva": False})
         self.assertIn("a areia estava fechada", s["ultimo_aviso"])
+        with open(os.path.join(self.D, "inicio.log"), "w") as f:   # aviso de dias atrás não conta mais
+            f.write("2026-11-15 16:00:23 projetor: sinal cortado\n")
+        self.assertIsNone(self.painel._ultimo_aviso())
         self.assertGreater(s["disco_livre_gb"], 0)
         self.assertGreater(s["ligado_s"], 0)
         self.assertFalse(s["reserva"])

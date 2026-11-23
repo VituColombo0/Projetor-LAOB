@@ -396,6 +396,8 @@ copia_atomica "$REPO/areia/sandbox.sh" "$DEST/sandbox.sh" 755
 COMANDOS=()
 for f in "$REPO"/areia/areia-*; do COMANDOS+=("$(basename "$f")"); copia_atomica "$f" "$DEST/$(basename "$f")" 755; done
 mkdir -p "$DEST/sons" && cp "$REPO"/areia/sons/*.wav "$DEST/sons/"
+# sons retirados do repositório em 23/11/2026 (o cp não apaga o que sobrou de antes)
+rm -f "$DEST"/sons/{cigarra_1,cigarra_2,eco_marte_1,eco_marte_2,gaivota_1,gaivota_2,neve_galho,passarinho_1,passarinho_2,passarinho_3,sino_neve_1,sino_neve_2,sino_neve_3,trovao_1,trovao_2}.wav
 # Som combinado (HDMI do projetor + caixas). Quem cuida dele de verdade é o som.py (recria quando falta);
 # aqui é só uma ajuda, que nunca derruba a instalação.
 if tem_cmd pactl; then
@@ -502,8 +504,9 @@ ETAPA="reabrir a areia"
 if [ "$PROGRAMA_ANTES" != "$(md5sum "$DEST/bin/SARndbox" | cut -d" " -f1)" ] \
    && [ "$("$DEST/sandbox.sh" estado 2>/dev/null || true)" = rosto ]; then
   echo "o programa da areia mudou: reabrindo a areia (uns 15 s)"
-  "$DEST/sandbox.sh" original >/dev/null 2>&1 || true
-  "$DEST/areia-topografia" >/dev/null 2>&1 || echo "  a areia não reabriu sozinha: use o botão 'Reabrir a areia' do painel"
+  # "reabrir": fecha e abre a topografia direto, sem passar pelo SARndbox original (e religa o vigia).
+  # Abrir de novo também liga a rotação do sandbox.log (o programa novo escreve com O_APPEND).
+  "$DEST/sandbox.sh" reabrir >/dev/null 2>&1 || echo "  a areia não reabriu sozinha: use o botão 'Reabrir a areia' do painel"
 fi
 
 echo

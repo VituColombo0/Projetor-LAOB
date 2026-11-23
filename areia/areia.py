@@ -1088,15 +1088,11 @@ def labirinto(dificuldade="normal"):
     return d
 
 
-def _registro_labirinto():
-    return _registro_caca()
-
-
 def labirinto_situacao():
     """(situação, rodadas vencidas): situação = correndo, chegou ou nenhum."""
     if qual() != "rosto":
         return "nenhum", 0
-    linhas = _registro_labirinto()
+    linhas = _registro_caca()
     inicio = max((i for i, l in enumerate(linhas) if l.startswith("Labirinto: nascente")), default=-1)
     if inicio < 0:
         return "nenhum", 0
@@ -1265,8 +1261,9 @@ def para_tudo():
 
 def reabre():
     """Fecha a areia (mesmo travada) e abre a topografia de novo. Botão "Reabrir a areia" do painel."""
-    _sandbox("original")      # o sandbox.sh fecha o que estiver aberto antes de abrir o outro
-    rc, out = _sandbox("topografia")
+    # "reabrir" fecha o que estiver aberto (mesmo travado) e abre a topografia direto, sem passar pelo
+    # SARndbox original, e religa o vigia (antes: "original" + "topografia", 23/11/2026)
+    rc, out = _sandbox("reabrir")
     if rc != 0 or qual() == "nenhum":
         raise Erro("a areia não abriu: " + out)
     e = estado()

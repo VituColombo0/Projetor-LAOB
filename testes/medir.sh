@@ -24,7 +24,7 @@ trap 'areia-vigia liga >/dev/null' EXIT
 pid_de() { pgrep -f "$1" | head -1; }
 ticks() { [ -n "$1" ] && [ -r "/proc/$1/stat" ] && awk '{print $14+$15}' "/proc/$1/stat" || echo 0; }
 total() { awk '/^cpu /{print $2+$3+$4+$5+$6+$7+$8, $5+$6}' /proc/stat; }
-perfis() { grep -c '^Perfil: quadro p50' "$LOG" 2>/dev/null || echo 0; }
+perfis() { local n; n=$(grep -c '^Perfil: quadro p50' "$LOG" 2>/dev/null); echo "${n:-0}"; }   # o grep -c já diz 0 (com "|| echo 0" saía "0 0")
 
 liga() {  # inicia o modo; o tema clássico fica para as brincadeiras
   case "$1" in

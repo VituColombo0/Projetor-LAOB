@@ -26,7 +26,8 @@ else echo "$*" >> "$F/comandos.log"; fi
 case "$1" in
   estado) cat "$F/qual" 2>/dev/null || echo nenhum ;;
   original|rosto) echo "$1" > "$F/qual"; echo "$1" ;;
-  topografia) echo rosto > "$F/qual"; echo topografia ;;
+  topografia|reabrir) echo rosto > "$F/qual"; echo topografia ;;
+  parar) echo nenhum > "$F/qual"; echo nenhum ;;
   cmd) [ "$(cat "$F/qual" 2>/dev/null)" = rosto ] || { echo "a versão com Foto não está rodando"; exit 1; } ;;
   tema) [ -f "$2" ] || exit 1; echo tema ;;
 esac
