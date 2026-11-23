@@ -136,8 +136,9 @@ def tira_fundo(img, mascara, base_suave=True):
     return (img * m[..., None]).astype(np.uint8), m
 
 
-def realca(img, vinheta=True):
-    """Projetado na areia o contraste cai muito: reforça contraste e cor (e escurece as bordas)."""
+def realca(img):
+    """Projetado na areia o contraste cai muito: reforça contraste e cor. (A vinheta que escurecia as
+    bordas saiu em 23/11/2026: as duas chamadas já a desligavam.)"""
     lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
     # contraste geral (estica do 1% mais escuro ao 1% mais claro) e só um pouco de contraste
     # local: com o CLAHE forte (2,5 em 6x6) a pele da câmera ficava manchada, "pintada"
@@ -149,13 +150,7 @@ def realca(img, vinheta=True):
     img = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV).astype(np.float32)
     hsv[..., 1] = np.clip(hsv[..., 1] * 1.25, 0, 255)
-    img = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
-    if not vinheta:
-        return img
-    yy, xx = np.mgrid[0:SAIDA_H, 0:SAIDA_W]
-    r = np.sqrt(((xx - SAIDA_W / 2) / (SAIDA_W * 0.5)) ** 2 + ((yy - SAIDA_H / 2) / (SAIDA_H * 0.5)) ** 2)
-    vinheta = np.clip(1.25 - r, 0, 1) ** 0.7
-    return (img * vinheta[..., None]).astype(np.uint8)
+    return cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
 
 
 def relevo(img):
@@ -248,12 +243,12 @@ def main():
         # passou a tomar o extintor atrás da cabeça como parte da pessoa
         alfa = mascara_pessoa(img)
     if rosto is not None:   # retrato 3:4 em volta do rosto
-        foto = realca(recorta(img, rosto), vinheta=False)
+        foto = realca(recorta(img, rosto))
         alfa = recorta(alfa, rosto, borda=cv2.BORDER_CONSTANT) if tirar_fundo else None
     else:                   # imagem inteira, sem cortar
         esc = min(1.0, LADO_MAX / max(img.shape[:2]))
         tam = (round(img.shape[1] * esc), round(img.shape[0] * esc))
-        foto = realca(cv2.resize(img, tam, interpolation=cv2.INTER_AREA), vinheta=False)
+        foto = realca(cv2.resize(img, tam, interpolation=cv2.INTER_AREA))
         alfa = cv2.resize(alfa, tam, interpolation=cv2.INTER_AREA) if tirar_fundo else None
     if tirar_fundo:
         out, pessoa = tira_fundo(foto, alfa)

@@ -4,6 +4,9 @@ Description=Atualiza papel de parede com IP do painel da areia
 [Service]
 Type=oneshot
 ExecStart=%h/SARndbox-rosto/venv/bin/python %h/SARndbox-rosto/atualizar_papel_parede.py
+# Sem as linhas "Starting/Finished" a cada volta do timer (23/11/2026: ~1.550 linhas por dia no journal);
+# o script só escreve quando o endereço muda, e falhas ("Failed", erros) continuam aparecendo.
+LogLevelMax=notice
 
 [Install]
 WantedBy=default.target

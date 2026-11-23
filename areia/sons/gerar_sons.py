@@ -6,7 +6,7 @@ Rodar uma vez quando quiser refazer (precisa só de numpy; os .wav ficam no repo
 Tudo em 22,05 kHz mono. Os fundos (amb_* e jogo_*) têm 20 s e são CIRCULARES: o ruído é filtrado no
 domínio da frequência (o resultado dá a volta sem emenda), as ondulações lentas têm um número inteiro de
 ciclos em 20 s e os eventos (bolhas, gotas, notas) que passam do fim continuam no começo. Por isso o laço
-não tem estalo nem "respiro" na emenda. Os pontuais (sino, passarinho, ronco, bichos...) são curtos e
+não tem estalo nem "respiro" na emenda. Os pontuais (brilho, ronco, gota, teclado, bichos...) são curtos e
 tocados de vez em quando pelo motor do som.py, por cima do fundo.
 
 Os sons de bicho reaproveitam os efeitos que o Victor aprovou em 17/11 (passaro.wav, cachorro.wav,
@@ -371,6 +371,42 @@ def jogo_atelie():
 
 # ---------- pontuais dos temas e jogos ----------
 
+def ronco_vulcao(variante):
+    """Ronco grave e distante do vulcão, rolando por uns segundos."""
+    dur = (5.0, 6.5)[variante - 1]
+    n = int(dur * SR)
+    t = tempo(n)
+    env = np.zeros(n)
+    for c in rng.uniform(0.3, dur * 0.55, 3 + variante):
+        env += np.exp(-((t - c) / 0.9) ** 2) * rng.uniform(0.5, 1.0)
+    env *= np.minimum(1, (dur - t) / 1.5)
+    base = filtra(rng.standard_normal(n), 30, 340, ordem=4) * 2.5
+    sub = np.sin(2 * np.pi * 48 * t) + 0.6 * np.sin(2 * np.pi * 96 * t) + 0.4 * np.sin(2 * np.pi * 144 * t) + 0.25 * np.sin(2 * np.pi * 192 * t)
+    return filtra((base + 0.4 * sub) * env, 0, 520)
+
+
+def brilho(variante):
+    """Arco-íris: um arpejo de sino subindo."""
+    escala = (1046.5, 1174.7, 1318.5, 1568.0, 1760.0, 2093.0, 2349.3)
+    i0 = rng.integers(0, 3)
+    n = (3, 4, 5)[variante - 1]
+    return sala(junta(*[(sino(escala[i0 + i], 1.2, decai=0.45) * (1 - 0.1 * i), i * 0.11) for i in range(n)]), 1.4, 0.35)
+
+
+def gota(variante):
+    """Gota pingando numa poça de caverna (labirinto)."""
+    d = 0.05
+    f0 = (900, 1200)[variante - 1]
+    return sala(bolha(f0, d, 1.8), 1.5, 0.45)
+
+
+# ---------- retirados em 22/11/2026 (não trazer de volta) ----------
+# Não tocam mais (o som de cada tema só mostra o que a animação mostra: veja o som.py) e os .wav saíram do
+# repositório em 23/11/2026. Continuam aqui só porque o main() ainda os calcula e joga fora: o sorteio
+# (rng) é um só para todos os sons, e sem eles os brilhos, roncos, gotas e bichos que vêm depois sairiam
+# diferentes dos .wav aprovados. Assim o main() refaz byte a byte os aprovados (e o --novos, os de 22/11;
+# conferido por md5 no laob em 23/11/2026).
+
 def passarinho(variante):
     """Passarinho ao longe (tema clássico): frases curtas, abafadas pela distância."""
     pedacos = []
@@ -425,20 +461,6 @@ def cigarra(variante):
     return filtra((som + ruido_c) * pulso * trilo * env, 0, 4500)
 
 
-def ronco_vulcao(variante):
-    """Ronco grave e distante do vulcão, rolando por uns segundos."""
-    dur = (5.0, 6.5)[variante - 1]
-    n = int(dur * SR)
-    t = tempo(n)
-    env = np.zeros(n)
-    for c in rng.uniform(0.3, dur * 0.55, 3 + variante):
-        env += np.exp(-((t - c) / 0.9) ** 2) * rng.uniform(0.5, 1.0)
-    env *= np.minimum(1, (dur - t) / 1.5)
-    base = filtra(rng.standard_normal(n), 30, 340, ordem=4) * 2.5
-    sub = np.sin(2 * np.pi * 48 * t) + 0.6 * np.sin(2 * np.pi * 96 * t) + 0.4 * np.sin(2 * np.pi * 144 * t) + 0.25 * np.sin(2 * np.pi * 192 * t)
-    return filtra((base + 0.4 * sub) * env, 0, 520)
-
-
 def gaivota(variante):
     """Gaivota ao longe (oceano): 2 ou 3 gritinhos descendo."""
     pedacos, t = [], 0.0
@@ -465,14 +487,6 @@ def eco_marte(variante):
     return sala(junta((s, 0), (0.5 * s, 0.38), (0.25 * s, 0.76), (0.12 * s, 1.14)), 1.8, 0.4)
 
 
-def brilho(variante):
-    """Arco-íris: um arpejo de sino subindo."""
-    escala = (1046.5, 1174.7, 1318.5, 1568.0, 1760.0, 2093.0, 2349.3)
-    i0 = rng.integers(0, 3)
-    n = (3, 4, 5)[variante - 1]
-    return sala(junta(*[(sino(escala[i0 + i], 1.2, decai=0.45) * (1 - 0.1 * i), i * 0.11) for i in range(n)]), 1.4, 0.35)
-
-
 def trovao(variante):
     """Trovão distante (salve a vila)."""
     dur = (6.0, 7.5)[variante - 1]
@@ -485,11 +499,8 @@ def trovao(variante):
     return filtra(filtra(rng.standard_normal(n), 30, 400, ordem=2) * env, 0, 600)
 
 
-def gota(variante):
-    """Gota pingando numa poça de caverna (labirinto)."""
-    d = 0.05
-    f0 = (900, 1200)[variante - 1]
-    return sala(bolha(f0, d, 1.8), 1.5, 0.45)
+def _so_sorteia(*_sons):
+    """Joga fora um som retirado (calculado só para o sorteio dos seguintes continuar igual)."""
 
 
 # ---------- bichos ----------
@@ -636,16 +647,13 @@ def main():
     for nome, fn in fundos.items():
         escreve(nome, fn(), fundo=True)
     for v in (1, 2, 3):
-        escreve(f"passarinho_{v}", passarinho(v))
-        escreve(f"sino_neve_{v}", sino_neve(v))
+        _so_sorteia(passarinho(v), sino_neve(v))   # retirados (só o sorteio): veja acima
         escreve(f"brilho_{v}", brilho(v))
-    escreve("neve_galho", neve_galho())
+    _so_sorteia(neve_galho())
     for v in (1, 2):
-        escreve(f"cigarra_{v}", cigarra(v))
+        _so_sorteia(cigarra(v))
         escreve(f"ronco_vulcao_{v}", ronco_vulcao(v))
-        escreve(f"gaivota_{v}", gaivota(v))
-        escreve(f"eco_marte_{v}", eco_marte(v))
-        escreve(f"trovao_{v}", trovao(v))
+        _so_sorteia(gaivota(v), eco_marte(v), trovao(v))
         escreve(f"gota_{v}", gota(v))
         escreve(f"bicho_pato_{v}", pato(v))
         escreve(f"bicho_peixe_{v}", bolhas_peixe(v))

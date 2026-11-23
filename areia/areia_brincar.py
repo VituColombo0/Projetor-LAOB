@@ -1,8 +1,9 @@
-"""Brincadeiras na caixa de areia (comandos areia-tesouro, areia-animais, areia-fossil e areia-labirinto).
+"""Brincadeiras na caixa de areia (comandos areia-tesouro, areia-animais, areia-fossil, areia-labirinto
+e areia-jogo).
 
-  areia-tesouro              esconde um tesouro (normal: 3 cm embaixo da areia); achado, ele
+  areia-tesouro              esconde um tesouro (normal: 5,5 cm embaixo da areia); achado, ele
                              some depois de 20 s e reaparece em outro lugar
-  areia-tesouro facil        mais raso (2 cm) · areia-tesouro dificil: mais fundo (5 cm)
+  areia-tesouro facil        mais raso (4 cm) · areia-tesouro dificil: mais fundo (7 cm)
   areia-tesouro achou        diz se já acharam
   areia-tesouro parar        tira o tesouro
 
@@ -16,9 +17,9 @@
   areia-animais todos        tudo junto (pode pôr a quantidade: areia-animais peixes 15)
   areia-animais parar        tira os animais
 
-  areia-fossil               enterra um fóssil de T-Rex (3 cm); achado, outro aparece em 30 s
+  areia-fossil               enterra um fóssil de T-Rex (5,5 cm); achado, outro aparece em 30 s
   areia-fossil triceratops   ou pterodactilo, pegada (pode pôr a dificuldade: areia-fossil pegada facil)
-  areia-fossil facil         T-Rex mais raso (2 cm) · areia-fossil dificil: mais fundo (5 cm)
+  areia-fossil facil         T-Rex mais raso (4 cm) · areia-fossil dificil: mais fundo (7 cm)
   areia-fossil achou         diz se está enterrado e quantos já escavaram
   areia-fossil parar         encerra a escavação
 
@@ -28,6 +29,8 @@
   areia-labirinto nova       outra nascente e outro alvo agora
   areia-labirinto placar     diz se a água já chegou e quantas rodadas venceram
   areia-labirinto parar      encerra (a água do labirinto vai embora)
+
+  areia-jogo <jogo>|copia    jogos de água e o Copie o relevo (veja areia-jogo ajuda)
 
 Para voltar à topografia normal: areia-topografia
 """
