@@ -367,7 +367,8 @@ bool roda(const Caso& c,unsigned semente,bool mostra)
 	return c.dedo?(dedos==1&&perto):dedos==0;
 	}
 
-/* ---- sequências no tempo, pelo caminho do Sandbox (Detector::passo + Rastro), a 12 quadros por segundo */
+/* ---- sequências no tempo, pelo caminho do Sandbox (Detector::passo + Rastro), a 12 quadros por segundo (o Sandbox
+   roda a ~30 desde 22/11/2026; o Rastro e a areia congelada andam pelo tempo, então valem os dois) */
 
 struct Resultado {int confirmou=0,soltou=0,vistos=0,travados=0; bool ativoNoFim=false; std::vector<int> quando;};
 
@@ -740,6 +741,49 @@ int main(int argc,char** argv)
 	        +std::to_string(total)+", visto em "+std::to_string(vistos)+" quadros)");
 	}
 	{
+	/* a trava do relevo não se alimenta sozinha (23/11/2026): muro de areia baixo empurrado contra a beirada, sem
+	   mão nenhuma, com o filtro como no SARndbox (só aceita a areia nova 1 s depois de ela aparecer, e não onde
+	   está travado). Antes a trava pegava o muro e o relevo ficava preso os 15 s inteiros (travaMax) */
+	const float hs[3]={2.5f,3.5f,5.0f};
+	int ok=0,total=0,travadosSoma=0,aceitoMax=0;
+	for(int k=0;k<3;++k)
+		for(unsigned s=1;s<=2;++s)
+			{
+			float ang=s==1?0.0f:PI; // da beirada esquerda e da direita
+			Gesto::Detector d;
+			Gesto::Rastro r;
+			std::vector<Gesto::MaoAberta> maos;
+			int ultimaTrava=-1000,aceito=-1,travados=0;
+			for(int i=0;i<12*20;++i)
+				{
+				Cena c;
+				if(i>=12)
+					{
+					muro(c,hs[k],2.2f,-4.0f,8.0f,1.4f,ang,false);
+					if(aceito<0&&i>=24&&i-ultimaTrava>=12)
+						aceito=i;
+					c.monteNaAreia=aceito>=0;
+					}
+				QuadroSintetico q;
+				monta(c,W,H,0.13f,(700u+unsigned(k)*31u+s)*1000u+unsigned(i),q);
+				Gesto::Passo p;
+				d.passo(q,2,2,W-2,H-2,i/12.0,0,maos,r,p);
+				if(!d.trava.empty())
+					{
+					++travados;
+					ultimaTrava=i;
+					}
+				}
+			ok+=travados==0&&aceito>=0&&aceito<=24+2;
+			travadosSoma+=travados;
+			aceitoMax=std::max(aceitoMax,aceito-12);
+			++total;
+			}
+	confere(ok==total,"muro de areia de 2,5 a 5 cm empurrado contra a beirada, sem mão: não trava o relevo, que aceita a areia em ~1 s ("
+	        +std::to_string(ok)+"/"+std::to_string(total)+"; travado em "+std::to_string(travadosSoma)+" quadros; aceita em até "
+	        +std::to_string(aceitoMax)+" quadros de 1/12 s)");
+	}
+	{
 	Resultado r=sequencia(36,[&](int i){Cena c;maoAberta(c,0.4f*std::sin(i*0.7f),0.3f*std::cos(i*0.5f),0.1f*std::sin(i*0.3f),AREIA+14.0f,0.0f,0.0f);c.buracos=0.2f;return c;},0.13f,7);
 	confere(r.confirmou==0,"mão aberta mexendo por 3 s: nunca vira dedo (visto "+std::to_string(r.vistos)+")");
 	}
@@ -854,7 +898,7 @@ int main(int argc,char** argv)
 	int dedos=0;
 	for(const Gesto::Medida& m:ms)
 		dedos+=m.dedo;
-	std::printf("        %.0f us por procura (%zu candidatos); a 12 por segundo = %.2f%% de um núcleo\n",us,ms.size(),us*12.0/1e4);
+	std::printf("        %.0f us por procura (%zu candidatos); a 30 por segundo = %.2f%% de um núcleo\n",us,ms.size(),us*30.0/1e4);
 	confere(dedos==2,"no quadro inteiro, com a mão aberta ao lado, acha os 2 dedos ("+std::to_string(dedos)+")");
 	}
 	{
@@ -868,7 +912,7 @@ int main(int argc,char** argv)
 	for(int i=0;i<N;++i)
 		d.procura(q,0,0,368,260,i/12.0,-1.0f,-1.0f,ms);
 	double us=std::chrono::duration<double,std::micro>(std::chrono::steady_clock::now()-t0).count()/N;
-	std::printf("        %.0f us por procura sem ninguém na areia; a 12 por segundo = %.2f%% de um núcleo\n",us,us*12.0/1e4);
+	std::printf("        %.0f us por procura sem ninguém na areia; a 30 por segundo = %.2f%% de um núcleo\n",us,us*30.0/1e4);
 	confere(ms.empty(),"areia sem ninguém: nenhum candidato");
 	}
 

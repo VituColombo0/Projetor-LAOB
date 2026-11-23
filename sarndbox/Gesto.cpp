@@ -17,6 +17,10 @@ engordada) de 1-3 px. Um dedo de 1,5-2 cm tem 11-18 px de largura.
 #include <algorithm>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/statvfs.h>
+#include <dirent.h>
+#include <ftw.h>
+#include <unistd.h>
 
 namespace Gesto {
 
@@ -100,7 +104,11 @@ void Detector::atualizaTrava(const Quadro& q,int x0,int y0,double t,size_t nComp
 	{
 	/* Relevo travado (22/11/2026): as silhuetas que encostam na borda do retângulo (o braço entra por ali) e
 	   têm tamanho de mão viram a trava, com 2 pontos de folga em volta (a borda da mão é borrada e fica
-	   abaixo do contornoMin); cada ponto só fica travado até travaMax segundos de mão em cima */
+	   abaixo do contornoMin); cada ponto só fica travado até travaMax segundos de mão em cima.
+	   23/11/2026: só se o que encosta na borda é alto como um braço (a mediana na borda pelo menos bracoAlto
+	   acima da areia, a mesma regra do contorno). Areia empurrada contra a beirada também vira silhueta, e a
+	   trava se alimentava sozinha: o filtro congelado não deixava a areia nova chegar à referência, a
+	   silhueta continuava e o relevo ficava preso os 15 s inteiros */
 	int P=refP,gw=refW,gh=refH;
 	size_t n=size_t(gw)*size_t(gh);
 	trava.assign(n,0);
@@ -114,6 +122,19 @@ void Detector::atualizaTrava(const Quadro& q,int x0,int y0,double t,size_t nComp
 		float cp=q.cmPorPixel(x0+sx*P,y0+sy*P);
 		if(!(cp>0.0f)||float(cn)*float(P*P)*cp*cp<0.5f*lim.maoAreaMin)
 			continue;
+		vols.clear();
+		for(int gy=0;gy<gh;++gy)
+			for(int gx=0;gx<gw;++gx)
+				{
+				size_t k=size_t(gy)*gw+gx;
+				if((gx==0||gy==0||gx==gw-1||gy==gh-1)&&rot[k]==id&&ok(ga[k])&&ok(ref[k]))
+					vols.push_back(ga[k]-ref[k]);
+				}
+		if(vols.empty())
+			continue;
+		std::nth_element(vols.begin(),vols.begin()+vols.size()/2,vols.end());
+		if(vols[vols.size()/2]<lim.bracoAlto)
+			continue; // baixo na beirada: areia, não braço
 		for(size_t k=0;k<n;++k)
 			if(rot[k]==id&&refDesde[k]>=0.0&&t-refDesde[k]<double(lim.travaMax))
 				{
@@ -1314,10 +1335,55 @@ Rastro::Evento Rastro::passo(double t,bool viu,float nx,float ny)
 
 /* ------------------------------- gravação */
 
+namespace {
+int apagaUm(const char* caminho,const struct stat*,int,struct FTW*)
+	{
+	return std::remove(caminho)!=0?-1:0;
+	}
+/* bytes livres no sistema de arquivos de "base" (-1 = não sei) */
+double livres(const std::string& base)
+	{
+	struct statvfs v;
+	if(statvfs(base.c_str(),&v)!=0)
+		return -1.0;
+	return double(v.f_bavail)*double(v.f_frsize);
+	}
+}
+
 bool Gravador::abre(const std::string& base,int sw,int sh,const int recorte[4],const int area[4],const double m[4][4],
                     const float caixa[4],const std::vector<float>& correcao,const std::string& limiares,double t)
 	{
 	fecha();
+	erro.clear();
+	apagadas.clear();
+	/* 23/11/2026: cada gravação (~400 MB em 20 s a 30 quadros/s) fica em /dev/shm, que é RAM, até alguém apagar.
+	   A nova apaga as anteriores (só a última fica: analise antes de gravar de novo) e não começa se a RAM
+	   livre ali não der para ela com folga */
+	if(DIR* d=opendir(base.c_str()))
+		{
+		std::vector<std::string> velhas;
+		while(dirent* e=readdir(d))
+			if(std::strncmp(e->d_name,"gesto-",6)==0)
+				velhas.push_back(e->d_name);
+		closedir(d);
+		for(size_t i=0;i<velhas.size();++i)
+			{
+			std::string c=base+"/"+velhas[i];
+			struct stat st;
+			if(lstat(c.c_str(),&st)!=0||!S_ISDIR(st.st_mode))
+				continue;
+			if(nftw(c.c_str(),apagaUm,8,FTW_DEPTH|FTW_PHYS)==0)
+				apagadas+=(apagadas.empty()?"":" ")+velhas[i];
+			}
+		}
+	double livre=livres(base);
+	if(livre>=0.0&&livre<double(LIVRE_MIN))
+		{
+		char b[96];
+		std::snprintf(b,sizeof(b),"só %.0f MB livres em %s (precisa de %.0f)",livre/1048576.0,base.c_str(),double(LIVRE_MIN)/1048576.0);
+		erro=b;
+		return false;
+		}
 	char nome[64];
 	std::time_t agora=std::time(0);
 	std::tm lt;
@@ -1343,6 +1409,7 @@ bool Gravador::abre(const std::string& base,int sw,int sh,const int recorte[4],c
 	lims=limiares;
 	porQuadro.clear();
 	n=0;
+	bytes=0;
 	t0=t;
 	size_t np=size_t(rec[2]-rec[0])*size_t(rec[3]-rec[1]);
 	std::FILE* fc=std::fopen((pasta+"/correcao.f32").c_str(),"wb");
@@ -1365,6 +1432,15 @@ void Gravador::quadro(double t,const std::uint16_t* cru,const float* filtrado,co
 	if(fCru==0)
 		return;
 	int cw=rec[2]-rec[0];
+	size_t porQuadroBytes=size_t(2)*sizeof(std::uint16_t)*size_t(cw)*size_t(rec[3]-rec[1]);
+	if(bytes+porQuadroBytes>size_t(TAMANHO_MAX))
+		{
+		/* passou do limite (20 s a 30 quadros/s cabem com folga): para aqui, com o que já foi */
+		erro="chegou ao limite de tamanho";
+		fecha();
+		return;
+		}
+	bytes+=porQuadroBytes;
 	bool certo=true;
 	for(int y=rec[1];y<rec[3];++y)
 		certo=std::fwrite(cru+size_t(y)*w+rec[0],sizeof(std::uint16_t),size_t(cw),fCru)==size_t(cw)&&certo;
@@ -1379,6 +1455,7 @@ void Gravador::quadro(double t,const std::uint16_t* cru,const float* filtrado,co
 	if(!certo)
 		{
 		/* tmpfs cheio: para aqui, com o que já foi */
+		erro="não coube mais (tmpfs cheio)";
 		fecha();
 		return;
 		}

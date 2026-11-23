@@ -3,13 +3,19 @@ vulcão = lava, inverno = neve, marte = lama vermelha, deserto = oásis, arco-í
 Rodar na pasta da cópia, depois de copiar o shader original para share/.../Shaders."""
 import sys
 
+ATUAL = ""  # o shader sendo mudado (para a mensagem de erro)
+
+def rep(s, old, new):
+    """Troca o trecho (uma vez); sem ele, para com o nome do shader. Fora dos dois blocos (23/11/2026): antes
+    ficava dentro do 1º, e um 2º shader sem patch com o 1º já pronto dava NameError."""
+    if old not in s:
+        sys.exit(f"trecho não encontrado em {ATUAL}: {old[:60]!r}")
+    return s.replace(old, new, 1)
+
 ARQ = "share/SARndbox-2.8/Shaders/SurfaceAddWaterColor.fs"
+ATUAL = ARQ
 s = open(ARQ).read()
 if "extrasEfeito" not in s:
-    def rep(s, old, new):
-        if old not in s:
-            sys.exit(f"trecho não encontrado em {ARQ}: {old[:60]!r}")
-        return s.replace(old, new, 1)
     s = rep(s, "uniform float waterAnimationTime;\n", """uniform float waterAnimationTime;
 uniform vec4 extrasEfeito; // Projetor-LAOB: efeito do tema (0 = água normal)
 """)
@@ -65,6 +71,7 @@ float extrasAguaSombra;    // sombra na água em volta dos bichos (shader dos ex
 # Lençol do lago dos bichos (17/11/2026): no passo que soma a água da chuva, em toda célula da área iluminada
 # cujo fundo está abaixo do nível do mar a água brota até ele; acima do nível, a areia absorve aos poucos.
 ARQ2 = "share/SARndbox-2.8/Shaders/Water2WaterUpdateShader.fs"
+ATUAL = ARQ2
 u = open(ARQ2).read()
 if "lencolT" not in u:
     u = rep(u, "uniform sampler2DRect waterSampler;\n", """uniform sampler2DRect waterSampler;

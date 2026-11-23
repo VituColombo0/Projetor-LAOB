@@ -130,7 +130,6 @@ void Extras::novoJogo(void)
 	nPecas=nFontes=0;
 	jogoFase=1;
 	jogoInicio=tempo;
-	jogoPontos=0;
 	jogoVencedor=-1;
 	proximoPortao=1;
 	labZerarAgua=true; // rodada nova começa sem água
@@ -352,8 +351,13 @@ void Extras::armadilhasDoLabirinto(void)
 	{
 	/* Armadilhas no caminho reto entre a nascente e o alvo (2, 3 ou 4), com um desvio pequeno
 	   para um lado e para o outro: a água tem que dar a volta. É o que diferencia o labirinto
-	   da rota com paradas (lá a água TEM que passar pelos portões; aqui ela NÃO pode encostar). */
+	   da rota com paradas (lá a água TEM que passar pelos portões; aqui ela NÃO pode encostar).
+	   Precisam do mapa de agora (o teste de vala embaixo): sem ele, esperam o fechaMapa (23/11/2026; antes a
+	   1ª rodada depois de abrir a areia ficava sem nenhuma armadilha) */
 	nPecas=0;
+	labArmadilhasPendente=!mapaOk;
+	if(!mapaOk)
+		return;
 	int quantas=labDificuldade+1;
 	float dx=ltx-lsx,dy=lty-lsy,dl=std::sqrt(dx*dx+dy*dy)+1e-6f;
 	float nx=-dy/dl,ny=dx/dl;
@@ -465,7 +469,6 @@ void Extras::jogoPasso(float) // (o dt era da fazenda e do resgate; as regras de
 				for(int i=0;i<nPecas;++i)
 					if(pecas[i].tipo==P_CASA&&pecas[i].estado==0)
 						pecas[i].estado=1;
-				jogoPontos=secas;
 				terminaRodada(fmt(jogo==VULCAO?"%d de %d casas a salvo da lava":"%d de %d casas secas",secas,casas),secas==casas?0:1);
 				}
 			break;

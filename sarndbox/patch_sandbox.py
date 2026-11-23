@@ -95,7 +95,8 @@ if "FaceImage" not in h:
 c = open("Sandbox.cpp").read()
 if "FaceImage" not in c:
     c = rep(c, '#include "DEMTool.h"\n', '#include "DEMTool.h"\n#include "FaceImage.h"\n')
-    c = rep(c, "\t controlPipeFd(-1)", "\t controlPipeFd(-1),\n\t faceImage(0),faceDem(0),faceRefTime(0.0)")
+    # (na ordem da declaração, logo depois do activeDem: sem o aviso -Wreorder; 23/11/2026)
+    c = rep(c, "\t activeDem(0),\n", "\t activeDem(0),\n\t faceImage(0),faceDem(0),faceRefTime(0.0),\n")
     if "#include <algorithm>" not in c:
         c = rep(c, "#include <vector>\n", "#include <vector>\n#include <algorithm>\n#include <cmath>\n")
     c = rep(c, """	boxSize=Geometry::dist(center,basePlaneCorners[0]);
@@ -296,9 +297,10 @@ void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)
 void Sandbox::toggleDEM(DEM* dem)
 """)
     # --- Extras (Projetor-LAOB)
-    c = rep(c, "\t faceImage(0),faceDem(0),faceRefTime(0.0)",
-            "\t faceImage(0),faceDem(0),faceRefTime(0.0),\n\t extrasMapaTempo(0.0),extrasUltimoPasso(0.0),tesouroPedido(-1.0f),\n"
-            "\t labLeitura(0.0),quadrosAgua(0),atrasosAgua(0),aguaPedida(0.0),aguaFaltou(0.0),desempenhoTempo(0.0),quadros(0)")
+    c = rep(c, "\t faceImage(0),faceDem(0),faceRefTime(0.0),\n",
+            "\t faceImage(0),faceDem(0),faceRefTime(0.0),\n"
+            "\t labLeitura(0.0),quadrosAgua(0),atrasosAgua(0),aguaPedida(0.0),aguaFaltou(0.0),desempenhoTempo(0.0),quadros(0),\n"
+            "\t extrasMapaTempo(0.0),extrasUltimoPasso(0.0),tesouroPedido(-1.0f),\n")
     c = rep(c, """<<" cm"<<std::endl;
 			break;
 			}
@@ -335,10 +337,10 @@ void Sandbox::toggleDEM(DEM* dem)
 				else if((isToken(tokens[0],"comida")||isToken(tokens[0],"maoTeste")||isToken(tokens[0],"racao"))&&tokens.size()>=3)
 					{
 					/* comida jogada pelo painel: fração x, y da área iluminada e segundos. Num ponto de água cai
-					   ração (peixes, tartarugas, patos... vêm comer); na terra, um pão (os pássaros pousam em volta,
+					   ração (peixes, tartarugas, patos... vêm comer); na terra, a tigela (os pássaros pousam em volta,
 					   os cachorros sentam do lado). "comida x y s terra|agua": só cai se o ponto for daquele jeito
 					   (o painel manda quando só há bichos que comem um dos dois). "racao x y s": ração na água mais
-					   perto (sem água por perto, vira pão). ("maoTeste" é o nome antigo do comando.) */
+					   perto (sem água por perto, vira a tigela). ("maoTeste" é o nome antigo do comando.) */
 					float seg=tokens.size()>=4?std::max(1.0f,std::min(120.0f,float(atof(tokens[3].c_str())))):15.0f;
 					float fx=std::max(0.0f,std::min(1.0f,float(atof(tokens[1].c_str()))));
 					float fy=std::max(0.0f,std::min(1.0f,float(atof(tokens[2].c_str()))));
@@ -383,8 +385,9 @@ void Sandbox::toggleDEM(DEM* dem)
 					}
 				else if(isToken(tokens[0],"gestoGrava"))
 					{
-					/* gestoGrava [s]: grava o quadro cru e o filtrado (~12 por segundo, até 20 s) em /dev/shm/gesto-*
-					   para analisar a mão de verdade fora daqui (testes/analisa_gesto.cpp); grava mesmo sem bichos */
+					/* gestoGrava [s]: grava o quadro cru e o filtrado (~30 por segundo, até 20 s: ~0,7 MB por quadro, ~400 MB
+					   em 20 s) em /dev/shm/gesto-* para analisar a mão de verdade fora daqui (testes/analisa_gesto.cpp);
+					   grava mesmo sem bichos. Cada gravação nova apaga as anteriores (Gesto::Gravador::abre) */
 					float seg=tokens.size()>=2?float(atof(tokens[1].c_str())):10.0f;
 					seg=seg>0.0f?std::min(20.0f,std::max(1.0f,seg)):10.0f;
 					if(gestoGravador.gravando())
@@ -452,7 +455,9 @@ void Sandbox::toggleDEM(DEM* dem)
 					{
 					/* mundo <giro> <quantos têm rosto> <painel de rostos | -> <moradores> [NOME[+]...]:
 					   o laboratório (Mundo.cpp); mandar de novo com os mesmos nomes só atualiza quem está presente.
-					   <moradores> ficou da cidade LAOB (tirada em 16/11/2026): é ignorado (o painel manda 0) */
+					   <moradores> é uma posição reservada: era da cidade LAOB (tirada em 16/11/2026) e é ignorada (o painel
+					   manda 0). Fica no protocolo de propósito (revisão de 23/11/2026): tirar exigiria trocar o painel e o
+					   SARndbox juntos, senão os nomes andam uma posição */
 					std::vector<std::string> lista;
 					for(size_t i=5;i<tokens.size();++i)
 						lista.push_back(tokens[i]);
@@ -611,19 +616,19 @@ void Sandbox::toggleDEM(DEM* dem)
 						}
 					}
 				else if(isToken(tokens[0],"relevo"))""")
-    c = rep(c, """	/* Update all surface renderers: */
-	for(std::vector<RenderSettings>::iterator rsIt=renderSettings.begin();rsIt!=renderSettings.end();++rsIt)
-		rsIt->surfaceRenderer->setAnimationTime(Vrui::getApplicationTime());
+    # 23/11/2026: os extras (mapa, movimento) e a escolha do shader vêm DEPOIS dos comandos do cano, no mesmo
+    # quadro: a brincadeira nova mede o mapa de agora antes de sortear (achado 2) e a foto aberta vindo de uma
+    # brincadeira não monta por um quadro o shader foto+extras (achado 11). Antes rodavam antes do cano.
+    c = rep(c, """	if(frameRateTextField!=0&&Vrui::getWidgetManager()->isVisible(waterControlDialog))
 """, """	/* Tesouro, lago, peixes e carrinhos: */
 	atualizaExtras();
 	
-	/* Update all surface renderers: */
+	/* Projetor-LAOB: o programa da superfície acompanha os extras e a foto de agora (SurfaceRenderer::chaveShader) */
 	for(std::vector<RenderSettings>::iterator rsIt=renderSettings.begin();rsIt!=renderSettings.end();++rsIt)
-		{
-		rsIt->surfaceRenderer->setAnimationTime(Vrui::getApplicationTime());
 		if(rsIt->fixProjectorView)
 			rsIt->surfaceRenderer->setExtras(extras.ativo()&&faceImage==0?&extras:0);
-		}
+	
+	if(frameRateTextField!=0&&Vrui::getWidgetManager()->isVisible(waterControlDialog))
 """)
     c = rep(c, "void Sandbox::setFaceMode(FaceImage* newFaceImage,DEM* newFaceDem)\n", """void Sandbox::atualizaExtras(void)
 	{
@@ -633,7 +638,13 @@ void Sandbox::toggleDEM(DEM* dem)
 	/* Dedo apontado para cima: comida embaixo dele (só com bichos na areia) */
 	atualizaGesto(agora);
 	if(!extras.ativo())
+		{
+		/* desligados, o mapa não é medido: fica esquecido, e a próxima brincadeira mede o de agora já no
+		   quadro em que chega (23/11/2026; antes sorteava no mapa de horas atrás, ou sem mapa nenhum) */
+		extras.esqueceMapa();
+		extrasMapaTempo=0.0;
 		return;
+		}
 	
 	/* Mapa de alturas da área iluminada, 2x por segundo: */
 	if(agora-extrasMapaTempo>0.5)
@@ -699,7 +710,7 @@ typedef Gesto::QuadroKinect<Kinect::FrameSource::DepthCorrection::PixelCorrectio
 
 void Sandbox::gestoDedoCai(void)
 	{
-	/* na terra cai pão (pássaros e cachorros), na água ração (bichos da água); se ninguém na areia come
+	/* na terra cai a tigela (pássaros e cachorros), na água ração (bichos da água); se ninguém na areia come
 	   o que cairia ali, não cai nada (como o painel, que avisa) */
 	bool ehAgua=extras.aguaNoPonto(gestoLugarX,gestoLugarY);
 	gestoCaiu=extras.comem(ehAgua);
@@ -726,7 +737,7 @@ void Sandbox::gestoEvento(double agora,int ev)
 		std::cout<<"Gesto: dedo solto"<<std::endl;
 	else if(gestoRastro.ativo&&agora-gestoComidaTempo>=0.5)
 		{
-		/* enquanto aponta, cai mais comida (a de terra só renova: o pão não recomeça do zero) */
+		/* enquanto aponta, cai mais comida (a de terra só renova: a tigela não recomeça do zero) */
 		gestoComidaTempo=agora;
 		float dx=gestoRastro.x-gestoLugarX,dy=gestoRastro.y-gestoLugarY;
 		if(dx*dx+dy*dy>25.0f)
@@ -779,7 +790,7 @@ void Sandbox::atualizaGesto(double agora)
 	   pedido do Victor): quem aponta com o indicador, os outros dedos fechados, para CIMA ou para BAIXO (para
 	   a areia), derruba comida embaixo do dedo: na areia para os bichos de terra, na água para os da água. O
 	   HandExtractor do SARndbox só acha a mão ABERTA (é dela a chuva) e nunca vê o dedo apontado; o detector é
-	   o do Gesto.cpp, sobre o quadro CRU do sensor, ~12x por segundo e só com bichos na areia (sem eles nem o
+	   o do Gesto.cpp, sobre o quadro CRU do sensor, em todo quadro (~30x por segundo) e só com bichos na areia (sem eles nem o
 	   quadro cru é passado adiante) ou enquanto grava (gestoGrava). A mão aberta continua só fazendo chover. */
 	/* só procura se há na areia quem coma (pássaros/cachorros na terra, bichos da água na água) */
 	bool quer=extras.querComida()&&(extras.comem(false)||extras.comem(true))&&faceImage==0&&pixelDepthCorrection!=0;
@@ -898,7 +909,7 @@ void Sandbox::atualizaGesto(double agora)
 			}
 		}
 	
-	/* gravação (gestoGrava): o recorte da área do detector com 24 px de folga, ~12 quadros por segundo */
+	/* gravação (gestoGrava): o recorte da área do detector com 24 px de folga, ~30 quadros por segundo */
 	if(grava)
 		{
 		if(!gestoGravador.gravando()&&gestoGravaPedido>0.0f)
@@ -913,14 +924,17 @@ void Sandbox::atualizaGesto(double agora)
 					corr.push_back(pc.scale);
 					corr.push_back(pc.offset);
 					}
-			if(gestoGravador.abre("/dev/shm",w,h,rec,gestoRet,mat,area,corr,gestoDetector.lim.texto(),agora))
+			bool abriu=gestoGravador.abre("/dev/shm",w,h,rec,gestoRet,mat,area,corr,gestoDetector.lim.texto(),agora);
+			if(!gestoGravador.apagadas.empty())
+				std::cout<<"Gesto: apaguei a(s) gravação(ões) anterior(es) em /dev/shm: "<<gestoGravador.apagadas<<std::endl;
+			if(abriu)
 				{
 				gestoGravaAte=agora+gestoGravaPedido;
 				std::cout<<"Gesto: gravando "<<gestoGravaPedido<<" s em "<<gestoGravador.pasta
 				         <<(quer?"":" (sem bichos na areia: só grava e mede, nada cai)")<<std::endl;
 				}
 			else
-				std::cout<<"Gesto: não deu para gravar em /dev/shm"<<std::endl;
+				std::cout<<"Gesto: não deu para gravar em /dev/shm"<<(gestoGravador.erro.empty()?"":": ")<<gestoGravador.erro<<std::endl;
 			gestoGravaPedido=0.0f;
 			}
 		if(gestoGravador.gravando())
@@ -929,7 +943,9 @@ void Sandbox::atualizaGesto(double agora)
 			if(agora>=gestoGravaAte||!gestoGravador.gravando())
 				{
 				int n=gestoGravador.fecha();
-				std::cout<<"Gesto: gravação pronta: "<<gestoGravador.pasta<<" ("<<n<<" quadros)"<<std::endl;
+				std::cout<<"Gesto: gravação pronta: "<<gestoGravador.pasta<<" ("<<n<<" quadros"
+				         <<(gestoGravador.erro.empty()?"":"; parou antes: ")<<gestoGravador.erro
+				         <<"); fica na RAM: analise e apague (rm -r), ou a próxima gravação apaga"<<std::endl;
 				}
 			}
 		}
@@ -1334,7 +1350,6 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
 				Point w1=wb.transform(boxTransform.inverseTransform(Point(10,0,H)));
 				Point w2=wb.transform(boxTransform.inverseTransform(Point(0,10,H)));
 				double m00=(w1[0]-w0[0])/10.0,m01=(w2[0]-w0[0])/10.0,m10=(w1[1]-w0[1])/10.0,m11=(w2[1]-w0[1])/10.0;
-				double zx=(w1[2]-w0[2])/10.0,zy=(w2[2]-w0[2])/10.0;
 				double det=m00*m11-m01*m10;
 				/* para os bichos: profundidade e correnteza no centro de cada célula do mapa */
 				int gx=extras.celulasX(),gy=extras.celulasY();
@@ -1482,9 +1497,15 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
 	{
 	/* Projetor-LAOB: intervalo desde o quadro anterior e CPU do frame() inteiro (Perfil.h) */
 	{
+	double comp=perfil.compilou(SurfaceRenderer::compilacoes,SurfaceRenderer::compilacaoMs); // shader montado no display anterior (ms; 0 = nenhum)
 	double lento=perfil.quadro();
 	if(lento>0.0)
-		std::cout<<"Perfil: quadro lento de "<<int(lento+0.5)<<" ms"<<std::endl;
+		{
+		if(comp>0.0)
+			std::cout<<"Perfil: quadro lento de "<<int(lento+0.5)<<" ms (compilando o shader da superficie: "<<int(comp+0.5)<<" ms)"<<std::endl;
+		else
+			std::cout<<"Perfil: quadro lento de "<<int(lento+0.5)<<" ms"<<std::endl;
+		}
 	}
 	struct PerfilFrame { Perfil& p; PerfilFrame(Perfil& sp):p(sp) {p.cpuIni(Perfil::C_FRAME);} ~PerfilFrame(void) {p.cpuFim(Perfil::C_FRAME);} } perfilFrame(perfil);
 """)
@@ -1567,7 +1588,8 @@ if "trava" not in fh:
     open("FrameFilter.h", "w").write(fh)
 fc = open("FrameFilter.cpp").read()
 if "trava" not in fc:
-    fc = rep(fc, "\t:pixelDepthCorrection(sPixelDepthCorrection),\n", "\t:pixelDepthCorrection(sPixelDepthCorrection),\n\t trava(0),\n")
+    # (por último, como na declaração: sem o aviso -Wreorder; 23/11/2026)
+    fc = rep(fc, "\t outputFrameFunction(0)\n\t{\n", "\t outputFrameFunction(0),\n\t trava(0)\n\t{\n")
     fc = rep(fc, "\t/* Initialize the averaging buffer: */\n",
              "\t/* Projetor-LAOB: trava do relevo, nada travado */\n\ttrava=new unsigned char[size[1]*size[0]];\n"
              "\tfor(unsigned int i=0;i<size[1]*size[0];++i)\n\t\ttrava[i]=0;\n\t\n\t/* Initialize the averaging buffer: */\n")

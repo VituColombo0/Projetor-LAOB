@@ -562,7 +562,7 @@ int main(int argc,char** argv)
 			std::printf("Resumo: %d quadros; candidatos em %zu; dedo em %zu; escolhido em %d (ao vivo: %d); mão aberta do SARndbox em %d; confirmou %d vez(es); soltou %d\n",
 			            ate-de+1,comCand.size(),comDedo.size(),viuN,vivoN,maosN,confirmou,soltou);
 			int nq2=std::max(1,ate-de+1);
-			std::printf("Custo: %.0f us por quadro em média (máximo %.0f us); a 12 por segundo = %.2f%% de um núcleo\n",custo/nq2,custoMax,custo/nq2*12.0/1e4);
+			std::printf("Custo: %.0f us por quadro em média (máximo %.0f us); a 30 por segundo = %.2f%% de um núcleo\n",custo/nq2,custoMax,custo/nq2*30.0/1e4);
 			std::vector<std::pair<int,std::string> > ms;
 			for(const auto& m:motivos) ms.emplace_back(m.second,m.first);
 			std::sort(ms.rbegin(),ms.rend());
