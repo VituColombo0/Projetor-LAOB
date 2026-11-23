@@ -1,7 +1,7 @@
 """Acrescenta ao Sandbox do SARndbox 2.8 os comandos do modo Rosto no cano de controle:
    rosto <foto.png> [giro 0/90/180/270] [espelho 0/1]   foto projetada que se deforma com a areia
    rostoAjuste <ampliação/cm> <deslocamento/cm> <mistura 0-1> <sombra>
-   esculpir <rosto.dem>                                    relevo-alvo: vermelho/azul = tirar/pôr areia
+   esculpir <rosto.dem>                                    relevo-alvo: vermelho = falta areia, azul = sobra
    relevo                                                  volta à topografia normal
    tesouro [profundidade cm] [segundos] / tesouroFim       caça ao tesouro; achado, some e reaparece
                                                            em outro lugar depois dos segundos (20)
@@ -29,6 +29,16 @@
                                                            peças em cima da primeira nascente
 Também mede quadros por segundo (linha "Desempenho:" no log a cada 30 s) em vez de encher o
 log com "Ran out of time" a cada quadro.
+
+Arquivos do SARndbox mudados aqui (o instalar.sh copia cada um limpo do original antes, e cada troca para
+com erro se o trecho não for achado, em vez de aplicar pela metade):
+  Sandbox.h/.cpp      os comandos acima, o mapa de alturas para os Extras (2x/s), a água lida 4x/s para
+                      os bichos, as leituras da GPU dos jogos/labirinto, Desempenho/Perfil
+  WaterTable2.h/.cpp  setLencol: o lago dos bichos é mantido cheio NA GPU, em todo passo da água. Ler e
+                      reescrever a água pela CPU fazia ela "pular" 4x/s, e o setWaterLevel zera a correnteza
+  FrameFilter.h/.cpp  trava: o relevo embaixo da mão que vem da beirada não muda (senão a mão parada vira
+                      morro colorido em ~1 s e empurra a água)
+  makefile            os .cpp novos (FaceImage, Gesto, Extras, Jogos, Mundo)
 """
 import sys
 
@@ -1283,6 +1293,9 @@ float Sandbox::medeAguaNoAlvo(GLContextData& contextData) const
 		/* Labirinto de água (Projetor-LAOB): */
 		if(extras.labZerarAgua)
 			{
+			/* Esvazia a água ao começar um jogo ou o labirinto (só a água das nascentes conta). O
+			   setWaterLevel do original troca o nível E zera a correnteza: aqui é o que se quer, mas por
+			   isso o lago dos bichos não usa ele para se manter cheio (ver setLencol, mais abaixo). */
 			const GLsizei* ws=waterTable->getSize();
 			std::vector<GLfloat> vazio(size_t(ws[0])*size_t(ws[1]),GLfloat(-1000));
 			waterTable->setWaterLevel(&vazio[0],contextData);

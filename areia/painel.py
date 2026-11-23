@@ -1394,7 +1394,7 @@ const VERSAO = '__VERSAO__';
 const AGUA = __JOGOS__;
 const OUTROS = [
   {id: 'copia', ic: '⛰️', t: 'Copie o relevo', c: 'Esculpa a areia igual ao relevo-alvo.', tag: 'Areia',
-   d: 'O projetor mostra um relevo sorteado (montanha, vulcão, cratera, serra...), com as curvas de nível do alvo em branco. Azul: falta areia, ponha mais. Vermelho: sobra, tire. Verde: já está certo. A barra no canto da areia dá a nota; passando de 85% comemora e sorteia outro. O nível muda a altura e a folga.'},
+   d: 'Um relevo sorteado (montanha, vulcão, cratera, serra...) para fazer no meio da areia. A miniatura do alvo aparece aqui no painel (verde e marrom: monte; azul: buraco); a areia fica com as cores do tema e o cartão no canto dá a nota. Passando de 85% comemora e sorteia outro. O nível muda a altura e a folga.'},
   {id: 'labirinto', ic: '🌊', t: 'Labirinto de água', c: 'Leve a água até a bandeira sem tocar nas armadilhas.', tag: 'Água',
    d: 'No caminho reto entre a nascente e a bandeira há armadilhas vermelhas. Cavem um canal que dê a volta nelas: se a água encostar em uma, some tudo e recomeça. Quando chega à bandeira, o alvo fica dourado e outra rodada começa em 20 s.'},
   {id: 'tesouro', ic: '💰', t: 'Caça ao tesouro', c: 'Um baú escondido embaixo da areia.', tag: 'Escavar',

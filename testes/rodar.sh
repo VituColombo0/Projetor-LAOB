@@ -16,7 +16,7 @@ if command -v shellcheck >/dev/null; then
 else
   echo "  (shellcheck não instalado: só a sintaxe)"
 fi
-echo "== Área de Trabalho: só o atalho do painel"
+echo "== Área de Trabalho: só o atalho do painel e o LEIA-ME"
 n=0
 for at in "$R"/area-de-trabalho/*.desktop; do
   n=$((n+1))
@@ -24,6 +24,17 @@ for at in "$R"/area-de-trabalho/*.desktop; do
 done
 [ $n = 1 ] || { echo "  esperava 1 atalho (o do painel), achei $n"; falhas=1; }
 ls -d "$R"/area-de-trabalho/*/ >/dev/null 2>&1 && { echo "  sobraram pastas em area-de-trabalho/"; falhas=1; }
+# (23/11/2026) além do atalho, só o "LEIA-ME - caixa de areia.txt": curto, sem endereço IP e citando o "Reabrir a areia"
+LEIA="$R/area-de-trabalho/LEIA-ME - caixa de areia.txt"
+[ -s "$LEIA" ] || { echo "  falta o $LEIA"; falhas=1; }
+for f in "$R"/area-de-trabalho/*; do
+  case "$f" in *.desktop|"$LEIA") ;; *) echo "  arquivo a mais em area-de-trabalho/: $f"; falhas=1 ;; esac
+done
+if [ -s "$LEIA" ]; then
+  [ "$(wc -l < "$LEIA")" -le 40 ] || { echo "  o LEIA-ME passou de 40 linhas (o completo é o docs/MANUAL.md)"; falhas=1; }
+  grep -q "Reabrir a areia" "$LEIA" || { echo "  o LEIA-ME não fala do botão 'Reabrir a areia'"; falhas=1; }
+  grep -qE '([0-9]{1,3}\.){3}[0-9]{1,3}' "$LEIA" && { echo "  o LEIA-ME tem um endereço IP"; falhas=1; }
+fi
 echo "== instalador: favoritos, cópia atômica, calibração e --verificar (numa pasta temporária)"
 # (auditoria 23/11/2026) roda as funções do instalar.sh com set -e, como na instalação de verdade
 INST=$(mktemp -d)

@@ -1,0 +1,31 @@
+CAIXA DE AREIA - LEIA-ME
+========================
+
+ABRIR O PAINEL
+  Dois cliques em "Abrir painel da caixa de areia" (aqui na Área de Trabalho).
+  Tudo se faz pelo painel: jogos, bichos, chuva, LAOB, fotos, cores e brilho.
+  Pelo celular ou outro computador do laboratório: o endereço está no canto
+  de baixo, à esquerda, do papel de parede deste PC.
+
+LIGAR
+  Ligue o projetor e depois este PC. Em 1 ou 2 minutos a areia aparece
+  sozinha, com o relevo colorido.
+
+DESLIGAR
+  Menu do canto de cima, à direita > Desligar. Depois, o projetor no botão.
+  Não tire da tomada com o PC ligado.
+
+SE A AREIA NÃO ABRIR OU TRAVAR
+  1. Espere 2 minutos: o vigia abre a areia de novo sozinho.
+  2. Painel > aba Projetor > "Reabrir a areia" (uns 10 segundos).
+  3. A aba Projetor diz se o vigia está "pausado". Se estiver, o botão
+     "Reabrir a areia" religa o vigia.
+  4. Projetor sem imagem nenhuma: confira se ele está ligado e no HDMI.
+  5. Nada disso resolveu? Reinicie o PC (menu > Desligar > Reiniciar).
+  6. Ainda não? Chame o Victor.
+
+MANUAL COMPLETO
+  docs/MANUAL.md no repositório Projetor-LAOB (no GitHub do Victor).
+
+AJUDA
+  Victor (cuida da caixa de areia).

@@ -1,4 +1,16 @@
-"""Acrescenta o modo Rosto ao SurfaceRenderer do SARndbox 2.8 (rodar na pasta da cópia)."""
+"""Acrescenta o modo Rosto ao SurfaceRenderer do SARndbox 2.8 (rodar na pasta da cópia).
+
+O que muda no SurfaceRenderer e por quê:
+- modo Rosto (foto com lente e sombra do relevo) e Esculpir com os extras ligados (19/11/2026: o shader do
+  Esculpir não compilava com as declarações dos extras);
+- o shader dos extras (Extras.cpp) entra no shader do relevo, só com o código da brincadeira em uso
+  (EX_JOGOS/EX_BICHOS/EX_MUNDO): menos GPU por quadro;
+- um programa compilado por chave, guardado (23/11/2026): trocar de brincadeira ou abrir a foto não
+  recompila (antes: 2,2 s para voltar à topografia e um quadro de 3,7 s ao abrir a foto);
+- heightMapShaderUniforms 16 -> 48 (com os extras o shader pede 42 localizações; o static_assert para a
+  compilação se faltar lugar, em vez de escrever por cima da variável seguinte);
+- luzRealce (comando "luz"): o projetor apaga as cores médias; e relevoLuz (sombreamento 3D, 23/11/2026).
+"""
 import sys
 
 def rep(s, old, new, count=1):

@@ -193,8 +193,8 @@ def copia(args):
         print("Copie o relevo encerrado.")
     else:
         f, lv = areia.copia(pedido, args[1] if len(args) > 1 else "normal")
-        print(f"Copie o relevo ligado (nível {lv})! Azul: falta areia. Vermelho: sobra. Verde: já está certo.\n"
-              "A barra no canto mostra a nota; passando de 85%, comemora e sorteia outro relevo.")
+        print(f"Copie o relevo ligado (nível {lv})! Faça no meio da areia o relevo da miniatura do painel.\n"
+              "O cartão no canto da areia mostra a nota; passando de 85%, comemora e sorteia outro relevo.")
     return 0
 
 

@@ -39,6 +39,7 @@ confere "modelos presentes" "[ -s '$D/modelos/u2net_human_seg.onnx' ] && [ -s '$
 MESA=$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")
 confere "Área de Trabalho sem as pastas antigas (tudo pelo painel)" "! ls -d \"$MESA\"/[1-8]\\ -\\ * >/dev/null 2>&1"
 confere "atalho do painel na Área de Trabalho" "[ -x \"$MESA/Abrir painel da caixa de areia.desktop\" ]"
+confere "LEIA-ME igual ao do repositório na Área de Trabalho" "cmp -s \"$MESA/LEIA-ME - caixa de areia.txt\" '$R/area-de-trabalho/LEIA-ME - caixa de areia.txt'"
 confere "fotos em Imagens/Fotos na areia" "[ -d \"\$(xdg-user-dir PICTURES)/Fotos na areia\" ]"
 confere "sem sobras da organização antiga" "[ ! -e '$MESA/Areia' ] && [ ! -e '$MESA/SE A AREIA NÃO ABRIR.txt' ]"
 
@@ -58,7 +59,9 @@ confere "topografia abre (na versão com efeitos)" "areia-topografia >/dev/null 
 [ "$ANTES" = rosto ] || L0=0   # a areia abriu agora: o registro recomeçou do zero
 confere "topografia no projetor, tela cheia" "no_projetor"
 TEMA0=$(readlink "$D/temas/atual.cpt" 2>/dev/null | sed 's/\.cpt$//'); TEMA0=${TEMA0:-classico}
-confere "topografia recebe o efeito do tema" "tem '^Efeito: '"
+# o SARndbox escreve "Efeito:" quando lê o cano, um instante depois de o areia-topografia voltar (23/11/2026:
+# com a troca de 0,2 s, às vezes ainda não estava no registro)
+confere "topografia recebe o efeito do tema" "for _ in \$(seq 1 10); do tem '^Efeito: ' && break; sleep 0.3; done; tem '^Efeito: '"
 confere "troca de tema na hora (< 2 s)" "s=\$(date +%s); areia-tema vulcao >/dev/null && areia-tema '$TEMA0' >/dev/null && [ \$((\$(date +%s) - s)) -lt 2 ]"
 N=$(areia-foto lista | grep -cE '^ +[0-9]+  ')
 if [ "$N" -gt 0 ]; then
@@ -89,8 +92,11 @@ confere "animais marinhos à escolha" "areia-animais mar peixe=6 tubarao=1 tarta
 confere "comida sem bichos que comam: o painel avisa" "areia-animais mar carro=2 pessoa=2 >/dev/null && tem 'Animais: mar (4)' && curl -s -m 5 -X POST -H 'Content-Type: application/json' -d '{\"x\":0.5,\"y\":0.5}' localhost:8090/comida | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if r.get(\"ok\") is False and \"não há bichos que comam\" in r.get(\"msg\",\"\") else 1)'"
 confere "comida pelo painel: pássaros e cachorros vêm" "areia-animais mar peixe=2 passaro=3 cachorro=2 >/dev/null && tem 'Animais: mar (7)' && curl -s -m 5 -X POST -H 'Content-Type: application/json' -d '{\"x\":0.5,\"y\":0.5}' localhost:8090/comida | grep -q '\"ok\":true' && sleep 1 && tem -E '^Comida em x .* \\((terra|agua)\\)'"
 confere "ração na água (racao): bolinhas para os bichos da água" "areia-animais mar peixe=6 tartaruga=1 pato=2 >/dev/null && tem 'Animais: mar (9)' && sleep 3 && marca && '$D/sandbox.sh' cmd 'racao 0.5 0.5 10' >/dev/null && for _ in \$(seq 1 10); do tem -E '^Comida em x .* \\((agua|terra)\\)' && break; sleep 0.3; done; tem -E '^Comida em x .* \\((agua|terra)\\)'"
-confere "dedo apontado de mentira (gestoTeste): comida embaixo dele" "'$D/sandbox.sh' cmd 'gestoTeste 0.3 0.5 2' >/dev/null && for _ in \$(seq 1 10); do tem -E '^Gesto: dedo em .* \\((terra|agua)\\)' && break; sleep 0.3; done; tem -E '^Gesto: dedo em .* \\((terra|agua)\\)' && sleep 2.5 && tem '^Gesto: dedo solto'"
-confere "dedo apontado: diagnóstico (gestoDiag)" "'$D/sandbox.sh' cmd 'gestoDiag 2' >/dev/null && sleep 1 && tem '^GestoDiag: [0-9]* candidato'"
+# Com bichos que comam na terra E na água: o dedo só derruba comida onde alguém come aquilo, e o ponto 0.3 0.5
+# é terra ou água conforme a areia do dia (23/11/2026: com a areia plana virou terra e só havia peixes,
+# tartaruga e patos; o detector nem rodava e o teste falhava sem o código ter mudado)
+confere "dedo apontado de mentira (gestoTeste): comida embaixo dele" "areia-animais mar peixe=6 pato=2 passaro=3 cachorro=2 >/dev/null && tem 'Animais: mar (13)' && sleep 2 && '$D/sandbox.sh' cmd 'gestoTeste 0.3 0.5 2' >/dev/null && for _ in \$(seq 1 10); do tem -E '^Gesto: dedo em .* \\((terra|agua)\\)' && break; sleep 0.3; done; tem -E '^Gesto: dedo em .* \\((terra|agua)\\)' && sleep 2.5 && tem '^Gesto: dedo solto'"
+confere "dedo apontado: diagnóstico (gestoDiag)" "'$D/sandbox.sh' cmd 'gestoDiag 2' >/dev/null && for _ in \$(seq 1 10); do tem '^GestoDiag: [0-9]* candidato' && break; sleep 0.3; done; tem '^GestoDiag: [0-9]* candidato'"
 confere "chuva pelo painel e secar" "curl -s -m 5 -X POST -H 'Content-Type: application/json' -d '{\"x\":0.5,\"y\":0.5}' localhost:8090/chuva | grep -q '\"ok\":true' && sleep 1 && tem '^Chuva: nuvem' && curl -s -m 5 -X POST -H 'Content-Type: application/json' -d '{\"secar\":true}' localhost:8090/chuva | grep -q '\"ok\":true' && sleep 1 && tem '^Chuva: a água foi seca'"
 confere "copie o relevo: alvo sorteado e nota medida" "areia-jogo copia montanha facil >/dev/null && for _ in \$(seq 1 30); do tem '^Copia: [0-9]*%' && break; sleep 0.5; done; tem '^Copia: forma montanha' && curl -s -m 5 localhost:8090/estado | grep -q '\"forma\":\"montanha\"' && areia-jogo copia parar >/dev/null"
 confere "pessoas andando" "areia-animais pessoas 8 >/dev/null && tem 'Animais: pessoas (8)'"

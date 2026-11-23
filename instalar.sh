@@ -248,6 +248,8 @@ verificar() {
   x=$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop"); [ "$x" = "$HOME" ] && x=$HOME/Desktop
   if [ -x "$x/Abrir painel da caixa de areia.desktop" ]; then mostra OK "atalho do painel na Área de Trabalho"
   else mostra AVISO "sem o atalho do painel em $x"; fi
+  if [ -f "$x/LEIA-ME - caixa de areia.txt" ]; then mostra OK "LEIA-ME da caixa de areia na Área de Trabalho"
+  else mostra AVISO "sem o 'LEIA-ME - caixa de areia.txt' em $x (rode o instalar.sh)"; fi
   x=$(xdg-user-dir PICTURES 2>/dev/null || echo "$HOME/Pictures"); [ "$x" = "$HOME" ] && x=$HOME/Pictures
   if [ -d "$x/Fotos na areia" ]; then mostra OK "pasta de fotos ($x/Fotos na areia)"; else mostra AVISO "sem a pasta $x/Fotos na areia"; fi
   if grep -qsF "Fotos%20na%20areia" "$HOME/.config/gtk-3.0/bookmarks"; then mostra OK "favorito das fotos no Arquivos"
@@ -364,7 +366,17 @@ QUIETO=0
 ETAPA="1/8 cópia do SARndbox"
 echo "[1/8] cópia do SARndbox em $DEST (o original em $ORIG fica intacto)"
 if [ ! -d "$DEST" ]; then cp -a "$ORIG" "$DEST"; fi
-# fontes sempre limpas do original antes dos patches
+# Fontes sempre limpas do original antes dos patches: os patch_*.py trocam trechos exatos do SARndbox 2.8 e
+# param se não acharem (aplicar duas vezes, ou sobre uma versão já mudada, daria erro ou código duplicado).
+# Por que cada arquivo (detalhes no cabeçalho de cada patch):
+#   SurfaceRenderer.*  patch_surface.py: modo Foto/Esculpir, shader dos extras, um programa por chave
+#                      (trocas sem recompilar), curvas de nível novas, relevo 3D e o realce de luz
+#   Sandbox.*          patch_sandbox.py: comandos do cano (-cp), Extras/Jogos/Mundo/Gesto, linhas
+#                      Desempenho/Perfil no log em vez de "Ran out of time" a cada quadro
+#   WaterTable2.*      patch_sandbox.py: lençol do lago dos bichos na GPU (setLencol). O setWaterLevel do
+#                      original ZERA a correnteza junto com o nível, então ele só serve para esvaziar a água
+#   FrameFilter.*      patch_sandbox.py: trava do relevo embaixo da mão que vem da beirada (o dedo apontado)
+#   makefile           compila FaceImage, Gesto, Extras, Jogos e Mundo junto
 for f in SurfaceRenderer.h SurfaceRenderer.cpp Sandbox.h Sandbox.cpp WaterTable2.h WaterTable2.cpp FrameFilter.h FrameFilter.cpp makefile; do cp "$ORIG/$f" "$DEST/$f"; done
 instala_calibracao "$CALIB" "$DEST/etc/SARndbox-2.8" "$ORIG/etc/SARndbox-2.8"
 if [ $MODO = instalar ]; then
@@ -442,7 +454,7 @@ mkdir -p "$HOME/.local/bin" "$DEST/fotos"
 for c in "${COMANDOS[@]}"; do ln -sfn "$DEST/$c" "$HOME/.local/bin/$c"; done
 
 ETAPA="7/8 Área de Trabalho e fotos"
-echo "[7/8] tudo pelo painel: fotos em Imagens/Fotos na areia, Área de Trabalho só com o atalho do painel"
+echo "[7/8] tudo pelo painel: fotos em Imagens/Fotos na areia, Área de Trabalho com o atalho do painel e o LEIA-ME"
 MESA=$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop"); [ "$MESA" = "$HOME" ] && MESA=$HOME/Desktop
 IMGS=$(xdg-user-dir PICTURES 2>/dev/null || echo "$HOME/Pictures"); [ "$IMGS" = "$HOME" ] && IMGS=$HOME/Pictures
 FOTOS_DIR="$IMGS/Fotos na areia"
@@ -470,6 +482,13 @@ for at in "$REPO"/area-de-trabalho/*.desktop; do   # só o atalho do painel
   destino="$MESA/$(basename "$at")"
   sed "s#/home/laob#$HOME#g" "$at" > "$destino.novo"; chmod +x "$destino.novo"; mv -f "$destino.novo" "$destino"
   gio set "$destino" metadata::trusted true 2>/dev/null || true
+done
+# o LEIA-ME curto (resumo do docs/MANUAL.md: abrir o painel, se a areia não abrir, a quem chamar; 23/11/2026).
+# Só ele: as pastas 1 a 8 com "COMO USAR.txt" saíram em 13/11/2026 e não voltam.
+for txt in "$REPO"/area-de-trabalho/*.txt; do
+  [ -e "$txt" ] || continue
+  destino="$MESA/$(basename "$txt")"
+  cp -f "$txt" "$destino.novo" && chmod 644 "$destino.novo" && mv -f "$destino.novo" "$destino"
 done
 atualiza_favorito "$HOME/.config/gtk-3.0/bookmarks" "$MESA" "$FOTOS_DIR"
 
