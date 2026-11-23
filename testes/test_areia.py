@@ -100,6 +100,20 @@ class Estado(Ambiente):
         self.assertEqual((e["modo"], e["giro"], e["fundo"]), ("original", 90, ""))
         self.assertEqual(e["ajuste"], {**self.areia.AJUSTE, "zoom": 0.05})
 
+    def test_numeros_estragados_voltam_ao_padrao(self):
+        """23/11/2026: um NaN gravado no estado.json ia para o shader a cada abertura da foto."""
+        escreve(self.areia.ESTADO, '{"giro": "x", "ajuste": {"zoom": NaN, "sombra": Infinity, "mistura": 7, '
+                                   '"desloc": "a"}, "mar": {"peixe": Infinity}}')
+        e = self.areia.estado()
+        self.assertEqual(e["giro"], 0)
+        self.assertEqual(e["ajuste"], {**self.areia.AJUSTE, "mistura": 1.0})   # 7 fica no limite
+        self.assertEqual(self.areia.mar_escolhido(), self.areia.MAR_PADRAO)
+        escreve(self.areia.ESTADO, '{"ajuste": [1, 2]}')
+        self.assertEqual(self.areia.estado()["ajuste"], self.areia.AJUSTE)
+        for ruim in ((float("nan"), 0.5, 8), (0.5, float("inf"), 8), (0.5, 0.5, float("nan")), (True, 0.5, 8)):
+            with self.assertRaisesRegex(self.areia.Erro, "ponto inválido"):
+                self.areia._ponto(*ruim)
+
     def test_salva_e_le_de_volta(self):
         e = self.areia.estado()
         e.update(giro=180, imagem="/x/ç.png")
@@ -132,6 +146,91 @@ class Preparo(Ambiente):
         with self.assertRaisesRegex(self.areia.Erro, "não consegui preparar"):
             self.areia.prepara(p, self.areia.estado())
         self.assertEqual(os.listdir(self.areia.CACHE) if os.path.isdir(self.areia.CACHE) else [], [])
+        with self.assertRaises(self.areia.Erro) as erro:
+            self.areia.prepara(p, self.areia.estado())
+        self.assertNotIn(self.PASTA, str(erro.exception))                # só o nome da foto vai ao painel
+
+
+class LimpezaDasFotos(Ambiente):
+    """23/11/2026: as cópias de uma foto apagada saem do cache e de fotos/rosto.*; a camera.jpg não fica."""
+
+    def test_cache_de_foto_apagada_sai(self):
+        a, b = self.poe("ana.jpg"), self.poe("bruno.jpg", cor=(9, 9, 9))
+        e = self.areia.estado()
+        pa, _ = self.areia.prepara(a, e)
+        pb, _ = self.areia.prepara(b, e)
+        with open(os.path.join(pa, self.areia.ORIGEM)) as f:
+            self.assertEqual(f.read().split("\n")[0], a)
+        os.remove(a)
+        self.assertEqual(self.areia.limpa_cache(), 1)
+        self.assertFalse(os.path.exists(pa))
+        self.assertTrue(os.path.exists(pb))
+        # a mesma imagem com dois nomes (o cache é pelo conteúdo): só sai quando as duas sumirem
+        c = os.path.join(self.PASTA, "bruno-copia.jpg")
+        with open(b, "rb") as f, open(c, "wb") as g:
+            g.write(f.read())
+        self.assertEqual(self.areia.prepara(c, e)[0], pb)
+        os.remove(b)
+        self.assertEqual(self.areia.limpa_cache(), 0)
+        os.remove(c)
+        self.assertEqual(self.areia.limpa_cache(), 1)
+        # cache antigo, sem origem.txt: não se sabe de onde veio, fica (sai só pelo limite de 40)
+        os.makedirs(os.path.join(self.areia.CACHE, "antigo"))
+        self.assertEqual(self.areia.limpa_cache(), 0)
+
+    def test_foto_na_areia_apagada_some_da_previa(self):
+        a = self.poe("ana.jpg")
+        self.areia.mostra(a)
+        rosto = os.path.join(self.areia.FOTOS, "rosto.png")
+        self.assertTrue(os.path.exists(rosto))
+        self.assertEqual(self.areia.limpa_fotos(), 0)                  # a original existe: nada sai
+        self.assertTrue(os.path.exists(rosto))
+        os.remove(a)
+        self.assertGreaterEqual(self.areia.limpa_fotos(), 3)           # cache + rosto.png + rosto.dem
+        self.assertFalse(os.path.exists(rosto))
+        self.assertIsNone(self.areia.estado()["imagem"])
+        self.assertEqual(os.listdir(self.areia.CACHE), [])
+
+    def test_camera_jpg_e_so_passagem(self):
+        from unittest import mock
+        camera = os.path.join(self.areia.FOTOS, "camera.jpg")
+        os.makedirs(self.areia.FOTOS, exist_ok=True)
+
+        def willbert(args, **kw):
+            imagem(camera)
+            return mock.Mock(returncode=0)
+        with mock.patch.object(self.areia.subprocess, "run", willbert):
+            foto = self.areia.foto_da_camera()
+        self.assertTrue(os.path.isfile(foto))
+        self.assertEqual(os.path.dirname(foto), self.areia.pasta_willbert())
+        self.assertFalse(os.path.exists(camera))
+        # falhou (câmera fora da rede): também não sobra nada
+        with mock.patch.object(self.areia.subprocess, "run", lambda a, **kw: imagem(camera) and mock.Mock(returncode=1)):
+            with self.assertRaisesRegex(self.areia.Erro, "câmera não respondeu"):
+                self.areia.foto_da_camera()
+        self.assertFalse(os.path.exists(camera))
+
+
+class FotoPeloNomeExato(Ambiente):
+    def test_nome_dentro_de_outro_nome(self):
+        ana, mariana = self.poe("ana.png"), self.poe("mariana.png")
+        os.makedirs(self.areia.pasta_willbert(), exist_ok=True)
+        wb = imagem(os.path.join(self.areia.pasta_willbert(), "willbert-ana.png"))
+        self.assertEqual(self.areia.acha_exato("ana.png"), ana)          # o acha() dava "mais de uma"
+        self.assertEqual(self.areia.acha_exato("mariana.png"), mariana)
+        self.assertEqual(self.areia.acha_exato("willbert-ana.png"), wb)
+        self.assertEqual(self.areia.acha_exato("ANA.PNG"), ana)          # caixa diferente, mas uma só
+        for ruim in ("ana", "1", "", None, "zé.png"):
+            with self.assertRaises(self.areia.Erro):
+                self.areia.acha_exato(ruim)
+        # caminho de fora: só o nome conta (nunca copia um arquivo de fora para a galeria)
+        fora = os.path.join(self.tmp, "fora")
+        os.mkdir(fora)
+        imagem(os.path.join(fora, "ana.png"), cor=(1, 2, 3))
+        self.assertEqual(self.areia.acha_exato(os.path.join(fora, "ana.png")), ana)
+        with self.assertRaises(self.areia.Erro):
+            self.areia.acha_exato(imagem(os.path.join(fora, "outra.png")))
+        self.assertEqual(sorted(os.listdir(self.PASTA)), sorted(["ana.png", "mariana.png", self.areia.PASTA_WILLBERT]))
 
 
 class Projetor(Ambiente):

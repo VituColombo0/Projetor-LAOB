@@ -6,12 +6,15 @@ Rodar com o venv da pasta:  venv/bin/python painel.py
 import hashlib
 import ipaddress
 import json
+import math
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import threading
 import time
+import urllib.parse
 
 from flask import Flask, Response, abort, jsonify, request, send_file
 
@@ -29,16 +32,86 @@ app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
 trava = threading.Lock()
 
 
+def _ip_permitido(ip):
+    if ip.version == 6 and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    return any(ip in rede for rede in PERMITIDAS)
+
+
+# Nomes aceitos no cabeçalho Host, além dos IPs das redes permitidas: localhost, nomes sem ponto (o nome
+# do laob na rede) e os da rede local ou da Tailscale (MagicDNS). Um nome da internet (rebind.exemplo.com)
+# é recusado: é assim que o "DNS rebinding" faria uma página de fora ler o /estado e a /previa.png pelo
+# navegador de alguém da rede (auditoria de 23/11/2026).
+NOMES_LOCAIS = (".local", ".lan", ".home", ".home.arpa", ".internal", ".localdomain", ".localhost", ".ts.net")
+
+
+def _separa_host(host):
+    """"laob:8090" -> ("laob", 8090); "[fd7a::1]:8090" -> ("fd7a::1", 8090); sem porta: 80."""
+    h = (host or "").strip().lower()
+    porta = None
+    if h.startswith("["):
+        fim = h.find("]")
+        if fim < 0:
+            return "", None
+        h, resto = h[1:fim], h[fim + 1:]
+        porta = resto[1:] if resto.startswith(":") else None
+    elif h.count(":") == 1:
+        h, porta = h.split(":")
+    try:
+        porta = int(porta) if porta else 80
+    except ValueError:
+        return "", None
+    return h.rstrip("."), porta
+
+
+def host_esperado(host):
+    h, porta = _separa_host(host)
+    if not h or porta is None:
+        return False
+    try:
+        return _ip_permitido(ipaddress.ip_address(h))
+    except ValueError:
+        pass
+    if not re.fullmatch(r"[a-z0-9-]+(\.[a-z0-9-]+)*", h):
+        return False
+    return "." not in h or h.endswith(NOMES_LOCAIS)
+
+
+def mesma_origem():
+    """POST só da própria página (contra CSRF): se o navegador diz de onde veio o pedido (Origin, ou
+    Referer na falta dele), tem que ser deste painel. Sem os dois (o Willbert por script em 127.0.0.1,
+    curl, o som.py) vale: quem não é navegador não está sendo enganado por uma página de outro site."""
+    if request.headers.get("Sec-Fetch-Site") == "cross-site":   # reforço: em http:// quase nunca vem
+        return False
+    o = request.headers.get("Origin") or request.headers.get("Referer")
+    if not o:
+        return True
+    if o.strip().lower() == "null":   # página de arquivo, sandbox ou redirecionamento: de fora
+        return False
+    try:
+        u = urllib.parse.urlsplit(o.strip())
+        porta = u.port or {"http": 80, "https": 443}.get(u.scheme)
+    except ValueError:
+        return False
+    return ((u.hostname or "").rstrip("."), porta) == _separa_host(request.host)
+
+
+def _recusa(msg):
+    return jsonify(ok=False, msg=msg), 403
+
+
 @app.before_request
 def valida_rede():
     try:
         ip = ipaddress.ip_address((request.remote_addr or "").split("%")[0])
     except ValueError:
         abort(403)
-    if ip.version == 6 and ip.ipv4_mapped:
-        ip = ip.ipv4_mapped
-    if not any(ip in rede for rede in PERMITIDAS):
+    if not _ip_permitido(ip):
         abort(403)
+    if not host_esperado(request.host):
+        return _recusa("endereço do painel desconhecido: abra pelo IP do laob (está no papel de parede)")
+    if request.method not in ("GET", "HEAD", "OPTIONS") and not mesma_origem():
+        return _recusa("pedido de outra página recusado: use o painel da areia")
 
 
 @app.after_request
@@ -51,17 +124,82 @@ def acorda_o_som(resp):
     return resp
 
 
+def executa(fn):
+    """(ok, mensagem, código HTTP) de fn(), com as falhas viradas em mensagem para o painel."""
+    try:
+        return True, fn() or "Feito", 200
+    except areia.Erro as err:
+        return False, str(err), 400
+    except subprocess.TimeoutExpired:
+        return False, "demorou demais; tente de novo", 504
+    except Exception as err:  # erro inesperado: mensagem legível no painel em vez de uma página 500
+        app.logger.exception("erro no painel")
+        return False, f"erro inesperado ({type(err).__name__}); tente de novo", 500
+
+
 def resposta(fn):
     with trava:
-        try:
-            return jsonify(ok=True, msg=fn() or "Feito")
-        except areia.Erro as err:
-            return jsonify(ok=False, msg=str(err)), 400
-        except subprocess.TimeoutExpired:
-            return jsonify(ok=False, msg="demorou demais; tente de novo"), 504
-        except Exception as err:  # erro inesperado: mensagem legível no painel em vez de uma página 500
-            app.logger.exception("erro no painel")
-            return jsonify(ok=False, msg=f"erro inesperado ({type(err).__name__}); tente de novo"), 500
+        ok, msg, cod = executa(fn)
+    return jsonify(ok=ok, msg=msg), cod
+
+
+class Tarefa:
+    """Trabalho demorado que não mexe no SARndbox (a foto pela câmera, ligar e desligar o Willbert):
+    roda numa linha própria, fora da trava geral, e o /estado conta como está. Antes esses pedidos
+    seguravam a trava do painel por 25 a 90 s e todo botão de todo aparelho ficava esperando (auditoria
+    de 23/11/2026). Uma por vez: a câmera e o Willbert mexem no mesmo go2rtc."""
+
+    def __init__(self):
+        self._trava = threading.Lock()
+        self._fio = None
+        self.info = {"id": 0, "acao": None, "rodando": False, "ok": None, "msg": "", "fim": 0.0}
+
+    def comeca(self, acao, fn):
+        with self._trava:
+            if self.info["rodando"]:
+                faz = {"foto": "tirando a foto pela câmera", "ligar": "ligando o Willbert",
+                       "desligar": "desligando o Willbert"}.get(self.info["acao"], "terminando o pedido anterior")
+                raise areia.Erro(f"espere: ainda {faz}")
+            self.info = {"id": self.info["id"] + 1, "acao": acao, "rodando": True, "ok": None, "msg": "", "fim": 0.0}
+            self._fio = threading.Thread(target=self._roda, args=(fn,), daemon=True, name="tarefa-" + acao)
+            self._fio.start()
+            return self.info["id"]
+
+    def _roda(self, fn):
+        ok, msg, _ = executa(fn)
+        with self._trava:
+            self.info.update(rodando=False, ok=ok, msg=msg, fim=time.time())
+
+    def espera(self, segundos=30):
+        """Para os testes: até a tarefa terminar."""
+        if self._fio is not None:
+            self._fio.join(segundos)
+
+    def estado(self):
+        with self._trava:
+            return dict(self.info)
+
+
+TAREFA = Tarefa()
+
+
+def numero(v, menor, maior, nome="valor"):
+    """Número finito dentro da faixa, ou Erro. Recusa NaN e Infinity (o JSON do Flask aceita os dois),
+    texto que não é número e verdadeiro/falso."""
+    if isinstance(v, bool):
+        raise areia.Erro(f"{nome} inválido")
+    try:
+        x = float(v)
+    except (TypeError, ValueError, OverflowError):
+        raise areia.Erro(f"{nome} inválido")
+    if not math.isfinite(x) or not menor <= x <= maior:
+        raise areia.Erro(f"{nome} fora da faixa ({decimal(menor)} a {decimal(maior)})")
+    return x
+
+
+def decimal(v):
+    """5.5 -> "5,5" (as mensagens do painel são em português)."""
+    return f"{v:g}".replace(".", ",")
 
 
 @app.get("/")
@@ -104,6 +242,10 @@ def ver_estado():
     else:
         e["fotos_willbert"] = []
     e["som"] = som.estado()
+    e["tarefa"] = TAREFA.estado()   # câmera / ligar / desligar o Willbert em segundo plano
+    e["vigia"] = vigia_estado()   # resumo da saúde (a linha inteira vem do /saude, só na aba Projetor)
+    # o SARndbox original no lugar da versão completa (o sandbox.sh diz "original"; o vigia novo, "reserva")
+    e["reserva"] = e["sandbox"] in ("original", "reserva") or e["vigia"]["reserva"]
     return jsonify(e)
 
 
@@ -115,24 +257,83 @@ def previa():
     return send_file(p, mimetype="image/png", max_age=0)
 
 
+FORMATO_RUIM = ("não consegui abrir essa imagem: mande JPG, PNG ou WEBP "
+                "(HEIC do iPhone: converta antes ou use \"mais compatível\" na câmera)")
+
+
+def confere_imagem(origem, ext):
+    """Abre a imagem enviada ANTES de guardar (23/11/2026): antes um HEIC ou um arquivo quebrado virava
+    um .jpg na galeria e um chip que sempre falhava. O que o OpenCV lê mas está fora da lista (GIF,
+    AVIF, JFIF, sem extensão) é regravado como PNG, para o arquivo da galeria ser o que diz ser.
+    Devolve o caminho a guardar e a extensão."""
+    try:
+        import cv2   # só aqui: o painel sobe sem carregar o OpenCV
+    except ImportError:
+        if ext in areia.EXT:
+            return origem, ext   # (sem OpenCV o rosto.py também não abriria; no venv não acontece)
+        raise areia.Erro(FORMATO_RUIM)
+    img = cv2.imread(origem, cv2.IMREAD_UNCHANGED)
+    if img is None or img.size == 0:
+        raise areia.Erro(FORMATO_RUIM)
+    if ext in areia.EXT:
+        return origem, ext
+    png = os.path.join(os.path.dirname(origem), "convertida.png")
+    if not cv2.imwrite(png, img):
+        raise areia.Erro(FORMATO_RUIM)
+    return png, ".png"
+
+
+def _arquivos(p):
+    try:
+        return set(os.listdir(p))
+    except OSError:
+        return set()
+
+
+def foto_da_camera_e_mostra():
+    """Em segundo plano (Tarefa): a câmera fica fora da trava geral; só a projeção pega a trava."""
+    img = areia.foto_da_camera()
+    with trava:
+        areia.mostra(img, modo="rosto")
+    return f"Foto da câmera na areia ({os.path.basename(img)})"
+
+
 @app.post("/foto")
 def foto():
+    arq = request.files.get("foto")
+    if not (arq and arq.filename):   # sem arquivo: a câmera do laboratório (botão da aba Fotos)
+        try:
+            n = TAREFA.comeca("foto", foto_da_camera_e_mostra)
+        except areia.Erro as err:
+            return jsonify(ok=False, msg=str(err)), 409
+        return jsonify(ok=True, msg="Tirando a foto pela câmera… (uns segundos)", tarefa=n)
+
     def faz():
-        arq = request.files.get("foto")
-        if arq and arq.filename:
-            ext = os.path.splitext(arq.filename)[1].lower()
-            ext = ext if ext in areia.EXT else ".jpg"
-            with tempfile.TemporaryDirectory() as tmp:
-                origem = os.path.join(tmp, "foto" + ext)
-                arq.save(origem)
-                base = re.sub(r"[^A-Za-z0-9_-]+", "-", os.path.splitext(arq.filename)[0])[:40]
-                prefixo = base if base.startswith("willbert-") else "celular"
-                sub = areia.pasta_willbert() if prefixo.startswith("willbert-") else None
-                img = areia.guarda(origem, time.strftime(f"{prefixo}-%Y-%m-%d-%H%M%S") + ext, pasta_destino=sub)
-                if prefixo.startswith("willbert-"):
-                    areia.arquiva_willbert()
-        else:
-            img = areia.foto_da_camera()
+        ext = os.path.splitext(arq.filename)[1].lower()
+        ext = ext if re.fullmatch(r"\.[a-z0-9]{1,5}", ext) else ""
+        with tempfile.TemporaryDirectory() as tmp:
+            origem = os.path.join(tmp, "foto" + ext)
+            arq.save(origem)
+            origem, ext = confere_imagem(origem, ext)
+            base = re.sub(r"[^A-Za-z0-9_-]+", "-", os.path.splitext(arq.filename)[0])[:40]
+            prefixo = base if base.startswith("willbert-") else "celular"
+            sub = areia.pasta_willbert() if prefixo.startswith("willbert-") else areia.pasta()
+            antes = _arquivos(sub)
+            img = areia.guarda(origem, time.strftime(f"{prefixo}-%Y-%m-%d-%H%M%S") + ext, pasta_destino=sub)
+            nova = os.path.basename(img) not in antes
+            if prefixo.startswith("willbert-"):
+                areia.arquiva_willbert()
+        e = areia.estado()
+        try:
+            areia.prepara(img, e, e["fundo"])   # (fica no cache: o mostra() logo abaixo não prepara de novo)
+        except areia.Erro:
+            if nova:   # não deu para preparar: a foto recém-chegada não fica na galeria como chip quebrado
+                try:
+                    os.remove(img)
+                except OSError:
+                    pass
+            raise
+        # daqui em diante a foto é boa: se o projetor falhar (areia fechada...), ela fica na galeria
         areia.mostra(img, modo="rosto")
         return f"{os.path.basename(img)} projetado"
     return resposta(faz)
@@ -142,10 +343,7 @@ def foto():
 def escolher():
     def faz():
         dados = request.get_json(silent=True) or {}
-        nome = os.path.basename(str(dados.get("imagem") or ""))  # só fotos das pastas do painel
-        if not nome:
-            raise areia.Erro("escolha uma foto")
-        img = areia.acha(nome)
+        img = areia.acha_exato(dados.get("imagem"))   # o nome exato do chip, só das pastas do painel
         areia.mostra(img, modo="rosto")
         return f"{os.path.basename(img)} projetado"
     return resposta(faz)
@@ -174,10 +372,10 @@ def brincar():
             raise areia.Erro("nível: facil, normal ou dificil")
         if acao == "fossil" or acao in areia.FOSSEIS:
             nome, prof = areia.fossil("trex" if acao == "fossil" else acao, nivel)
-            return f"Fóssil de {nome} enterrado a {prof:g} cm"
+            return f"Fóssil de {nome} enterrado a {decimal(prof)} cm"
         if acao == "tesouro":
             prof = areia.tesouro(nivel)
-            return f"Tesouro escondido a {prof:g} cm"
+            return f"Tesouro escondido a {decimal(prof)} cm"
         if acao == "labirinto":
             d = areia.labirinto(nivel)
             return f"Labirinto de água ({areia.LABIRINTO[d].split()[0]})"
@@ -186,7 +384,9 @@ def brincar():
             return "Nova rodada iniciada"
         if acao == "copia":
             f, lv = areia.copia("sorteio", nivel)
-            return f"Copie o relevo ({('fácil', 'normal', 'difícil')[lv - 1]}): {areia.FORMAS.get(f, 'sorteado')}"
+            # a forma só sai no sorteio do SARndbox, depois: o placar da aba Jogos mostra qual foi
+            return (f"Copie o relevo ({('fácil', 'normal', 'difícil')[lv - 1]}): "
+                    + (areia.FORMAS[f] if f in areia.FORMAS else "forma sorteada (veja o alvo abaixo)"))
         if acao == "copiaNova":
             areia.copia_nova()
             return "Outro relevo sorteado"
@@ -232,21 +432,31 @@ def willbert_estado():
     return est
 
 
+def _liga_desliga_willbert(acao):
+    try:
+        r = subprocess.run(WILLBERT + [acao], capture_output=True, text=True, timeout=90)
+    except subprocess.TimeoutExpired:
+        raise areia.Erro(f"o Willbert demorou demais para {acao}")
+    except (OSError, subprocess.SubprocessError) as e:
+        raise areia.Erro(f"não consegui {acao} o Willbert ({e})")
+    finally:
+        _willbert_cache[0] = 0.0   # a pílula pergunta de novo ao systemd
+    if r.returncode != 0:
+        raise areia.Erro(f"não consegui {acao} o Willbert: {(r.stdout + r.stderr).strip()[:200]}")
+    return "Willbert ligado (pronto em uns 30 s)" if acao == "ligar" else "Willbert desligado"
+
+
 @app.post("/willbert")
 def willbert():
-    def faz():
-        acao = (request.get_json(silent=True) or {}).get("acao")
-        if acao not in ("ligar", "desligar"):
-            raise areia.Erro("use ligar ou desligar")
-        try:
-            r = subprocess.run(WILLBERT + [acao], capture_output=True, text=True, timeout=90)
-        except (OSError, subprocess.SubprocessError) as e:
-            raise areia.Erro(f"não consegui {acao} o Willbert ({e})")
-        if r.returncode != 0:
-            raise areia.Erro(f"não consegui {acao} o Willbert: {(r.stdout + r.stderr).strip()[:200]}")
-        _willbert_cache[0] = 0.0
-        return "Willbert ligado (pronto em uns 30 s)" if acao == "ligar" else "Willbert desligado"
-    return resposta(faz)
+    """Ligar/desligar em segundo plano (Tarefa): responde na hora e o /estado traz o resultado."""
+    acao = (request.get_json(silent=True) or {}).get("acao")
+    if acao not in ("ligar", "desligar"):
+        return jsonify(ok=False, msg="use ligar ou desligar"), 400
+    try:
+        n = TAREFA.comeca(acao, lambda: _liga_desliga_willbert(acao))
+    except areia.Erro as err:
+        return jsonify(ok=False, msg=str(err)), 409
+    return jsonify(ok=True, msg=("Ligando" if acao == "ligar" else "Desligando") + " o Willbert…", tarefa=n)
 
 
 @app.post("/mar")
@@ -262,10 +472,16 @@ def ajustar_som():
     """Volume e mudo do cabeçalho: valem para tudo (ambiente automático e efeitos). Os botões de testar
     cada efeito saíram em 19/11/2026: o som é automático (pedido do Victor)."""
     dados = request.get_json(silent=True) or {}
-    if "volume" in dados:
-        som.definir_volume(dados["volume"])
+    try:   # antes {"volume": "x"} ou Infinity davam uma página 500 em HTML
+        vol = round(numero(dados["volume"], -1e6, 1e6, "volume")) if "volume" in dados else None
+        if "mudo" in dados and not isinstance(dados["mudo"], (bool, int)):
+            raise areia.Erro("mudo inválido")
+    except areia.Erro as err:
+        return jsonify(ok=False, msg=str(err), som=som.estado()), 400
+    if vol is not None:
+        som.definir_volume(vol)   # (o som.py limita a 0-100)
     if "mudo" in dados:
-        som.definir_mudo(dados["mudo"])
+        som.definir_mudo(bool(dados["mudo"]))
     return jsonify(ok=True, som=som.estado())
 
 
@@ -276,6 +492,9 @@ def chuva():
         if d.get("secar"):
             areia.secar()
             return "Água seca"
+        if d.get("tudo"):
+            areia.chuva_tudo(d.get("segundos") or 10)
+            return "Chovendo na areia toda"
         areia.chuva(d.get("x"), d.get("y"), d.get("segundos") or 8)
         return "Chovendo nesse ponto por uns segundos"   # o som vem do vigia do som.py ("Chuva: nuvem" no registro)
     return resposta(faz)
@@ -286,7 +505,7 @@ def comida():
     def faz():
         d = request.get_json(silent=True) or {}
         c = areia.comida(d.get("x"), d.get("y"))
-        o_que = {"agua": "Ração na água", "terra": "Pão na areia"}.get(c["onde"], "Comida jogada")
+        o_que = {"agua": "Ração na água", "terra": "Tigela de ração na areia"}.get(c["onde"], "Comida jogada")
         return o_que + ": " + quem_vem_comer(c["comem"])
     return resposta(faz)
 
@@ -442,20 +661,149 @@ def ajuste():
     def faz():
         d = request.get_json(silent=True) or {}
         e = areia.estado()
-        try:
-            for k in areia.AJUSTE:
-                if k in d:
-                    e["ajuste"][k] = float(d[k])
-            giro = int(d["giro"]) if "giro" in d else None
-        except (TypeError, ValueError):
-            raise areia.Erro("valor inválido")
+        for k, (menor, maior) in areia.FAIXAS_AJUSTE.items():   # NaN e infinito ficavam gravados no estado
+            if k in d:
+                e["ajuste"][k] = numero(d[k], menor, maior, k)
+        giro = None
+        if "giro" in d:
+            g = numero(d["giro"], -3600, 3600, "giro")
+            if g % 90:
+                raise areia.Erro("giro: 0, 90, 180 ou 270")
+            giro = int(g) % 360
+        if "espelho" in d and not isinstance(d["espelho"], bool):
+            raise areia.Erro("espelho: verdadeiro ou falso")
         if giro is not None or "espelho" in d:
             areia.salva(e)
-            areia.reorienta(giro=giro, espelho=bool(d["espelho"]) if "espelho" in d else None)
-            return "Giro ajustado"
+            areia.reorienta(giro=giro, espelho=d.get("espelho"))
+            if giro is None:
+                return "Foto espelhada" if d["espelho"] else "Foto sem espelho"
+            return f"Foto girada: {giro}°"
         areia.ajusta(e)
         return "Ajustado"
     return resposta(faz)
+
+
+# ---------- saúde (23/11/2026, aprovada na revisão final): uma linha na aba Projetor ----------
+# Tudo barato: o fim do sandbox.log e do inicio.log, o disco e o /proc/uptime; o nvidia-smi e o
+# "areia-vigia estado" são processos, então ficam guardados (10 s) e com tempo máximo.
+
+VIGIA = os.environ.get("AREIA_VIGIA") or os.path.join(areia.D, "areia-vigia")
+NVIDIA_SMI = os.environ.get("AREIA_NVIDIA_SMI") or "nvidia-smi"
+_caches = {}
+
+
+def _guardado(nome, segundos, fn):
+    agora = time.monotonic()
+    quando, valor = _caches.get(nome, (None, None))
+    if quando is None or agora - quando > segundos:
+        valor = fn()
+        _caches[nome] = (agora, valor)
+    return valor
+
+
+def _fim_do_arquivo(caminho, n=65536):
+    """As linhas do fim do arquivo (só os últimos n bytes: o registro cresce o dia todo)."""
+    try:
+        with open(caminho, "rb") as f:
+            tam = os.fstat(f.fileno()).st_size
+            f.seek(max(0, tam - n))
+            return f.read().decode("utf-8", "replace").splitlines()
+    except OSError:
+        return []
+
+
+def _desempenho():
+    """Da última linha "Desempenho:" (a cada 30 s) e da última "Perfil:" do sandbox.log."""
+    d = {"qps": None, "agua": None, "p99": None}
+    for l in reversed(_fim_do_arquivo(os.path.join(areia.D, "sandbox.log"))):
+        if d["qps"] is None and l.startswith("Desempenho:"):
+            m = re.search(r"(\d+(?:[.,]\d+)?) quadros/s", l)
+            d["qps"] = float(m.group(1).replace(",", ".")) if m else None
+            m = re.search(r"andou (\d+(?:[.,]\d+)?)%", l)   # (registros antigos não têm: fica vazio)
+            d["agua"] = float(m.group(1).replace(",", ".")) if m else None
+        elif d["p99"] is None and l.startswith("Perfil:"):
+            m = re.search(r"\bp99 (\d+(?:\.\d+)?)", l)
+            d["p99"] = float(m.group(1)) if m else None
+        if d["qps"] is not None and d["p99"] is not None:
+            break
+    return d
+
+
+def _gpu():
+    """(temperatura °C, uso %) da placa, ou (None, None) sem nvidia-smi."""
+    try:
+        out = subprocess.run([NVIDIA_SMI, "--query-gpu=temperature.gpu,utilization.gpu",
+                              "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=3).stdout
+        t, u = [int(float(v)) for v in out.splitlines()[0].split(",")[:2]]
+        return t, u
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+        return None, None
+
+
+def _le_vigia():
+    """{"estado": "vigiando" | "pausado" | None, "ate": "HH:MM" | None, "reserva": bool}. Lê o
+    "areia-vigia estado" com tolerância: o antigo diz só "pausado"/"vigiando"; o novo pode dizer
+    "pausado até HH:MM" e falar da reserva. Sem o comando, olha o arquivo de pausa (sem-vigia)."""
+    v = {"estado": None, "ate": None, "reserva": False}
+    try:
+        out = subprocess.run([VIGIA, "estado"], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        out = None
+    if out is None:
+        if os.path.exists(os.path.join(areia.D, "sem-vigia")):
+            v["estado"] = "pausado"
+        return v
+    for linha in out.strip().lower().splitlines():
+        linha = linha.strip()
+        if linha.startswith("pausado"):
+            v["estado"] = "pausado"
+            m = re.search(r"at[ée] (?:às )?(\d{1,2})[:h](\d{2})", linha)
+            v["ate"] = f"{int(m.group(1)):02d}:{m.group(2)}" if m else None
+        elif linha.startswith("vigiando") and v["estado"] is None:
+            v["estado"] = "vigiando"
+        # "reserva" numa linha que não a nega ("reserva: não", "sem reserva", "reserva=0")
+        if "reserva" in linha and not re.search(r"\b(n[ãa]o|sem|false|off|nenhuma)\b|[=:]\s*0\b", linha):
+            v["reserva"] = True
+    return v
+
+
+def vigia_estado():
+    return _guardado("vigia", 10, _le_vigia)
+
+
+# linhas boas do inicio.log (o resto é aviso: Kinect sumido, areia fechada, parada, GNOME travado...)
+_INICIO_BOM = re.compile(r"topografia aberta|vigia (ligado|religado|voltou)|^\s*$")
+
+
+def _ultimo_aviso():
+    for l in reversed(_fim_do_arquivo(os.path.join(areia.D, "inicio.log"), 16384)):
+        if not _INICIO_BOM.search(l):
+            return l.strip()[:160]
+    return None
+
+
+def _calcula_saude():
+    s = dict(_desempenho())
+    s["gpu_temp"], s["gpu_uso"] = _guardado("gpu", 10, _gpu)
+    try:
+        s["disco_livre_gb"] = round(shutil.disk_usage(areia.D).free / 1e9, 1)
+    except OSError:
+        s["disco_livre_gb"] = None
+    try:
+        with open("/proc/uptime") as f:
+            s["ligado_s"] = int(float(f.read().split()[0]))
+    except (OSError, ValueError, IndexError):
+        s["ligado_s"] = None
+    s["ultimo_aviso"] = _ultimo_aviso()
+    s["vigia"] = vigia_estado()
+    s["sandbox"] = areia.qual()
+    s["reserva"] = s["sandbox"] in ("original", "reserva") or s["vigia"]["reserva"]
+    return s
+
+
+@app.get("/saude")
+def saude():
+    return jsonify(_guardado("saude", 5, _calcula_saude))
 
 
 PAGINA = """<!doctype html>
@@ -474,12 +822,12 @@ PAGINA = """<!doctype html>
   --border: #e3d9c7;
   --border-strong: #cdbfa6;
   --fg: #2a2218;
-  --muted: #7a6d5a;
+  --muted: #6e6150;   /* 23/11/2026: um pouco mais escuros, para o texto pequeno passar de 4,5:1 */
   --accent: #1f7a8c;
   --accent-soft: #d8eef1;
   --accent-fg: #ffffff;
   --gold: #c9971c;
-  --ok: #2f8f4e;
+  --ok: #24733d;
   --danger-bg: #fdecea;
   --danger-border: #f3c2bc;
   --danger-fg: #b3261e;
@@ -569,11 +917,14 @@ button, label.btn {
 }
 button:hover, label.btn:hover { border-color: var(--border-strong); }
 button:active, label.btn:active { transform: scale(.97); }
-button:focus-visible, label.btn:focus-within, .jogo:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:focus-visible, label.btn:focus-within, .jogo:focus-visible, .quadro-chuva:focus-visible,
+input[type=range]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 .primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 .danger { background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger-fg); }
 button:disabled { opacity: .55; cursor: progress; }
+button.indisponivel:disabled { cursor: not-allowed; }
+.motivo { font-size: .8rem; color: var(--muted); margin-top: 6px; }
 body.ocupado button, body.ocupado label.btn, body.ocupado .chip { cursor: progress; }
 /* retorno no próprio botão: girando enquanto envia, ✓ quando a areia aceitou, tremida se falhou */
 .carregando, .feito, .falhou { position: relative; }
@@ -594,14 +945,14 @@ input[type=file] { display: none; }
 [hidden] { display: none !important; }
 
 .seg { display: inline-flex; background: var(--surface2); border: 1px solid var(--border); border-radius: 11px; padding: 3px; gap: 2px; }
-.seg button { min-height: 34px; padding: 6px 12px; border: 0; background: transparent; font-size: .84rem; border-radius: 8px; }
+.seg button { min-height: 44px; padding: 6px 12px; border: 0; background: transparent; font-size: .84rem; border-radius: 8px; }
 .seg button.active { background: var(--accent); color: var(--accent-fg); }
 
 /* som no cabeçalho: mudo (um toque) e volume; valem para o ambiente e os efeitos */
 .som { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
 .som .btn-som { width: 44px; min-height: 44px; padding: 0; font-size: 1.15rem; border-radius: 11px; }
 .som .btn-som.mudo { background: var(--danger-bg); border-color: var(--danger-border); }
-.som input[type=range] { width: 110px; accent-color: var(--accent); cursor: pointer; }
+.som input[type=range] { width: 110px; height: 44px; accent-color: var(--accent); cursor: pointer; }
 .som.mudo input[type=range] { opacity: .45; }
 .som span { font-size: .8rem; font-weight: 700; color: var(--muted); min-width: 34px; font-variant-numeric: tabular-nums; }
 @media (max-width: 520px) { .som input[type=range] { width: 76px; } .som span { display: none; } }
@@ -618,7 +969,7 @@ input[type=file] { display: none; }
 /* abas: uma parte do painel por vez (antes era uma página só, comprida) */
 .abas { display: flex; gap: 6px; margin-top: 10px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .abas::-webkit-scrollbar { display: none; }
-.abas button { flex: 1 0 auto; min-height: 40px; padding: 6px 12px; font-size: .86rem; white-space: nowrap; border-radius: 999px; }
+.abas button { flex: 1 0 auto; min-height: 44px; padding: 6px 12px; font-size: .86rem; white-space: nowrap; border-radius: 999px; gap: 6px; }
 .abas button.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 section.card[hidden] { display: none; }
 section.card { animation: entra .18s ease-out; }
@@ -633,7 +984,7 @@ section.card { animation: entra .18s ease-out; }
 .jogo:hover .c, .jogo.aberto .c { display: block; }
 .jogo.aberto { grid-column: 1 / -1; }
 .barra { flex-wrap: nowrap; margin-bottom: 10px; }
-.barra .danger { min-height: 34px; padding: 6px 12px; font-size: .84rem; white-space: nowrap; }
+.barra .danger { min-height: 44px; padding: 6px 12px; font-size: .84rem; white-space: nowrap; }
 section.card { padding: 14px; margin-bottom: 12px; }
 h2 { margin-bottom: 10px; }
 .hint { margin-bottom: 10px; }
@@ -642,11 +993,19 @@ h2 { margin-bottom: 10px; }
   .logo { width: 30px; height: 30px; border-radius: 9px; }
   h1 { font-size: 1.05rem; }
   .sub { display: none; }
-  .pills { flex-wrap: nowrap; overflow-x: auto; margin-top: 8px; scrollbar-width: none; }
-  .pills::-webkit-scrollbar { display: none; }
+  /* 23/11/2026: as pílulas quebram a linha em vez de sumir pela direita ("Willbert desli…"), e a
+     pílula "Nenhuma brincadeira" some quando não há nada; as seis abas cabem numa fila (figura em
+     cima, nome embaixo): antes "Fotos" e "Projetor" ficavam fora da tela, sem sinal de que havia mais */
+  .pills { margin-top: 8px; gap: 4px 6px; flex-wrap: nowrap; }
   .pill { white-space: nowrap; flex: none; }
-  .abas { margin-top: 8px; }
-  .abas button { min-height: 36px; padding: 5px 10px; font-size: .82rem; }
+  .pill.vazia { display: none; }
+  /* numa linha só: a brincadeira (o nome mais comprido) é que encurta com "…"; areia e Willbert inteiros */
+  #p-sit { flex: 0 1 auto; min-width: 0; }
+  #p-sit #sit { overflow: hidden; text-overflow: ellipsis; }
+  .abas { margin-top: 8px; display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; overflow: visible; }
+  .abas button { min-height: 46px; padding: 3px 1px; font-size: .68rem; flex-direction: column; gap: 1px;
+    border-radius: 12px; line-height: 1.1; min-width: 0; }
+  .abas button .ic { font-size: 1.05rem; line-height: 1.1; }
   .barra .lbl { display: none; }
   .seg button { padding: 6px 9px; }
   #sec-jogos .hint { display: none; }
@@ -683,7 +1042,7 @@ h2 { margin-bottom: 10px; }
   transition: max-height .25s ease, opacity .2s ease, margin .2s;
 }
 .jogo .acoes { display: none; gap: 6px; }
-.jogo .acoes button { flex: 1; min-height: 38px; font-size: .84rem; }
+.jogo .acoes button { flex: 1; min-height: 44px; font-size: .84rem; }
 .jogo:hover .desc, .jogo.aberto .desc { max-height: 220px; opacity: 1; margin-top: 2px; }
 .jogo.aberto .acoes { display: flex; }
 @media (hover: hover) { .jogo:hover .acoes { display: flex; } }
@@ -719,8 +1078,8 @@ input[type=range] { accent-color: var(--accent); }
   background: var(--surface2); border: 1px solid var(--border);
 }
 .especie .e { font-size: 1.3rem; }
-.especie .r { flex: 1; font-weight: 600; font-size: .9rem; }
-.especie button { min-height: 36px; width: 36px; padding: 0; font-size: 1.1rem; }
+.especie .r { flex: 1; min-width: 0; font-weight: 600; font-size: .9rem; }
+.especie button { min-height: 44px; width: 44px; padding: 0; font-size: 1.1rem; flex: none; }
 .especie .n { width: 1.6em; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
 .especie.zero .r, .especie.zero .e { opacity: .45; }
 .grupo-especie { grid-column: 1 / -1; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
@@ -736,6 +1095,14 @@ input[type=range] { accent-color: var(--accent); }
   position: absolute; top: 8px; left: 8px; font-size: .72rem; font-weight: 700; padding: 3px 8px; border-radius: 999px;
   background: rgba(0,0,0,.55); color: #ff6b6b; pointer-events: none;
 }
+/* 23/11/2026: o que fazer na imagem fica sempre à vista (antes sumia quando chegava o primeiro quadro, e
+   no celular as dicas ficam escondidas: sobrava uma foto sem sinal de que era um controle) */
+.quadro-chuva .toque {
+  position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); z-index: 1; white-space: nowrap;
+  font-size: .78rem; font-weight: 700; padding: 4px 10px; border-radius: 999px;
+  background: rgba(0,0,0,.6); color: #fff; pointer-events: none;
+}
+.quadro-chuva:not(.vivo) .toque { display: none; }   /* sem imagem, o aviso grande do meio já diz */
 .quadro-chuva .nuvem-chuva { z-index: 2; position: absolute; width: 64px; height: 64px; margin: -40px 0 0 -32px;
   pointer-events: none; animation: nuvem-chega .45s ease-out both; transition: opacity .8s ease; }
 .quadro-chuva .nuvem-chuva.indo { opacity: 0; }
@@ -756,11 +1123,13 @@ input[type=range] { accent-color: var(--accent); }
 }
 .morador .bola { width: 10px; height: 10px; border-radius: 50%; background: var(--border-strong); flex: none; }
 .morador.aqui .bola { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); }
+/* sem o Willbert ninguém sabe quem está no laboratório: sem bolinha (cinza parecia "não está"; 23/11/2026) */
+.moradores.sem-presenca .bola { display: none; }
 .morador .n { font-weight: 700; }
 .morador .f { font-size: .8rem; font-weight: 500; color: var(--muted); }
 /* vista do laboratório (20/11/2026): área que aparece na areia e "seguir" ao lado de cada membro */
 .vistas { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; }
-.vistas button { min-height: 38px; padding: 6px 8px; font-size: .84rem; }
+.vistas button { min-height: 44px; padding: 6px 8px; font-size: .84rem; }
 .morador-linha { display: flex; gap: 6px; min-width: 0; }
 .morador-linha .morador { flex: 1; min-width: 0; }
 .morador-linha .seguir { flex: none; padding: 6px 10px; font-size: .8rem; }
@@ -769,10 +1138,11 @@ input[type=range] { accent-color: var(--accent); }
 
 /* fotos */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-.chip {
-  font-size: .78rem; color: var(--muted); border: 1px solid var(--border); background: var(--surface2);
-  padding: 5px 10px; border-radius: 999px; cursor: pointer; max-width: 100%;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+/* chips das fotos: botões de verdade (teclado e leitor de tela), 44 px de altura para o dedo */
+button.chip {
+  display: block; font-size: .8rem; font-weight: 500; color: var(--muted); border: 1px solid var(--border);
+  background: var(--surface2); padding: 4px 12px; min-height: 44px; border-radius: 999px; cursor: pointer;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .chip:hover { color: var(--fg); border-color: var(--border-strong); }
 img#prev {
@@ -780,6 +1150,12 @@ img#prev {
   border-radius: 12px; border: 1px solid var(--border);
   background: repeating-conic-gradient(var(--surface2) 0 25%, var(--surface) 0 50%) 50% / 16px 16px;
 }
+/* saúde da areia (aba Projetor): uma linha compacta, com o que está fora do normal em vermelho */
+.saude { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: .8rem; color: var(--muted); margin-bottom: 10px;
+  font-variant-numeric: tabular-nums; }
+.saude b { color: var(--fg); font-weight: 700; }
+.saude .ruim, .saude .ruim b { color: var(--danger-fg); }
+.saude .aviso { flex-basis: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 details summary { cursor: pointer; font-size: .84rem; color: var(--muted); margin-top: 12px; list-style: none; }
 details summary::-webkit-details-marker { display: none; }
 footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top: 8px; }
@@ -798,14 +1174,45 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
   .abas { flex-wrap: nowrap; }
   .abas button { flex: 0 1 auto; padding: 6px 18px; }
   img#prev { max-height: 300px; }
+  /* 23/11/2026: cada aba numa tela de 1366x768. Chuva: o quadro diminui com a altura da janela (os
+     botões embaixo dele ficavam abaixo da dobra). Vida: a escolha dos bichos à esquerda e o quadro
+     da comida à direita (antes o quadro ficava 600 px abaixo, fora da tela). Mesma ordem e conteúdo. */
+  #quadro-chuva { width: min(100%, calc(max(260px, 100vh - 400px) * 4 / 3)); }
+  section.card[data-aba="bichos"] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 30%);
+    column-gap: 16px; align-items: start; }
+  section.card[data-aba="bichos"] > h2 { grid-column: 1 / -1; }
+  section.card[data-aba="bichos"] > :not(h2):not(.lado-comida) { grid-column: 1; }
+  section.card[data-aba="bichos"] > .lado-comida { grid-column: 2; grid-row: 2 / span 3; }
+  #quadro-comida { margin: 0 !important; max-width: none; }
+  .lado-comida .hint { margin: 8px 0 0; }
+  section.card[data-aba="bichos"] .especies { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  section.card[data-aba="bichos"] .especie { padding: 3px 6px 3px 8px; gap: 4px; }
+  section.card[data-aba="bichos"] .especie .r { font-size: .84rem; }
+  section.card[data-aba="bichos"] .especie .n { width: 1.4em; }
+  main { padding-bottom: 8px; }
+  footer { margin-top: 0; }
 }
 
 /* celular: listas mais baixas e sem os textos longos (ficam no computador) */
 @media (max-width: 520px) {
-  .especies { grid-template-columns: 1fr; gap: 5px; }
-  .especie { padding: 3px 8px; }
-  .especie .e { font-size: 1.1rem; }
-  .especie button { min-height: 34px; width: 38px; }
+  /* 23/11/2026: duas colunas (nome em cima, − n + embaixo): metade da altura de antes, e os
+     botões continuam com 44 px */
+  .especies { grid-template-columns: 1fr 1fr; gap: 5px; }
+  .especie { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; grid-template-rows: auto 44px;
+    gap: 0 4px; padding: 3px 6px 5px; align-items: center; }
+  .especie .e { font-size: 1rem; grid-row: 1; grid-column: 1; text-align: center; }
+  .especie .r { grid-row: 1; grid-column: 2 / 4; font-size: .84rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .especie button { min-height: 44px; width: 44px; grid-row: 2; }
+  .especie .n { grid-row: 2; grid-column: 2; width: auto; }
+  .grupo-especie { margin-top: 2px; }
+  /* cabe numa tela: temas em 4 colunas e mais baixos, sem o rodapé */
+  .temas { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .temas button { padding: 6px 4px; gap: 4px; font-size: .76rem; }
+  .temas button .sw { height: 14px; }
+  main > footer { display: none; }
+  main { padding-bottom: 12px; }
+  section.card { padding: 12px; margin-bottom: 8px; }
+  .saude { font-size: .74rem; margin-bottom: 8px; }
   section.card[data-aba="bichos"] .hint, section.card[data-aba="chuva"] .hint, section.card[data-aba="projetor"] .hint { display: none; }
   .moradores { grid-template-columns: 1fr; gap: 6px; }   /* uma coluna: cada membro tem o botão "seguir" ao lado */
   .morador { padding: 8px 10px; min-height: 46px; }
@@ -837,12 +1244,12 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
       <span class="pill" id="p-wb"><i></i><span id="wb">Willbert</span></span>
     </div>
     <nav class="abas" id="abas" aria-label="Partes do painel">
-      <button data-ir="jogos">🎮 Jogos</button>
-      <button data-ir="bichos">🐾 Vida</button>
-      <button data-ir="chuva">🌧️ Chuva</button>
-      <button data-ir="laob">🔬 LAOB</button>
-      <button data-ir="fotos">📷 Fotos</button>
-      <button data-ir="projetor">⚙️ Projetor</button>
+      <button data-ir="jogos"><span class="ic" aria-hidden="true">🎮</span><span>Jogos</span></button>
+      <button data-ir="bichos"><span class="ic" aria-hidden="true">🐾</span><span>Vida</span></button>
+      <button data-ir="chuva"><span class="ic" aria-hidden="true">🌧️</span><span>Chuva</span></button>
+      <button data-ir="laob"><span class="ic" aria-hidden="true">🔬</span><span>LAOB</span></button>
+      <button data-ir="fotos"><span class="ic" aria-hidden="true">📷</span><span>Fotos</span></button>
+      <button data-ir="projetor"><span class="ic" aria-hidden="true">⚙️</span><span>Projetor</span></button>
     </nav>
     <div id="msg" role="status" aria-live="polite"></div>
   </header>
@@ -888,12 +1295,15 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
       <button class="primary" id="mar-soltar">▶ Soltar na areia</button>
       <button id="mar-tirar" data-b="parar">Tirar todos</button>
     </div>
+    <div class="lado-comida">
     <div class="quadro-chuva" id="quadro-comida" role="button" tabindex="0" aria-label="Tocar onde jogar comida" style="margin-top:12px">
       <img id="ao-vivo-comida" alt="" hidden>
       <span class="aviso-vivo" id="aviso-comida">🥣 toque para jogar comida (na água: flocos de ração)</span>
       <span class="selo-vivo" id="selo-comida" hidden>● ao vivo</span>
+      <span class="toque" aria-hidden="true">🥣 toque para dar comida</span>
     </div>
     <p class="hint">Na água caem flocos de ração para os peixes, tartarugas e patos; na terra, uma tigela de ração para os pássaros e cachorros. Ou aponte com o indicador (os outros dedos fechados): cai comida onde o dedo aponta.</p>
+    </div>
   </section>
 
   <section class="card" data-aba="chuva">
@@ -903,6 +1313,7 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
       <img id="ao-vivo" alt="" hidden>
       <span class="aviso-vivo" id="aviso-vivo">☁️ toque onde chover</span>
       <span class="selo-vivo" id="selo-vivo" hidden>● ao vivo</span>
+      <span class="toque" aria-hidden="true">☁️ toque onde chover</span>
     </div>
     <div class="grid" style="margin-top:12px">
       <button id="chuva-geral">🌧️ Chover em tudo</button>
@@ -913,7 +1324,10 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
   <section class="card" data-aba="fotos">
     <h2>Fotos na areia</h2>
     <div class="grid">
-      <button id="cam" class="primary full">📷 Tirar foto pela câmera</button>
+      <div class="full">
+        <button id="cam" class="primary" style="width:100%" aria-describedby="cam-motivo">📷 Tirar foto pela câmera</button>
+        <p class="motivo" id="cam-motivo" hidden></p>
+      </div>
       <label class="btn">🤳 Foto no aparelho<input id="selfie" type="file" accept="image/*" capture="user"></label>
       <label class="btn">🖼️ Escolher arquivo<input id="galeria" type="file" accept="image/*"></label>
       <button id="girar">↻ Girar 90°</button>
@@ -929,6 +1343,7 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
 
   <section class="card" data-aba="projetor">
     <h2>Areia</h2>
+    <div class="saude" id="saude" aria-label="Como a areia está"></div>
     <p class="hint">Volta ao relevo colorido de sempre e encerra o que estiver na areia (foto, jogo, bichos).</p>
     <div class="grid" id="modos">
       <button data-m="original" class="full">⛰️ Voltar à topografia</button>
@@ -947,8 +1362,8 @@ footer { text-align: center; font-size: .76rem; color: var(--muted); margin-top:
   </section>
 
   <section class="card" data-aba="projetor">
-    <h2>Willbert</h2>
-    <p class="hint">Foto na areia pelo Willbert: as duas mãos abertas ao lado do rosto, perto da câmera.</p>
+    <h2>Willbert <span class="extra" id="wb-agora"></span></h2>
+    <p class="hint" id="wb-dica">Foto na areia pelo Willbert: as duas mãos abertas ao lado do rosto, perto da câmera.</p>
     <div class="grid">
       <button data-w="ligar">Ligar</button>
       <button data-w="desligar">Desligar</button>
@@ -992,9 +1407,12 @@ function msg(t, tipo) {
 
 let OCUPADO = false;
 let TOCADO = null;   // o botão que o usuário acabou de tocar (recebe o "carregando" e o ✓)
-document.addEventListener('pointerdown', ev => { TOCADO = ev.target.closest('button, label.btn, .chip, .jogo'); }, true);
+/* 'click' (e não 'pointerdown'): também vem quando Enter ou Espaço ativam o botão pelo teclado; antes o
+   ✓ ia para o último botão clicado com o mouse (23/11/2026) */
+document.addEventListener('click', ev => { TOCADO = ev.target.closest('button, label.btn, .chip, .jogo'); }, true);
+let ESPERA_TAREFA = 0;   // câmera / Willbert em segundo plano: o resultado chega pelo /estado
 async function post(u, b, isForm) {
-  if (OCUPADO) return;   // um pedido por vez: toques repetidos não empilham trocas no projetor
+  if (OCUPADO) { msg('Espere: ainda fazendo o pedido anterior…'); return; }   // um pedido por vez
   OCUPADO = true;
   document.body.classList.add('ocupado');
   const bt = TOCADO;
@@ -1006,7 +1424,8 @@ async function post(u, b, isForm) {
     let j = {};
     try { j = await r.json(); } catch (e) {}
     const deu = r.ok && j.ok !== false;
-    if (!deu) msg(j.msg || 'Erro', 'err'); else msg(j.msg || 'Pronto', 'okm');
+    if (!deu) msg(j.msg || 'Erro', 'err'); else msg(j.msg || 'Pronto', j.tarefa ? '' : 'okm');
+    if (deu && j.tarefa) { ESPERA_TAREFA = j.tarefa; esperaTarefa(); }
     if (bt) {
       bt.classList.remove('carregando');
       bt.classList.add(deu ? 'feito' : 'falhou');
@@ -1019,6 +1438,64 @@ async function post(u, b, isForm) {
     if (bt) { bt.classList.remove('carregando'); bt.classList.add('falhou'); setTimeout(() => bt.classList.remove('falhou'), 900); }
   }
   finally { OCUPADO = false; document.body.classList.remove('ocupado'); }
+}
+
+let ESPERANDO = false;
+function esperaTarefa() {
+  /* enquanto a câmera ou o Willbert trabalham, pergunta a cada segundo (o resto da página segue livre) */
+  if (!ESPERA_TAREFA || ESPERANDO) return;
+  ESPERANDO = true;
+  setTimeout(async () => { ESPERANDO = false; await carrega(); esperaTarefa(); }, 1000);
+}
+function mostraTarefa() {
+  const t = E.tarefa;
+  if (!t || !ESPERA_TAREFA || t.id !== ESPERA_TAREFA || t.rodando) return;
+  ESPERA_TAREFA = 0;
+  msg(t.msg || (t.ok ? 'Pronto' : 'Erro'), t.ok ? 'okm' : 'err');
+}
+
+function linhaSaude(s) {
+  /* qps, água, p99 do quadro, GPU, disco, tempo ligado, vigia e reserva; o que estiver fora do normal em vermelho */
+  const box = $('#saude');
+  const partes = [];
+  const item = (txt, valor, ruim, titulo) => partes.push([txt, valor, ruim, titulo]);
+  const dur = n => n >= 86400 ? Math.floor(n / 86400) + ' d ' + Math.floor(n % 86400 / 3600) + ' h'
+                 : n >= 3600 ? Math.floor(n / 3600) + ' h ' + Math.floor(n % 3600 / 60) + ' min' : Math.floor(n / 60) + ' min';
+  if (s.sandbox === 'nenhum') item('Areia', 'fechada', true);
+  else if (s.reserva) item('Areia', 'reserva (SARndbox original)', true, 'Sem jogos, bichos nem chuva: toque em Reabrir a areia');
+  if (s.qps != null) item('', s.qps + ' qps', s.qps < 25, 'Quadros por segundo da areia');
+  if (s.agua != null) item('água', s.agua + '%', s.agua < 90, 'Quanto a água anda em relação ao tempo real');
+  if (s.p99 != null) item('quadro p99', String(s.p99).replace('.', ',') + ' ms', s.p99 > 50, '99% dos quadros levam menos que isto');
+  if (s.gpu_temp != null) item('GPU', s.gpu_temp + ' °C' + (s.gpu_uso != null ? ' · ' + s.gpu_uso + '%' : ''), s.gpu_temp >= 80);
+  if (s.disco_livre_gb != null) item('disco', String(s.disco_livre_gb).replace('.', ',') + ' GB livres', s.disco_livre_gb < 5);
+  if (s.ligado_s != null) item('ligado há', dur(s.ligado_s), false, 'Tempo desde que o laob ligou');
+  const v = s.vigia || {};
+  if (v.estado) item('vigia', v.estado === 'pausado' ? 'pausado' + (v.ate ? ' até ' + v.ate : '') : 'vigiando', v.estado === 'pausado',
+                     'Se a areia fechar ou travar, o vigia abre de novo em até 2 min');
+  box.innerHTML = '';
+  for (const [txt, valor, ruim, titulo] of partes) {
+    const sp = document.createElement('span');
+    if (ruim) sp.className = 'ruim';
+    if (titulo) sp.title = titulo;
+    if (txt) sp.append(txt + ' ');
+    const b = document.createElement('b');
+    b.textContent = valor;
+    sp.append(b);
+    box.append(sp);
+  }
+  if (s.ultimo_aviso) {
+    const a = document.createElement('span');
+    a.className = 'aviso';
+    a.textContent = 'Último aviso: ' + s.ultimo_aviso;
+    a.title = s.ultimo_aviso;
+    box.append(a);
+  }
+}
+let SAUDE_EM = 0;
+async function carregaSaude() {
+  if ($('section.card[data-aba="projetor"]').hidden || Date.now() - SAUDE_EM < 4000) return;
+  SAUDE_EM = Date.now();
+  try { const r = await fetch('/saude'); if (r.ok) linhaSaude(await r.json()); } catch (e) {}
 }
 
 function monta() {
@@ -1089,18 +1566,24 @@ async function carrega() {
     if (!r.ok) return;
     E = await r.json();
     if (E.versao && E.versao !== VERSAO) { location.reload(); return; }   // painel atualizado: pega a página nova
-    const sb = {rosto: E.modo === 'rosto' ? 'Modo Foto' : (E.modo === 'esculpir' ? 'Esculpir' : 'Relevo'),
-                original: 'Topografia', nenhum: 'Areia desligada'}[E.sandbox] || E.sandbox;
+    /* 23/11/2026: "Topografia" também na versão completa (antes dizia "Relevo" depois de voltar à
+       topografia), e a reserva (o SARndbox original, sem jogos, bichos nem chuva) aparece como reserva */
+    const sb = E.reserva ? 'Topografia (reserva)'
+      : {rosto: E.modo === 'rosto' ? 'Modo Foto' : (E.modo === 'esculpir' ? 'Esculpir' : 'Topografia'),
+         nenhum: 'Areia desligada'}[E.sandbox] || E.sandbox;
     $('#sb').textContent = sb;
-    $('#p-sb').classList.toggle('on', E.sandbox !== 'nenhum');
+    $('#p-sb').classList.toggle('on', E.sandbox !== 'nenhum' && !E.reserva);
+    $('#p-sb').title = E.reserva ? 'A versão completa não abriu: toque em Reabrir a areia (aba Projetor)' : '';
+    mostraTarefa();
     $$('[data-m]').forEach(b => {
       const m = b.dataset.m;
-      b.classList.toggle('active', E.sandbox === 'original' ? m === 'original' : (E.sandbox === 'rosto' && m === E.modo));
+      b.classList.toggle('active', E.reserva ? m === 'original' : (E.sandbox === 'rosto' && m === E.modo));
     });
 
     const a = ativo();
     $('#sit').textContent = situacao(a);
     $('#p-sit').classList.toggle('on', !!a);
+    $('#p-sit').classList.toggle('vazia', !a);   // no celular some (é o que menos diz)
     $$('.jogo').forEach(el => {
       const on = el.dataset.id === a;
       el.classList.toggle('ativo', on);
@@ -1146,10 +1629,14 @@ async function carrega() {
     $('#laob-estado').textContent = ligado ? 'aberto' : '';
     $('#laob-ligar').hidden = ligado;
     $('#laob-fechar').hidden = !ligado;
+    const wbLigado = E.willbert === 'ligado';
     $('#laob-dica').textContent = ligado
-      ? (mundo.length ? 'Escolha a área que aparece na areia, ou 👁 para seguir alguém com zoom. Toque num nome para ver o rosto num balão (quem está fora entra para aparecer). Bolinha verde: está no laboratório de verdade agora.'
+      ? (mundo.length ? 'Escolha a área que aparece na areia, ou 👁 para seguir alguém com zoom. Toque num nome para ver o rosto num balão (quem está fora entra para aparecer). '
+                        + (wbLigado ? 'Bolinha verde: está no laboratório de verdade agora.'
+                                    : 'Willbert desligado: não dá para saber quem está no laboratório agora.')
                       : 'A sala está vazia: não há fotos de membros na pasta do projetor.')
       : 'O laboratório por dentro, desenhado na areia, com os membros lá.';
+    M.classList.toggle('sem-presenca', !wbLigado);
     /* vista (20/11/2026): a área que aparece na areia ou quem está sendo seguido */
     const V = E.mundo_vista || {};
     $('#vistas').hidden = !ligado;
@@ -1184,8 +1671,33 @@ async function carrega() {
       }
     }
 
-    $('#wb').textContent = E.willbert ? 'Willbert ' + E.willbert : 'Willbert';
-    $('#p-wb').classList.toggle('on', E.willbert === 'ligado');
+    /* Willbert (23/11/2026): o estado aparece no cartão dele, e sem ele a câmera fica desligada com o motivo */
+    const T0 = E.tarefa || {};
+    const wbMexendo = T0.rodando && (T0.acao === 'ligar' || T0.acao === 'desligar');
+    const wbTxt = wbMexendo ? (T0.acao === 'ligar' ? 'ligando…' : 'desligando…')
+      : E.willbert === 'ligado' ? 'ligado' : E.willbert === 'desligado' ? 'desligado' : 'não instalado';
+    $('#wb').textContent = 'Willbert ' + wbTxt;
+    $('#p-wb').classList.toggle('on', wbLigado);
+    $('#wb-agora').textContent = 'agora: ' + wbTxt;
+    $('#wb-dica').textContent = wbLigado
+      ? 'Foto na areia pelo Willbert: as duas mãos abertas ao lado do rosto, perto da câmera.'
+      : E.willbert === 'desligado'
+        ? 'Desligado: sem foto pela câmera e sem saber quem está no laboratório. Ligue para usar (fica pronto em uns 30 s).'
+        : 'O Willbert não está instalado nesta máquina.';
+    $$('[data-w]').forEach(b => {
+      const inutil = (b.dataset.w === 'ligar') === wbLigado;   // não liga o que já está ligado
+      b.disabled = wbMexendo || !E.willbert || inutil;
+      b.classList.toggle('indisponivel', b.disabled && !wbMexendo);
+    });
+    const cam = $('#cam'), camMotivo = $('#cam-motivo');
+    const camRodando = T0.rodando && T0.acao === 'foto';
+    const semCamera = !wbLigado ? (E.willbert === 'desligado' ? 'Câmera indisponível: o Willbert está desligado (ligue na aba Projetor).'
+                                                              : 'Câmera indisponível: sem o Willbert nesta máquina.') : '';
+    cam.disabled = !!semCamera || camRodando || wbMexendo;
+    cam.classList.toggle('indisponivel', !!semCamera);
+    cam.textContent = camRodando ? '📷 Tirando a foto…' : '📷 Tirar foto pela câmera';
+    camMotivo.textContent = semCamera;
+    camMotivo.hidden = !semCamera;
 
     const T = $('#temas');
     if (!T.children.length && E.temas) {
@@ -1219,7 +1731,8 @@ async function carrega() {
     C.dataset.lista = lista;
     C.innerHTML = '';
     fotos.forEach(nome => {
-      const tag = document.createElement('span');
+      const tag = document.createElement('button');   // botão de verdade: dá para escolher pelo teclado
+      tag.type = 'button';
       tag.className = 'chip';
       tag.textContent = nome;
       tag.title = 'Projetar ' + nome;
@@ -1227,6 +1740,7 @@ async function carrega() {
       C.appendChild(tag);
     });
     }
+    carregaSaude();
     if (E.tem_foto) {
       const P = $('#prev');
       P.hidden = false;
@@ -1253,12 +1767,17 @@ function montaMar() {
       const el = document.createElement('div');
       el.className = 'especie';
       el.dataset.k = k;
-      el.innerHTML = '<span class="e"></span><span class="r"></span><button aria-label="menos">−</button><span class="n"></span><button aria-label="mais">+</button>';
+      el.innerHTML = '<span class="e" aria-hidden="true"></span><span class="r"></span><button>−</button><span class="n" aria-live="polite"></span><button>+</button>';
       el.querySelector('.e').textContent = fig;
       el.querySelector('.r').textContent = rotulo;
       const [menos, mais] = el.querySelectorAll('button');
+      menos.setAttribute('aria-label', 'Menos ' + rotulo.toLowerCase());   // antes: "mais" 12 vezes no leitor de tela
+      mais.setAttribute('aria-label', 'Mais ' + rotulo.toLowerCase());
       menos.onclick = () => { MAR[k] = Math.max(0, (MAR[k] || 0) - 1); pintaMar(); };
-      mais.onclick = () => { if (totalMar() < 32) MAR[k] = (MAR[k] || 0) + 1; pintaMar(); };
+      mais.onclick = () => {
+        if (totalMar() >= 32) { msg('Máximo de 32 bichos na areia: tire algum antes', 'err'); return; }
+        MAR[k] = (MAR[k] || 0) + 1; pintaMar();
+      };
       box.appendChild(el);
     }
     pintaMar();
@@ -1293,7 +1812,7 @@ function pausaVivo() {
   /* a captura parou (ninguém mexe há 3 min, aba escondida...): o último quadro fica, mas sem dizer
      "ao vivo" (antes o selo continuava aceso numa imagem parada). Um toque religa. */
   $('#selo-vivo').hidden = true; $('#selo-comida').hidden = true;
-  $('#mini-vivo span').textContent = '⏸ pausado';
+  $('#mini-vivo span').textContent = '⏸ pausado';   /* (o "toque onde chover" fica: tocar continua valendo) */
 }
 function aoVivo() {
   if (!querVivo()) { if (VIVO) pausaVivo(); VIVO = false; return; }
@@ -1310,6 +1829,7 @@ function aoVivo() {
       $('#ao-vivo-comida').src = n.src; $('#ao-vivo-comida').hidden = false; $('#aviso-comida').hidden = true;
       $('#mini-img').src = n.src; $('#mini-vivo').hidden = false; $('#mini-vivo span').textContent = '● ao vivo';
       $('#selo-vivo').hidden = false; $('#selo-comida').hidden = false; $('#aviso-vivo').hidden = true;
+      $('#quadro-chuva').classList.add('vivo'); $('#quadro-comida').classList.add('vivo');
       setTimeout(proxima, querVivo() || 1000);
     };
     n.onerror = () => {
@@ -1318,6 +1838,7 @@ function aoVivo() {
       if (++ERROS_VIVO < 3) { setTimeout(proxima, 500); return; }
       img.hidden = true; $('#mini-vivo').hidden = true; $('#selo-vivo').hidden = true; $('#aviso-vivo').hidden = false;
       $('#ao-vivo-comida').hidden = true; $('#selo-comida').hidden = true; $('#aviso-comida').hidden = false;
+      $('#quadro-chuva').classList.remove('vivo'); $('#quadro-comida').classList.remove('vivo');
       setTimeout(proxima, 4000);
     };
     n.src = '/projetor.jpg?' + Date.now();
@@ -1453,11 +1974,18 @@ for (const b of document.querySelectorAll('#vistas button')) b.onclick = () => p
 $('#mar-soltar').onclick = () => post('/mar', MAR || {});
 $('#quadro-chuva').onclick = chove;
 $('#quadro-comida').onclick = jogaComida;
+/* pelo teclado (Enter ou Espaço no quadro): no meio da areia */
+for (const [q, fn] of [['#quadro-chuva', chove], ['#quadro-comida', jogaComida]]) {
+  $(q).onkeydown = ev => {
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    ev.preventDefault();
+    const r = $(q).getBoundingClientRect();
+    fn({clientX: r.left + r.width / 2, clientY: r.top + r.height / 2});
+  };
+}
 $('#mini-vivo').onclick = () => abre('chuva');
 $('#chuva-secar').onclick = () => post('/chuva', {secar: true});
-$('#chuva-geral').onclick = async () => {
-  for (const [x, y] of [[0.25, 0.3], [0.75, 0.3], [0.25, 0.7], [0.75, 0.7]]) await post('/chuva', {x: x, y: y, segundos: 10});
-};
+$('#chuva-geral').onclick = () => post('/chuva', {tudo: true, segundos: 10});   // quatro nuvens num pedido só
 $('#espelhar').onclick = () => post('/ajuste', {espelho: !E.espelho});
 $('#girar').onclick = () => post('/ajuste', {giro: ((E.giro || 0) + 90) % 360});
 carrega();
@@ -1484,8 +2012,21 @@ def _vigia_membros():
             pass
 
 
+def _limpeza_das_fotos():
+    """A cada 10 min: tira do cache (e de fotos/rosto.png) as cópias de fotos apagadas da pasta
+    (antes ficavam lá para sempre; 23/11/2026). As fotos originais não são apagadas."""
+    while True:
+        try:
+            with trava:
+                areia.limpa_fotos()
+        except Exception:
+            app.logger.exception("limpeza das fotos")
+        time.sleep(600)
+
+
 if __name__ == "__main__":
     threading.Thread(target=_vigia_membros, daemon=True, name="membros").start()
+    threading.Thread(target=_limpeza_das_fotos, daemon=True, name="fotos").start()
     som.iniciar_ambiente()   # fundo automático pelo que está na areia (tema, brincadeira, bichos)
     _limpa_capturas_velhas()   # de um painel anterior (antes da correção, ou se ele foi morto à força)
     threading.Thread(target=_desliga_ao_vivo_parado, daemon=True, name="ao-vivo").start()

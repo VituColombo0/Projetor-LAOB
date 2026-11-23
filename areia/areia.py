@@ -6,6 +6,7 @@ Caminhos a partir da pasta deste arquivo; para testes: AREIA_DIR, AREIA_PASTA, A
 """
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -25,6 +26,10 @@ EXT = (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff")
 MODOS = ("relevo", "rosto", "esculpir", "original")
 FUNDOS = ("", "--com-fundo", "--sem-fundo")
 AJUSTE = {"zoom": 0.03, "desloc": 0.0, "mistura": 0.0, "sombra": 1.0}
+# Faixas aceitas (23/11/2026): antes um NaN mandado à mão ao /ajuste ficava gravado no estado.json e ia
+# para o shader a cada abertura da foto (o painel não tem controle para desfazer). Folgadas: o shader já
+# limita a ampliação (clamp de +-0,8) e o painel só manda giro e espelho.
+FAIXAS_AJUSTE = {"zoom": (-0.5, 0.5), "desloc": (-2.0, 2.0), "mistura": (0.0, 1.0), "sombra": (0.0, 5.0)}
 PADRAO = {"modo": "original", "giro": 0, "espelho": False, "imagem": None, "fundo": "", "ajuste": AJUSTE}
 MANTER_NO_CACHE = 40
 PASTA_FOTOS = "Fotos na areia"  # na pasta Imagens (antes: "2 - Fotos na areia" na Área de Trabalho)
@@ -112,6 +117,26 @@ def acha(pedido, lista=None):
     raise Erro(f'nenhuma imagem com "{pedido}"')
 
 
+def acha_exato(nome):
+    """A foto com este nome de arquivo, na pasta das fotos ou na do Willbert (a dos chips do painel).
+    Sem número, sem pedaço do nome e sem arquivo de fora: o chip manda o nome exato, e com "ana.png" e
+    "mariana.png" na pasta o acha() dava "mais de uma imagem" (ou projetava outra foto). 23/11/2026."""
+    nome = os.path.basename(str(nome or "").strip())
+    if not nome:
+        raise Erro("escolha uma foto")
+    pw = pasta_willbert()
+    willbert = [os.path.join(pw, f) for f in sorted(os.listdir(pw), key=_ordem)
+                if f.lower().endswith(EXT) and os.path.isfile(os.path.join(pw, f))]
+    todas = imagens() + willbert
+    for c in todas:
+        if os.path.basename(c) == nome:
+            return c
+    iguais = [c for c in todas if os.path.basename(c).casefold() == nome.casefold()]
+    if len(iguais) == 1:
+        return iguais[0]
+    raise Erro(f'a foto "{nome}" não está mais na pasta')
+
+
 def guarda(caminho, nome=None, pasta_destino=None):
     """Copia um arquivo para a pasta das fotos (ou subpasta indicada)."""
     if not caminho.lower().endswith(EXT) and not (nome or "").lower().endswith(EXT):
@@ -169,8 +194,15 @@ def estado():
     except (OSError, ValueError):
         e = {}
     e = {**PADRAO, **e}
-    e["ajuste"] = {**AJUSTE, **(e.get("ajuste") or {})}
-    e["giro"] = int(e["giro"]) % 360
+    e["ajuste"] = {**AJUSTE, **(e.get("ajuste") if isinstance(e.get("ajuste"), dict) else {})}
+    for k, (menor, maior) in FAIXAS_AJUSTE.items():   # NaN, infinito ou texto: volta ao padrão
+        v = e["ajuste"].get(k)
+        ok = isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+        e["ajuste"][k] = min(maior, max(menor, float(v))) if ok else AJUSTE[k]
+    try:
+        e["giro"] = int(e["giro"]) % 360
+    except (TypeError, ValueError, OverflowError):
+        e["giro"] = 0
     e["espelho"] = bool(e["espelho"])
     if e["modo"] not in MODOS:
         e["modo"] = "original"
@@ -196,10 +228,13 @@ def chave(img, e, fundo):
     return h.hexdigest()[:16]
 
 
+ORIGEM = "origem.txt"   # em cada pasta do cache: de que foto ela veio (para apagar quando a foto some)
+
+
 def prepara(img, e, fundo=""):
     """Gera fotos/rosto.png e rosto.dem (uns 5 s) ou reaproveita do cache. Devolve (pasta, novo)."""
     if not os.path.isfile(img):
-        raise Erro(f"imagem não encontrada: {img}")
+        raise Erro(f"imagem não encontrada: {os.path.basename(img)}")
     pronto = os.path.join(CACHE, chave(img, e, fundo))
     novo = not os.path.exists(os.path.join(pronto, "rosto.dem"))
     if novo:
@@ -212,7 +247,10 @@ def prepara(img, e, fundo=""):
         if r.returncode != 0 or not os.path.exists(os.path.join(pronto, "rosto.dem")):
             shutil.rmtree(pronto, ignore_errors=True)
             linhas = [l for l in (r.stderr or r.stdout).splitlines() if "WARN" not in l]
-            raise Erro("não consegui preparar a imagem: " + (linhas[-1] if linhas else "erro desconhecido"))
+            # só o nome do arquivo na mensagem (antes ia o caminho inteiro da pasta pessoal para o painel)
+            ult = linhas[-1].replace(img, os.path.basename(img)) if linhas else "erro desconhecido"
+            raise Erro("não consegui preparar a imagem: " + ult)
+    _anota_origem(pronto, img)   # (também no cache de antes de 23/11/2026, que não sabia de onde veio)
     os.makedirs(FOTOS, exist_ok=True)
     for n in ("rosto.png", "rosto.dem"):  # o painel e o SARndbox usam fotos/rosto.*
         shutil.copy2(os.path.join(pronto, n), os.path.join(FOTOS, n + ".tmp"))
@@ -222,12 +260,68 @@ def prepara(img, e, fundo=""):
     return pronto, novo
 
 
-def limpa_cache(manter=MANTER_NO_CACHE):
-    if not os.path.isdir(CACHE):
+def _origens(pronto):
+    """As fotos de onde veio esta pasta do cache (uma por linha: a mesma imagem pode estar com dois
+    nomes, e a chave do cache é o conteúdo). Lista vazia = cache antigo, sem origem.txt."""
+    try:
+        with open(os.path.join(pronto, ORIGEM), encoding="utf-8") as f:
+            return [l.strip() for l in f if l.strip()]
+    except OSError:
+        return []
+
+
+def _anota_origem(pronto, img):
+    img = os.path.abspath(img)
+    if img in _origens(pronto):
         return
-    dirs = sorted((os.path.join(CACHE, d) for d in os.listdir(CACHE)), key=os.path.getmtime, reverse=True)
-    for d in dirs[manter:]:
+    try:
+        with open(os.path.join(pronto, ORIGEM), "a", encoding="utf-8") as f:
+            f.write(img + "\n")
+    except OSError:
+        pass
+
+
+def _orfa(pronto):
+    """Pasta do cache cujas fotos de origem foram todas apagadas (sem origem.txt: não se sabe, fica)."""
+    o = _origens(pronto)
+    return bool(o) and not any(os.path.isfile(c) for c in o)
+
+
+def limpa_cache(manter=MANTER_NO_CACHE):
+    """Fica com as `manter` pastas mais usadas e apaga as de fotos que saíram da pasta (cópias de rostos
+    que continuavam no cache depois de apagar a original; 23/11/2026). Devolve quantas apagou."""
+    if not os.path.isdir(CACHE):
+        return 0
+    dirs = []
+    for d in os.listdir(CACHE):
+        try:
+            dirs.append((os.path.getmtime(os.path.join(CACHE, d)), os.path.join(CACHE, d)))
+        except OSError:
+            pass
+    dirs = [d for _, d in sorted(dirs, reverse=True)]
+    apagar = dirs[manter:] + [d for d in dirs[:manter] if _orfa(d)]
+    for d in apagar:
         shutil.rmtree(d, ignore_errors=True)
+    return len(apagar)
+
+
+def limpa_fotos():
+    """Limpeza das cópias (o painel chama de tempos em tempos): o cache das fotos que sumiram e, se a
+    foto que está na areia foi apagada da pasta, a cópia dela em fotos/rosto.png e rosto.dem (a /previa.png
+    continuava mostrando o rosto). A foto original nunca é apagada aqui. Devolve quantas coisas apagou."""
+    n = limpa_cache()
+    e = estado()
+    img = e.get("imagem")
+    if img and not os.path.isfile(img):
+        for nome in ("rosto.png", "rosto.dem"):
+            try:
+                os.remove(os.path.join(FOTOS, nome))
+                n += 1
+            except OSError:
+                pass
+        e["imagem"] = None
+        salva(e)
+    return n
 
 
 # ---------- projetor ----------
@@ -324,12 +418,20 @@ def reorienta(giro=None, espelho=None):
 
 def foto_da_camera():
     """Foto pela câmera do laboratório (comando liberado do Willbert), guardada na pasta Fotos do Willbert."""
-    r = subprocess.run(["sudo", "-n", "/usr/local/sbin/willbert-controle", "foto"],
-                       capture_output=True, text=True, timeout=90)
     origem = os.path.join(FOTOS, "camera.jpg")
-    if r.returncode != 0 or not os.path.isfile(origem):
-        raise Erro("não consegui a foto da câmera (o Willbert está configurado?)")
-    return guarda(origem, time.strftime("camera-%Y-%m-%d-%H%M%S.jpg"), pasta_destino=pasta_willbert())
+    try:
+        r = subprocess.run(["sudo", "-n", "/usr/local/sbin/willbert-controle", "foto"],
+                           capture_output=True, text=True, timeout=90)
+        if r.returncode != 0 or not os.path.isfile(origem):
+            raise Erro("a câmera não respondeu (o Willbert está ligado e a câmera na rede?)")
+        return guarda(origem, time.strftime("camera-%Y-%m-%d-%H%M%S.jpg"), pasta_destino=pasta_willbert())
+    finally:
+        # a camera.jpg é só a passagem (o willbert-controle grava ali): a foto fica na pasta do Willbert.
+        # Antes a última foto da câmera ficava em fotos/camera.jpg para sempre (23/11/2026).
+        try:
+            os.remove(origem)
+        except OSError:
+            pass
 
 
 # ---------- temas de cor do relevo ----------
@@ -637,7 +739,10 @@ def mar_escolhido():
     e = estado().get("mar")
     sel = dict(MAR_PADRAO)
     if isinstance(e, dict):
-        sel = {k: max(0, min(MAX_BICHOS, int(e.get(k) or 0))) for k in ESPECIES}
+        try:
+            sel = {k: max(0, min(MAX_BICHOS, int(e.get(k) or 0))) for k in ESPECIES}
+        except (TypeError, ValueError, OverflowError):   # estado.json estragado: a escolha padrão
+            sel = dict(MAR_PADRAO)
     return sel
 
 
@@ -650,7 +755,7 @@ def mar(selecao=None):
         for k in ESPECIES:
             try:
                 sel[k] = max(0, min(MAX_BICHOS, int(selecao.get(k) or 0)))
-            except (TypeError, ValueError, AttributeError):
+            except (TypeError, ValueError, AttributeError, OverflowError):   # Infinity no JSON: OverflowError
                 raise Erro("quantidade inválida")
     falta = MAX_BICHOS
     for k in ESPECIES:   # corta o que passar de 32, na ordem da lista
@@ -669,9 +774,13 @@ def mar(selecao=None):
 
 def _ponto(fx, fy, segundos):
     """Confere um ponto da área iluminada (0 a 1) e a duração (1 a 60 s); devolve os três como float."""
+    if any(isinstance(v, bool) for v in (fx, fy, segundos)):
+        raise Erro("ponto inválido")
     try:
         fx, fy, segundos = float(fx), float(fy), float(segundos)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        raise Erro("ponto inválido")
+    if not all(math.isfinite(v) for v in (fx, fy, segundos)):   # NaN passava sem erro de conversão
         raise Erro("ponto inválido")
     if not (0 <= fx <= 1 and 0 <= fy <= 1) or not 1 <= segundos <= 60:
         raise Erro("ponto fora da areia")
@@ -694,6 +803,17 @@ def chuva(fx, fy, segundos=8):
     fx, fy, segundos = _ponto(fx, fy, segundos)
     _exige_rosto("chuva")
     _comando(f"chuva {fx:.3f} {fy:.3f} {segundos:g}")
+
+
+PONTOS_CHUVA_TUDO = ((0.25, 0.3), (0.75, 0.3), (0.25, 0.7), (0.75, 0.7))
+
+
+def chuva_tudo(segundos=10):
+    """Chove na areia toda: quatro nuvens numa escrita só (antes o painel mandava quatro pedidos e dizia
+    "chovendo nesse ponto" quatro vezes)."""
+    _, _, segundos = _ponto(0.5, 0.5, segundos)
+    _exige_rosto("chuva")
+    _comando(*(f"chuva {x:.3f} {y:.3f} {segundos:g}" for x, y in PONTOS_CHUVA_TUDO))
 
 
 COMEM = ("passaro", "cachorro")   # vêm à comida de terra, o pão (Extras.cpp: comidaPerto em passaro() e cachorro())
