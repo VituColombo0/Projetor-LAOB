@@ -10,7 +10,12 @@ segundo, e média boa esconde travadinha. Esta classe junta, na mesma janela de
   - tempo de GPU das passadas principais (água e relevo), por consulta
     GL_TIME_ELAPSED lida sem esperar (a de alguns quadros atrás).
 Quadro acima de 100 ms vira uma linha "Perfil: quadro lento de N ms" na hora
-(no máximo 5 por janela), para achar travadas nas trocas.
+(no máximo 5 por janela), para achar travadas nas trocas; quando o shader da
+superfície foi compilado nesse quadro, a linha diz quanto tempo levou.
+23/11/2026: a compilação do shader saiu da "GPU agua" (o fim da consulta da
+água ficava parado no buffer enquanto a CPU compilava: glFlush no gpuFim) e a
+medida de GPU do relevo do quadro que compilou é descartada; a linha mostra o
+máximo de CPU da água e do relevo e as compilações da janela.
 Custo: duas consultas de GPU por quadro e um vetor de ~900 números.
 ***********************************************************************/
 
@@ -40,6 +45,7 @@ class Perfil
 	typedef void (*FnEnd)(GLenum);
 	typedef void (*FnGetiv)(GLuint,GLenum,GLint*);
 	typedef void (*FnGetui64)(GLuint,GLenum,unsigned long long*);
+	typedef void (*FnFlush)(void);
 	enum {TIME_ELAPSED=0x88BF,QUERY_RESULT=0x8866,QUERY_RESULT_AVAILABLE=0x8867,ANEL=4};
 
 	/* Intervalo entre quadros: */
@@ -59,10 +65,15 @@ class Perfil
 	FnGen gen;FnBegin begin;FnEnd end;FnGetiv getiv;FnGetui64 getui64;
 	GLuint consultas[N_GPU][ANEL];
 	bool pendente[N_GPU][ANEL];
+	bool descarta[N_GPU][ANEL]; // medida de um quadro que compilou shader (não conta)
 	int proxima[N_GPU];
 	int ativa; // passada com consulta aberta agora (-1 = nenhuma)
 	double gpuSoma[N_GPU],gpuMax[N_GPU];
 	unsigned int gpuN[N_GPU];
+
+	/* Compilação do shader da superfície (SurfaceRenderer::compilacoes/compilacaoMs, contadores totais) */
+	unsigned int compVistas; double compMsVistos; // os totais da última olhada
+	unsigned int compN; double compMs,compMax;     // na janela
 
 	static double ms(Relogio::duration d)
 		{
@@ -93,6 +104,11 @@ class Perfil
 				unsigned long long ns=0;
 				getui64(consultas[g][k],QUERY_RESULT,&ns);
 				pendente[g][k]=false;
+				if(descarta[g][k])
+					{
+					descarta[g][k]=false;
+					continue;
+					}
 				double v=double(ns)*1.0e-6;
 				gpuSoma[g]+=v;
 				gpuMax[g]=std::max(gpuMax[g],v);
@@ -111,7 +127,7 @@ class Perfil
 	public:
 	Perfil(void)
 		:temUltimo(false),inicio(0.0),lentosAvisados(0),glPronto(false),glTem(false),
-		 gen(0),begin(0),end(0),getiv(0),getui64(0),ativa(-1)
+		 gen(0),begin(0),end(0),getiv(0),getui64(0),ativa(-1),compVistas(0),compMsVistos(0.0)
 		{
 		intervalos.reserve(2048);
 		for(int g=0;g<N_GPU;++g)
@@ -120,7 +136,7 @@ class Perfil
 			for(int k=0;k<ANEL;++k)
 				{
 				consultas[g][k]=0;
-				pendente[g][k]=false;
+				pendente[g][k]=descarta[g][k]=false;
 				}
 			}
 		zera();
@@ -133,6 +149,27 @@ class Perfil
 			cpuSoma[c]=cpuMax[c]=0.0,cpuN[c]=0;
 		for(int g=0;g<N_GPU;++g)
 			gpuSoma[g]=gpuMax[g]=0.0,gpuN[g]=0;
+		compN=0;
+		compMs=compMax=0.0;
+		}
+
+	/* No começo de cada frame(), antes de quadro(): os totais de compilação do shader da superfície. Devolve
+	   os ms compilados desde a última olhada (no display do quadro anterior; 0 = nenhum) e descarta a medida de
+	   GPU do relevo desse quadro (a GPU ficou esperando a compilação) */
+	double compilou(unsigned int total,double totalMs)
+		{
+		if(total==compVistas)
+			return 0.0;
+		double d=totalMs-compMsVistos;
+		compN+=total-compVistas;
+		compMs+=d;
+		compMax=std::max(compMax,d);
+		compVistas=total;
+		compMsVistos=totalMs;
+		int k=(proxima[G_RELEVO]+ANEL-1)%ANEL;
+		if(pendente[G_RELEVO][k])
+			descarta[G_RELEVO][k]=true;
+		return d>0.0?d:1e-3;
 		}
 
 	/* No começo de cada frame(): guarda o intervalo desde o anterior. Devolve > 0 (ms) se foi lento. */
@@ -188,6 +225,7 @@ class Perfil
 		if(ativa!=int(g))
 			return;
 		end(TIME_ELAPSED);
+		glFlush(); // o fim da consulta vai já para a GPU (sem isso, a compilação de shader que vem depois caía na "GPU agua")
 		pendente[g][proxima[g]]=true;
 		proxima[g]=(proxima[g]+1)%ANEL;
 		ativa=-1;
@@ -196,7 +234,7 @@ class Perfil
 	/* A linha "Perfil:" da janela que terminou; zera para a próxima */
 	std::string relatorio(unsigned int quadros)
 		{
-		char b[512];
+		char b[640];
 		std::vector<float>& v=intervalos;
 		unsigned int acima=0;
 		for(size_t i=0;i<v.size();++i)
@@ -207,10 +245,12 @@ class Perfil
 		double q=quadros>0?double(quadros):1.0;
 		int n=std::snprintf(b,sizeof(b),
 		       "Perfil: quadro p50 %.1f p95 %.1f p99 %.1f max %.0f ms, %u acima de 50 ms; "
-		       "CPU frame %.2f (max %.1f) agua %.2f relevo %.2f leituras %.2f (max %.1f) ms/quadro",
+		       "CPU frame %.2f (max %.1f) agua %.2f (max %.1f) relevo %.2f (max %.1f) leituras %.2f (max %.1f) ms/quadro",
 		       p50,p95,p99,mx,acima,
-		       cpuSoma[C_FRAME]/q,cpuMax[C_FRAME],cpuSoma[C_AGUA]/q,cpuSoma[C_RELEVO]/q,
+		       cpuSoma[C_FRAME]/q,cpuMax[C_FRAME],cpuSoma[C_AGUA]/q,cpuMax[C_AGUA],cpuSoma[C_RELEVO]/q,cpuMax[C_RELEVO],
 		       cpuSoma[C_LEITURA]/q,cpuMax[C_LEITURA]);
+		if(compN>0&&n>0&&n<int(sizeof(b)))
+			n+=std::snprintf(b+n,sizeof(b)-n,"; shader compilado %u vez(es), %.0f ms (max %.0f)",compN,compMs,compMax);
 		if(glTem&&n>0&&n<int(sizeof(b)))
 			std::snprintf(b+n,sizeof(b)-n,"; GPU agua %.2f (max %.1f) relevo %.2f (max %.1f) ms",
 			              gpuN[G_AGUA]?gpuSoma[G_AGUA]/gpuN[G_AGUA]:0.0,gpuMax[G_AGUA],

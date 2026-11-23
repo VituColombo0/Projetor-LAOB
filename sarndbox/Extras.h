@@ -1,12 +1,17 @@
 /***********************************************************************
 Extras - Brincadeiras sobre o relevo do AR Sandbox (Projetor-LAOB):
-  - caça ao tesouro: um baú escondido "embaixo" da areia aparece quando
-    cavam até a profundidade certa (e brilha quando estão perto);
-  - animais e objetos vivos: peixes nadando no lago (as partes baixas
-    viram água) e desviando dos morros; carrinhos andando pelos vales.
+  - animação de cada tema de cor (lava, neve, poeira, vento, mar, estrelas);
+  - caça ao tesouro e fósseis: o baú ou o esqueleto aparece quando cavam
+    até a profundidade certa;
+  - vida na areia: 12 espécies (peixes e bichos do mar, pato e barquinho na
+    água de verdade da simulação; carro, pessoa e cachorro em terra; pássaro
+    no ar), comida na terra (tigela) e ração na água (painel ou dedo apontado);
+  - labirinto e jogos de água (Jogos.cpp), copie o relevo, chuva do painel;
+  - Mundo LAOB: o laboratório por dentro com os membros (Mundo.cpp).
 A simulação roda na CPU sobre um mapa de alturas grosseiro (1,5 cm por
 célula, atualizado 2x por segundo); o desenho é feito no shader da
-superfície (SurfaceRenderer), que recebe posições e estado em uniforms.
+superfície (SurfaceRenderer), que recebe posições e estado em uniforms e
+só compila o código da brincadeira em uso (variante()).
 Não existe no SARndbox original.
 ***********************************************************************/
 
@@ -52,7 +57,7 @@ class Extras
 	/* Animais e objetos: */
 	int modo;
 	int quantos;
-	float ax[MAX_AGENTES],ay[MAX_AGENTES],ang[MAX_AGENTES],vel[MAX_AGENTES],tipo[MAX_AGENTES]; // tipo: 0 nada, 1.xx peixe, 2.xx carro (xx = cor)
+	float ax[MAX_AGENTES],ay[MAX_AGENTES],ang[MAX_AGENTES],vel[MAX_AGENTES],tipo[MAX_AGENTES]; // tipo: 0 nada; parte inteira = espécie (1 peixe ... 12 cachorro: ver Extras.cpp), fração = cor
 	float vb[MAX_AGENTES]; // velocidade de cruzeiro (vel varia em volta dela: nadadas, rampas, curvas)
 	float parado[MAX_AGENTES]; // segundos travado (carro dá meia-volta; peixe preso numa poça renasce)
 	float nivelAgua; // com bichos da água: nível do mar (cm, espaço da caixa); a simulação mantém cheio tudo abaixo dele (SEM = sem lago)
@@ -72,6 +77,65 @@ class Extras
 		{
 		return tesouro||modo!=NADA||efeito!=SEM_EFEITO||labirinto||jogo!=SEM_JOGO||temChuva||copia;
 		}
+	/* Variante do shader (23/11/2026): só entra no programa o código do que está em uso. O tema, o tesouro,
+	   o copie e a chuva são pequenos e estão sempre; os jogos (e o labirinto), os bichos (com a comida e a
+	   ração) e o laboratório entram por #define (glslDefinicoes). Com tudo compilado junto o shader custava
+	   ~3,3 ms de GPU por quadro mesmo sem desenhar nada disso (medido em 22/11: tesouro no clássico 4,7 ms
+	   contra 1,4 do relevo sozinho): o compilador reserva registradores para o pior caminho do programa
+	   inteiro. O SurfaceRenderer (patch_surface.py) guarda um programa por variante e compila as de
+	   varianteComum logo ao abrir: trocar de brincadeira não recompila. Cada bloco tirado só desenha
+	   quando a sua brincadeira está ligada (as mesmas condições dos uniforms), então a imagem não muda
+	   (testes/teste_shader.cpp compara pixel a pixel). Medido fora da areia (teste_shader, 1024x768, GTX
+	   750 Ti): temas/tesouro/copie 1,4 -> 0,4 ms; jogos 2,1 -> 1,1; vida 4,5 -> 3,6; laboratório 3,7 -> 3,3. */
+	enum {EX_JOGOS=1,EX_BICHOS=2,EX_MUNDO=4,NUM_VARIANTES=4};
+	static unsigned int varianteComum(int k) // as que o painel usa: temas/tesouro/copie, jogos, vida na areia, laboratório
+		{
+		static const unsigned int v[NUM_VARIANTES]={0,EX_JOGOS,EX_BICHOS,EX_BICHOS|EX_MUNDO};
+		return v[k];
+		}
+	unsigned int variante(void) const
+		{
+		unsigned int v=0;
+		if(jogo!=SEM_JOGO||labirinto)
+			v|=EX_JOGOS;
+		bool bichos=modo!=NADA; // (no laboratório os bonecos também são desenhados pelo laço dos bichos)
+		for(int i=0;i<quantos&&!bichos;++i)
+			bichos=tipo[i]>0.5f&&vel[i]!=0.0f; // garantia: um bicho visível sempre tem o código dele
+		if(bichos)
+			v|=EX_BICHOS;
+		if(modo==MUNDO)
+			v|=EX_MUNDO|EX_BICHOS;
+		return v;
+		}
+	static std::string glslDefinicoes(unsigned int v) // os #define da variante (vão antes de glslFragmentUniforms)
+		{
+		std::string d;
+		if(v&EX_JOGOS)
+			d+="#define EX_JOGOS\n";
+		if(v&EX_BICHOS)
+			d+="#define EX_BICHOS\n";
+		if(v&EX_MUNDO)
+			d+="#define EX_MUNDO\n";
+		return d;
+		}
+	/* Mapa velho (23/11/2026): com os extras desligados o mapa não é medido. Desligados, ele é esquecido
+	   (esqueceMapa: mapaOk = false) e a brincadeira seguinte usa o mapa de AGORA, medido no mesmo quadro do
+	   comando (atualizaExtras roda depois do cano); o que precisa do mapa e chegou antes dele espera
+	   (pendentes, resolvidos no fechaMapa). Antes valia o mapa de horas atrás, ou nenhum: Copie impossível
+	   (nota sempre 0%), labirinto sem armadilhas, cratera do vulcão no morro antigo */
+	void esqueceMapa(void) {mapaOk=false;}
+	bool copiaRefPendente,labArmadilhasPendente,nascerPendente; // o que espera o mapa novo (fechaMapa)
+	/* Tempo das animações no shader (23/11/2026): em float32 o tempo desde que a areia abriu perde precisão
+	   (passo de 0,06 s depois de 6 dias: animações aos solavancos, neve em blocos). O shader recebe dois
+	   tempos dobrados num período em que cada animação dá voltas inteiras, sem pular na virada:
+	   - tempoSeno (extrasEfeito.z, "es"/"mS" no shader): para sin e cos; período 200*pi s, em que todo
+	     coeficiente de 2 casas (sin(es*2.6)) dá voltas inteiras;
+	   - tempoFracao (extrasInfo.x, "et"/"mT"): para fract, floor e o ruído que anda; período 25600 s, que é
+	     múltiplo de 256/coeficiente para todo coeficiente de 2 casas, e o ruído (exRuido, exPontos) se
+	     repete a cada 256 células (exVolta; igual ao de antes perto da origem). Nunca 0: o shader da água
+	     lê extrasInfo.x>0 como "extras ligados". */
+	double tempoSeno(void) const;
+	double tempoFracao(void) const;
 
 	void setArea(const double areaMin[2],const double areaMax[2],const OGTransform& cameraToBox);
 
@@ -123,7 +187,7 @@ class Extras
 	int jogoNivel; // 1 fácil, 2 normal, 3 difícil
 	double jogoInicio,jogoFim; // início da rodada e do fim (fase 2)
 	float jogoDuracao; // segundos de chuva/rodada (0 = sem limite)
-	int jogoPontos,jogoVencedor,proximoPortao;
+	int jogoVencedor,proximoPortao;
 	bool jogoPedido; // começar assim que houver mapa de alturas
 	Peca pecas[MAX_PECAS];
 	int nPecas;
@@ -228,7 +292,7 @@ class Extras
 	void armadilhasDoLabirinto(void); // peças P_PERIGO entre a nascente e o alvo
 	/* Comida na terra (painel, comando "comida", ou dedo apontado): os pássaros pousam em volta, os cachorros sentam do lado
 	   e quem passeia para um pouco para olhar; só vêm os que estão perto, no máximo COMEDORES de uma vez (19/11/2026).
-	   O shader desenha um pão com migalhas que somem conforme ela acaba (extrasComida). A mão aberta NÃO é seguida (18/11: só faz chover);
+	   O shader desenha uma tigela com ração que vai acabando (extrasComida; até 22/11 era um pão). A mão aberta NÃO é seguida (18/11: só faz chover);
 	   o dedo apontado para cima derruba comida embaixo dele (jogarComidaEm, Gesto.cpp). */
 	struct Comida {float x,y,r; double ate,dura;}; // centro e raio (cm); até quando fica e quanto durava
 	Comida comida;
@@ -237,8 +301,8 @@ class Extras
 	/* Comida num ponto (dedo apontado para cima, Gesto.cpp, e painel; 18/11/2026): x, y em cm no espaço da caixa.
 	   onde: -1 = decide pela água no ponto (aguaNoPonto), 0 = terra, 1 = água (cai na água mais perto, até 6 cm;
 	   sem água por perto, secou: vira comida de terra). Devolve true se caiu na água.
-	   Na terra é a mesma comida do painel (pão com migalhas): chamar de novo perto do mesmo lugar só renova,
-	   o pão não muda de lugar nem recomeça. Na água caem bolinhas de ração (quantas; 0 = 5 na primeira vez
+	   Na terra é a mesma comida do painel (a tigela): chamar de novo perto do mesmo lugar só renova,
+	   a tigela não muda de lugar nem recomeça. Na água caem bolinhas de ração (quantas; 0 = 5 na primeira vez
 	   e 2 enquanto o dedo continua ali). As duas comidas são independentes e podem estar na areia juntas. */
 	bool jogarComidaEm(float x,float y,float segundos,int onde=-1,int quantas=0);
 	bool comem(bool naAgua) const // há na areia quem coma aquilo? água: peixe, tubarão, tartaruga, água-viva, polvo, arraia, pato; terra: pássaro, cachorro
@@ -255,18 +319,18 @@ class Extras
 	/* Ração na água: bolinhas que boiam, vão com a correnteza de verdade (aguaVx/Vy), se espalham devagar e
 	   somem uma a uma (comidas ou no fim do tempo; se a água some embaixo, procuram água e, sem achar, somem).
 	   Peixes, tartarugas, patos, polvos, arraias, águas-vivas e o tubarão (quando não está caçando) vêm
-	   comer, só pela água. O shader desenha as bolinhas, o respingo ao cair e a beliscada (extrasRacao). */
+	   comer, só pela água. O shader desenha as bolinhas caindo (encolhem até pousar) e boiando (extrasRacao). */
 	enum {MAX_RACAO=24};
-	struct Racao {float x,y,vx,vy,seco; double desde,ate,mordida; int mordidas;}; // mordidas<=0: comida (só o respingo da última beliscada)
+	struct Racao {float x,y,vx,vy,seco; double desde,ate,mordida; int mordidas;}; // mordidas<=0: comida (some na hora)
 	Racao racao[MAX_RACAO];
 	int nRacao; // bolinhas ainda boiando (contadas a cada passo)
 	double racaoUltima; float racaoUltX,racaoUltY; // onde e quando caiu a última (o dedo parado solta menos)
 	double vidaRacaoAnuncio; // "Vida: ... comendo a racao" no máximo a cada 10 s
 	int jogarRacao(float x,float y,int n,float espalha,float segundos); // devolve quantas caíram
+	void limpaComida(void); // tira a tigela e a ração (bichos soltos de novo não herdam a comida de antes)
 	/* Estado de cada bicho: 0 normal, 1 pousado/sentado/parado olhando, 2 mergulhando, 3 indo pousar/indo até a comida, 4 perseguindo */
 	int acao[MAX_AGENTES],presa[MAX_AGENTES]; float acaoT[MAX_AGENTES],voo[MAX_AGENTES],escala[MAX_AGENTES]; double acaoAte[MAX_AGENTES];
- // relógios dos jogos e passo dos bichos
-	void passo(float dt);
+	void passo(float dt); // relógio dos extras, transição, copie, chuva e o passo dos bichos
 
 	/* Shader: código a acrescentar e envio dos uniforms (na ordem de localizações): */
 	static const char* glslVertexUniforms;
@@ -298,12 +362,12 @@ class Extras
 	int racaoAlcance(int i,float vista,float boca) const; // bolinha mais perto que o bicho i alcança pela água (-1 nenhuma)
 	double belisca[MAX_AGENTES]; // até quando o bicho espera para beliscar de novo
 	/* Comida só para quem está perto (19/11/2026): na ração, cada bicho da água tem a sua bolinha (comeRacao,
-	   -1 nenhuma) e cada grupo de bolinhas recebe no máximo COMEDORES de uma vez, os mais perto; na terra, o pão
+	   -1 nenhuma) e cada grupo de bolinhas recebe no máximo COMEDORES de uma vez, os mais perto; na terra, a tigela
 	   chama no máximo COMEDORES (pássaros e cachorros) e OLHANDO pessoas, só dentro do alcance de cada um */
 	enum {COMEDORES=4,OLHANDO=3};
 	int comeRacao[MAX_AGENTES];
 	void escolheComedores(const int patoDaFrente[MAX_AGENTES]);
-	bool vagaNaComida(int i,float alcance) const; // o bicho i (pássaro, cachorro ou pessoa) pode ir até o pão agora?
+	bool vagaNaComida(int i,float alcance) const; // o bicho i (pássaro, cachorro ou pessoa) pode ir até a tigela agora?
 	/* Encostar sem travar (19/11/2026): cada bicho tem um corpo (raio, cm) e desvia dos outros antes de encostar;
 	   encostado, escorrega pelo lado em vez de empurrar (sem tremer e sem atravessar) */
 	float corpo(int i) const;

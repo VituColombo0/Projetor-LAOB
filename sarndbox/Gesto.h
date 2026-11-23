@@ -334,13 +334,18 @@ class Rastro
    <base>/gesto-AAAAMMDD-HHMMSS/ ficam cru.u16 (quadros crus do recorte, um atrás do outro, 16 bits),
    areia.u16 (o filtrado x 32 em 16 bits; 0 = sem medida), correcao.f32 (escala e deslocamento por pixel do
    recorte, uma vez) e gesto.json (tamanhos, recorte, área do detector, matriz pixel -> caixa, área iluminada,
-   limiares e, por quadro, o tempo, as mãos abertas e o que o detector achou ao vivo). Barato: só copia o
-   recorte (~0,5 MB por quadro). */
+   limiares e, por quadro, o tempo, as mãos abertas e o que o detector achou ao vivo). Barato na CPU: só
+   copia o recorte, mas é ~0,7 MB por quadro a ~30 quadros/s: ~400 MB em 20 s, na RAM (/dev/shm).
+   23/11/2026: a gravação nova apaga as anteriores (gesto-* em <base>; só a última fica), não começa com
+   menos de LIVRE_MIN livres e para em TAMANHO_MAX. */
 class Gravador
 	{
 	public:
+	enum {TAMANHO_MAX=600*1024*1024,LIVRE_MIN=1024*1024*1024}; // bytes: limite de uma gravação; livres para começar
 	std::string pasta;
-	Gravador(void):fCru(0),fAreia(0),n(0),w(0),h(0),t0(0.0) {}
+	std::string apagadas; // as gravações anteriores que o abre apagou (nomes; para o log)
+	std::string erro;     // por que não abriu ou parou antes da hora (vazio = nada)
+	Gravador(void):fCru(0),fAreia(0),n(0),w(0),h(0),t0(0.0),bytes(0) {}
 	~Gravador(void) {fecha();}
 	bool gravando(void) const {return fCru!=0;}
 	int quadros(void) const {return n;}
@@ -355,6 +360,7 @@ class Gravador
 	std::FILE* fAreia;
 	int n,w,h,rec[4],are[4];
 	double mat[4][4],t0;
+	size_t bytes; // escritos em cru.u16 + areia.u16
 	float cai[4];
 	std::string lims,porQuadro;
 	std::vector<std::uint16_t> linha;
