@@ -23,6 +23,7 @@
    labirinto [facil|normal|dificil] / labirintoNovo / labirintoFim (labirintoTeste: alvo na nascente)
                                                            labirinto de água: uma nascente joga água de
                                                            verdade; cavem canais até ela chegar ao alvo
+   copia [forma|sorteio] [1-3] / copiaNova / copiaFim (copiaTeste: dá a rodada por conseguida)
    jogo corrida|vila|rota|vulcao [1|2|3] / jogoNovo / jogoFim
                                                            jogos de água (Jogos.cpp); jogoTeste põe as
                                                            peças em cima da primeira nascente
@@ -500,6 +501,15 @@ void Sandbox::toggleDEM(DEM* dem)
 					{
 					if(extras.copia)
 						extras.copiaNova(-1,extras.copiaNivel);
+					}
+				else if(isToken(tokens[0],"copiaTeste"))
+					{
+					/* teste (23/11/2026): dá a rodada do Copie por conseguida agora (a comemoração aparece) */
+					if(extras.copia&&extras.copiaConseguiu==0.0)
+						{
+						extras.copiaConseguiu=extras.tempo;
+						std::cout<<"Copia: teste, conseguiu"<<std::endl;
+						}
 					}
 				else if(isToken(tokens[0],"copiaFim"))
 					{

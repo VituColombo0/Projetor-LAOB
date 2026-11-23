@@ -2165,7 +2165,7 @@ uniform vec4 extrasJogo[32]; // jogos de água: por peça (x, y, raio, tipo) e (
 uniform vec4 extrasJogoInfo; // jogo (0 nenhum), fase, segundos na fase, vencedor ou próximo portão
 uniform float extrasNomes[72]; // membros: por pessoa, nº de letras e 8 letras (desenho 3x5 em bits)
 uniform vec4 extrasNomesCfg;  // quantos nomes, giro do texto (quartos de volta), quantos têm rosto no painel
-uniform vec4 extrasCopiaInfo;   // ligado, (folga e altura de referência: só a nota do C++ usa), nota (+1000 = conseguiu)
+uniform vec4 extrasCopiaInfo;   // ligado, segundos desde que conseguiu (antes disso: a folga), (altura de referência: só a nota do C++ usa), nota (+1000 = conseguiu)
 uniform vec4 extrasChuva[4]; // nuvens de chuva do painel: x, y (cm), força 0..1 (chega e vai aos poucos), segundos desde o começo
 uniform vec4 extrasComida;  // comida do painel: x, y, raio (cm), fração do tempo que falta (0 = sem comida)
 uniform vec4 extrasRacao[25]; // [0] caixa que envolve a ração (min x, min y, max x, max y; vazia = nenhuma);
@@ -2258,6 +2258,61 @@ float exDigito(float d,vec2 p)
 	else if(d<10.5) c=21157.0;
 	float idx=floor(p.y)*3.0+floor(p.x);
 	return mod(floor(c/pow(2.0,14.0-idx)),2.0);
+	}
+/* Paleta de interface (23/11/2026, direção de arte V8): as MESMAS 6 cores em placares, barras, bandeiras,
+   portões, alvos e comemorações de todos os jogos. No painel (CSS): escuro #1A1714, claro #F5EDD9,
+   azul #2673FF, vermelho #EB2E24, verde #38D661, ouro #FFCC38. Na areia o escuro é "sem luz": serve de
+   contorno em volta das cores, nunca de fundo. */
+const vec3 UI_ESCURO=vec3(0.10,0.09,0.08);
+const vec3 UI_CLARO=vec3(0.96,0.93,0.85);
+const vec3 UI_AZUL=vec3(0.15,0.45,1.0);
+const vec3 UI_VERMELHO=vec3(0.92,0.18,0.14);
+const vec3 UI_VERDE=vec3(0.22,0.84,0.38);
+const vec3 UI_OURO=vec3(1.0,0.80,0.22);
+/* Algarismo 3x5 com contorno: .x = tinta, .y = tinta + contorno (0,45 célula em volta): lê de 1-2 m em qualquer chão */
+vec2 exAlgarismo(float d,vec2 p)
+	{
+	float t=exDigito(d,p);
+	float c=t;
+	for(int k=0;k<8;++k)
+		{
+		float a=float(k)*0.7854;
+		c=max(c,exDigito(d,p+0.45*vec2(cos(a),sin(a))));
+		}
+	return vec2(t,c);
+	}
+/* Comemoração de vitória, igual em todos os jogos: um anel dourado que se abre UMA vez e um brilho que some
+   em 2 s (nada piscando), e a coroa dourada de contorno escuro que fica enquanto dura o fim da rodada.
+   q = cm a partir do ponto da vitória (a coroa fica 4,6 cm acima dele); t = segundos desde a vitória */
+vec3 exVitoria(vec3 c,vec2 q,float t)
+	{
+	float d=length(q);
+	float some=1.0-smoothstep(0.0,2.0,t);
+	float anel=smoothstep(1.0,0.0,abs(d-(1.5+t*3.0)))*some;
+	float brilho=smoothstep(7.0,0.0,d)*some*0.45;
+	c=mix(c,UI_OURO,clamp(anel*0.9+brilho,0.0,1.0));
+	vec2 k=(q-vec2(0.0,4.6))/1.35;                                          // coroa de ~5 cm de largura
+	if(abs(k.x)<2.6&&k.y>-1.3&&k.y<2.3)
+		{
+		float f=exCaixa(k-vec2(0.0,-0.35),vec2(1.9,0.5),0.12);              // aro
+		for(int i=0;i<3;++i)
+			{
+			vec2 kk=k-vec2(float(i-1)*1.45,0.1);
+			f=min(f,max(-kk.y,abs(kk.x)-0.6*(1.0-kk.y/1.35)));                // pontas
+			f=min(f,length(kk-vec2(0.0,1.5))-0.28);                            // bolinhas nas pontas
+			}
+		float entra=smoothstep(0.0,0.4,t);
+		c=mix(c,UI_ESCURO,smoothstep(0.3,0.2,f)*entra);
+		vec3 ouro=mix(UI_OURO,vec3(1.0,0.93,0.6),smoothstep(-0.6,0.4,k.y-k.x*0.3)*0.6);
+		if(length(k-vec2(0.0,-0.35))<0.28||length(abs(k-vec2(0.0,-0.35))-vec2(1.0,0.0))<0.2)
+			ouro=UI_VERMELHO;                                                  // pedras do aro
+		c=mix(c,ouro,smoothstep(0.05,-0.05,f)*entra);
+		float nela=step(f,0.3)*entra;                                          // a coroa fica por cima da água e sem curvas
+		extrasMarca=max(extrasMarca,nela);
+		extrasObjeto=max(extrasObjeto,nela);
+		extrasLimpa=max(extrasLimpa,nela);
+		}
+	return c;
 	}
 /* Pontinhos que andam (neve, brilhos): grade de células com no máximo um ponto cada (que se repete a cada
    256 células, como o exRuido) */
@@ -4098,22 +4153,23 @@ const char* Extras::glslFragmentMain=R"GLSL(
 		vec2 pb=ep.xy-(extrasMundo2.xy+vec2(3.0,3.0));
 		float cel=0.8;                                                   // algarismo 2,4 x 4 cm
 		float fimB=21.0+15.0*cel;                                        // trilho 20 cm + 3 algarismos e o %
+		if(feito&&abs(pb.x-fimB*0.5)<16.0&&pb.y<20.0)
+			baseColor.rgb=exVitoria(baseColor.rgb,pb-vec2(fimB*0.5,4.5),extrasCopiaInfo.y); // coroa em cima do cartão
 		if(pb.x>-1.0&&pb.x<fimB+1.0&&pb.y>-1.5&&pb.y<4.5)
 			{
-			vec3 corB=vec3(0.95,0.92,0.84);                              // cartão creme
+			vec3 corB=UI_CLARO;                                          // cartão claro
 			if(pb.x<-0.65||pb.x>fimB+0.65||pb.y<-1.15||pb.y>4.15)
-				corB=vec3(0.12,0.11,0.10);                               // moldura
+				corB=UI_ESCURO;                                          // moldura
 			if(pb.x>0.0&&pb.x<20.0&&pb.y>0.0&&pb.y<3.0)
 				{
 				corB=vec3(0.52,0.53,0.57);                               // trilho vazio
 				if(pb.x<nota*0.2)
-					corB=feito?mix(vec3(1.0,0.78,0.2),vec3(1.0,0.95,0.65),smoothstep(0.6,1.0,sin(pb.x*0.5-es*2.0))):
-					     mix(mix(vec3(0.92,0.25,0.18),vec3(0.98,0.78,0.15),smoothstep(25.0,55.0,nota)),vec3(0.25,0.86,0.38),smoothstep(55.0,85.0,nota));
+					corB=feito?UI_OURO:mix(mix(UI_VERMELHO,UI_OURO,smoothstep(25.0,55.0,nota)),UI_VERDE,smoothstep(55.0,85.0,nota));
 				if(abs(pb.x-17.0)<0.15)
-					corB=vec3(0.1);                                      // marca dos 85%
+					corB=UI_ESCURO;                                      // marca dos 85%
 				}
 			if((pb.x>-0.15&&pb.x<0.0||pb.x>20.0&&pb.x<20.15)&&pb.y>-0.15&&pb.y<3.15||(pb.y>-0.15&&pb.y<0.0||pb.y>3.0&&pb.y<3.15)&&pb.x>-0.15&&pb.x<20.15)
-				corB=vec3(0.12,0.11,0.10);                               // contorno do trilho
+				corB=UI_ESCURO;                                          // contorno do trilho
 			/* número: até 3 algarismos e o % */
 			float n=floor(nota+0.5);
 			float c0=floor(n/100.0),c1=floor(mod(n,100.0)/10.0),c2=mod(n,10.0);
@@ -4124,7 +4180,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			tinta=max(tinta,exDigito(c2,t-vec2(8.0,0.0)));
 			tinta=max(tinta,exDigito(10.0,t-vec2(12.0,0.0)));
 			if(tinta>0.5)
-				corB=feito?vec3(0.05,0.42,0.16):vec3(0.1,0.09,0.08);
+				corB=UI_ESCURO;
 			baseColor=vec4(corB,1.0);
 			extrasLimpa=1.0;
 			extrasObjeto=1.0;
@@ -4418,7 +4474,7 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			vec2 q=ep.xy-a.xy;
 			float d=length(q);
 			float r=a.z;
-			if(d>r*2.2+2.5)
+			if(d>max(r*2.2+2.5,jfase>1.5?10.0:0.0)) // (fim da rodada: cabe a coroa da vitória)
 				continue;
 			float tipo=a.w;
 			float est=b.x;
@@ -4434,19 +4490,17 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			else if(tipo<2.5)
 				{
 				/* bandeira (corrida: azul ou vermelha; rota: vermelha) */
-				vec3 cor=b.w<0.5?vec3(0.15,0.45,1.0):vec3(0.95,0.15,0.15);
+				vec3 cor=b.w<0.5?UI_AZUL:UI_VERMELHO;
 				float venceu=(jfase>1.5&&((b.w<1.5&&abs(jaux-b.w)<0.5)||est>0.5))?1.0:0.0;
 				float anel=smoothstep(0.35,0.0,abs(d-r))*step(0.0,sin(ang*8.0+es*2.5));
-				float pano=(q.x>0.0&&q.x<2.2&&q.y>0.3&&q.y<1.5-q.x*0.4)?1.0:0.0;
+				float fp=max(max(-q.x,q.x-2.2),max(0.3-q.y,q.y-(1.5-q.x*0.4)));  // pano (< 0 dentro)
 				float mastro=(abs(q.x)<0.12&&q.y>-0.6&&q.y<1.6)?1.0:0.0;
-				c=mix(c,venceu>0.5?vec3(1.0,0.82,0.2):cor,max(anel,smoothstep(1.0,0.6,d)*0.8));
-				c=mix(c,cor,pano*(0.85+0.15*sin(es*6.0+q.x*3.0)));
-				c=mix(c,vec3(0.95),mastro);
+				c=mix(c,venceu>0.5?UI_OURO:cor,max(anel,smoothstep(1.0,0.6,d)*0.8));
+				c=mix(c,UI_ESCURO,smoothstep(0.22,0.12,fp)+((abs(q.x)<0.24&&q.y>-0.72&&q.y<1.72)?1.0:0.0)*(1.0-mastro));
+				c=mix(c,cor,step(fp,0.0)*(0.85+0.15*sin(es*6.0+q.x*3.0)));
+				c=mix(c,UI_CLARO,mastro);
 				if(venceu>0.5)
-					{
-					float onda=smoothstep(0.6,0.0,abs(d-mod(jt*7.0,14.0)))*smoothstep(8.0,1.0,jt);
-					c=mix(c,vec3(1.0,0.85,0.25),onda);
-					}
+					c=exVitoria(c,q,jt);
 				}
 			else if(tipo<3.5)
 				{
@@ -4466,22 +4520,24 @@ const char* Extras::glslFragmentMain=R"GLSL(
 					c=cc*mix(1.0,0.7,smoothstep(0.85,1.1,max(abs(p.x)/1.1,0.0)));
 					}
 				else if(est>0.5&&est<1.5&&d<r*1.5)
-					c=mix(c,vec3(0.3,0.95,0.4),smoothstep(r*1.5,r*1.1,d)*0.6);
+					c=mix(c,UI_VERDE,smoothstep(r*1.5,r*1.1,d)*0.6);
+				if(jfase>1.5&&jaux<0.5)
+					c=exVitoria(c,q,jt);                                   // todas a salvo: cada casa ganha a coroa
 				}
 			else if(tipo<5.5)
 				{
 				/* portão numerado: anel com o número em bolinhas; o próximo pisca amarelo */
-				vec3 cor=est>0.5?vec3(0.2,0.9,0.35):(abs(b.z-jaux)<0.5?mix(vec3(1.0,0.85,0.1),vec3(1.0),0.5+0.5*sin(es*6.0)):vec3(0.95));
-				float anel=smoothstep(0.45,0.15,abs(d-r));
-				float bolas=0.0;
-				for(int k=0;k<4;++k)
-					{
-					if(float(k)>=b.z)
-						break;
-					vec2 cb=vec2((float(k)-(b.z-1.0)*0.5)*0.9,0.0);
-					bolas=max(bolas,smoothstep(0.38,0.28,length(q-cb)));
-					}
-				c=mix(c,cor,max(anel,bolas));
+				/* 23/11/2026: o número em algarismo grande com contorno (antes, bolinhas) e o próximo em ouro firme
+				   com o anel mais grosso (antes piscava) */
+				bool prox=est<0.5&&abs(b.z-jaux)<0.5;
+				vec3 cor=est>0.5?UI_VERDE:(prox?UI_OURO:UI_CLARO);
+				float larg=prox?0.5:0.32;
+				c=mix(c,UI_ESCURO,smoothstep(larg+0.3,larg+0.15,abs(d-r)));
+				c=mix(c,cor,smoothstep(larg,larg-0.15,abs(d-r)));
+				float cs=r*0.26;
+				vec2 al=exAlgarismo(b.z,vec2(q.x/cs+1.5,2.5-q.y/cs));
+				c=mix(c,UI_ESCURO,al.y);
+				c=mix(c,cor,al.x);
 				}
 			else if(tipo>11.5)
 				{
@@ -4491,17 +4547,16 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				float xis=smoothstep(0.35,0.1,abs(abs(q.x)-abs(q.y)))*step(d,r*0.55);
 				vec3 cor=mix(vec3(0.75,0.05,0.05),vec3(1.0,0.35,0.1),0.5+0.5*sin(es*3.0));
 				if(est>0.5)
-					cor=mix(cor,vec3(1.0),0.5+0.5*sin(es*25.0));
+					cor=mix(cor,UI_CLARO,0.55);                                // tocada: clara (antes piscava rápido)
 				c=mix(c,cor,dentroA*0.85);
 				c=mix(c,vec3(1.0,0.95,0.6),xis*dentroA);
 				}
 			else if(tipo>10.5)
 				{
 				/* aviso do vulcão: aqui vai abrir uma boca de lava (anéis que fecham, piscando) */
-				float pisca=0.5+0.5*sin(es*12.0);
 				float anel=smoothstep(0.5,0.0,abs(d-r*(1.6-fract(et*1.2))));
 				float miolo=smoothstep(r*0.5,0.0,d);
-				c=mix(c,mix(vec3(1.0,0.9,0.1),vec3(1.0,0.2,0.0),pisca),clamp(anel+miolo*pisca,0.0,1.0)*0.9);
+				c=mix(c,mix(UI_OURO,UI_VERMELHO,smoothstep(r*0.5,0.0,d)),clamp(anel+miolo,0.0,1.0)*0.9); // (antes piscava 2x/s)
 				}
 			else if(tipo>9.5)
 				{
@@ -4509,13 +4564,13 @@ const char* Extras::glslFragmentMain=R"GLSL(
 				vec2 p=q/(r/1.3);
 				bool corpo=abs(p.x)<0.8&&p.y>-0.9&&p.y<0.15;
 				bool telhado=p.y>=0.15&&p.y<1.0&&abs(p.x)<(1.0-p.y)*1.25;
-				vec3 cor=est>1.5?vec3(0.95,0.15,0.1):(est>0.5?vec3(0.25,0.95,0.4):vec3(0.97));
+				vec3 cor=est>1.5?UI_VERMELHO:(est>0.5?UI_VERDE:UI_CLARO);
 				if(d<r*1.25)
-					c=mix(c,vec3(0.0),0.75);
+					c=mix(c,UI_ESCURO,0.8);
 				if(corpo||telhado)
 					c=cor;
 				if(est>1.5&&abs(abs(p.x)-abs(p.y+0.2))<0.16&&abs(p.x)<0.9)
-					c=vec3(0.1,0.0,0.0);
+					c=UI_ESCURO;
 				}
 			baseColor.rgb=c;
 			}
@@ -5679,19 +5734,18 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			float centro=smoothstep(1.0,0.6,da);
 			float bandeira=q.x>0.0&&q.x<2.2&&q.y>0.3&&q.y<1.5-q.x*0.4?1.0:0.0;
 			float mastro=abs(q.x)<0.12&&q.y>-0.6&&q.y<1.6?1.0:0.0;
-			baseColor.rgb=mix(baseColor.rgb,vec3(0.2,0.95,0.35),max(anel,centro)*0.9);
-			baseColor.rgb=mix(baseColor.rgb,vec3(0.95,0.15,0.15),bandeira*(0.85+0.15*sin(es*6.0+q.x*3.0)));
-			baseColor.rgb=mix(baseColor.rgb,vec3(0.95),mastro);
+			baseColor.rgb=mix(baseColor.rgb,UI_VERDE,max(anel,centro)*0.9);
+			baseColor.rgb=mix(baseColor.rgb,UI_ESCURO,(abs(q.x)<0.24&&q.y>-0.72&&q.y<1.72)?1.0-mastro:0.0);
+			baseColor.rgb=mix(baseColor.rgb,UI_VERMELHO,bandeira*(0.85+0.15*sin(es*6.0+q.x*3.0)));
+			baseColor.rgb=mix(baseColor.rgb,UI_CLARO,mastro);
 			}
 		else
 			{
-			/* Chegou! Anéis dourados que se abrem e faíscas por alguns segundos */
-			float onda=smoothstep(0.6,0.0,abs(da-mod(lt*7.0,14.0)))*smoothstep(6.0,1.0,lt);
+			/* Chegou! O alvo fica dourado e vem a comemoração igual à dos jogos (exVitoria) */
 			vec2 q=ep.xy-extrasLab.zw;
-			float faisca=pow(max(0.0,sin(atan(q.y,q.x)*12.0+lt*3.0)),40.0)*smoothstep(ra*3.0,0.0,da)*smoothstep(8.0,0.0,lt);
-			float ouro=smoothstep(ra+0.5,ra-0.5,da)*(0.6+0.4*sin(es*5.0));
-			baseColor.rgb=mix(baseColor.rgb,vec3(1.0,0.82,0.2),clamp(ouro+onda,0.0,1.0));
-			baseColor.rgb+=vec3(1.0,0.9,0.5)*faisca;
+			baseColor.rgb=mix(baseColor.rgb,UI_OURO,smoothstep(ra+0.5,ra-0.5,da)*0.85);
+			if(da<16.0)
+				baseColor.rgb=exVitoria(baseColor.rgb,q,lt);
 			}
 		}
 #endif
@@ -5769,7 +5823,8 @@ void Extras::uploadUniforms(const GLint locations[NUM_UNIFORMS]) const
 		}
 	glUniform4fARB(locations[13],bmin[0],bmin[1],hora,
 	               GLfloat(std::max(0.0,std::min(1.0,(tempo-trocaTempo)/0.6)))); // .w: transição (0 começando .. 1 pronta)
-	glUniform4fARB(locations[15],copia?1.0f:0.0f,copiaTol,copiaRef,copiaNota+(copiaConseguiu>0.0?1000.0f:0.0f)); // o shader só usa .x e .w (.y e .z: para quem depura)
+	glUniform4fARB(locations[15],copia?1.0f:0.0f,copiaConseguiu>0.0?GLfloat(std::min(600.0,tempo-copiaConseguiu)):copiaTol,copiaRef,
+	               copiaNota+(copiaConseguiu>0.0?1000.0f:0.0f)); // o shader usa .x, .w e, conseguido, .y = segundos desde então (comemoração); .z: para quem depura
 	GLfloat a2[MAX_AGENTES*4];
 	for(int i=0;i<MAX_AGENTES;++i)
 		{
