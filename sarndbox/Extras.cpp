@@ -5405,11 +5405,11 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			if(molhado)
 				{
 				vec3 raso=vec3(0.14,0.56,0.93);
-				vec3 prof=vec3(0.02,0.11,0.42);
-				if(ef>1.5&&ef<2.5)      { raso=vec3(0.20,0.65,0.96); prof=vec3(0.05,0.28,0.65); }
-				else if(ef>2.5&&ef<3.5) { raso=vec3(0.18,0.72,0.82); prof=vec3(0.05,0.35,0.48); }
-				else if(ef>3.5&&ef<4.5) { raso=vec3(0.16,0.78,0.90); prof=vec3(0.02,0.40,0.52); }
-				chao=mix(raso,prof,clamp((extrasInfo.w-ep.z)/2.0,0.0,1.0))+vec3(0.03);
+				vec3 prof=vec3(0.04,0.22,0.64);
+				if(ef>1.5&&ef<2.5)      { raso=vec3(0.20,0.65,0.96); prof=vec3(0.07,0.33,0.74); }
+				else if(ef>2.5&&ef<3.5) { raso=vec3(0.18,0.72,0.82); prof=vec3(0.05,0.42,0.58); }
+				else if(ef>3.5&&ef<4.5) { raso=vec3(0.16,0.78,0.90); prof=vec3(0.03,0.46,0.62); }
+				chao=mix(raso,prof,smoothstep(0.0,2.0,extrasInfo.w-ep.z))+vec3(0.03);
 				}
 			float lf=dot(chao,vec3(0.3,0.59,0.11));
 			float lado=smoothstep(0.16,0.3,lf)*2.0-1.0;                    // +1 chão claro ou médio (escurece), -1 chão escuro (clareia)
@@ -5452,8 +5452,8 @@ const char* Extras::glslFragmentMain=R"GLSL(
 			cr=clamp(mix(vec3(dot(cr,vec3(0.3,0.59,0.11))),cr,1.2),0.0,1.0);
 			if(a.w<2.0||(a.w>=4.0&&a.w<11.0))
 				{
-				vec3 aguaEst=extrasEfeito.w>0.5?vec3(0.82,0.24,0.06):(ef>1.5&&ef<2.5)?vec3(0.11,0.38,0.74):(ef>2.5&&ef<3.5)?vec3(0.11,0.45,0.58):
-				             (ef>3.5&&ef<4.5)?vec3(0.08,0.51,0.63):vec3(0.07,0.23,0.55);
+				vec3 aguaEst=extrasEfeito.w>0.5?vec3(0.82,0.24,0.06):(ef>1.5&&ef<2.5)?vec3(0.13,0.45,0.82):(ef>2.5&&ef<3.5)?vec3(0.11,0.53,0.66):
+				             (ef>3.5&&ef<4.5)?vec3(0.09,0.58,0.72):vec3(0.09,0.35,0.74);
 				cr=clamp((cr-0.21*aguaEst)/0.79,0.0,1.0);
 				}
 			baseColor.rgb=cr;

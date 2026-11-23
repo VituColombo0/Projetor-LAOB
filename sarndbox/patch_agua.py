@@ -22,15 +22,24 @@ s = open(ARQ).read()
 if "extrasEfeito" not in s:
     s = rep(s, "uniform float waterAnimationTime;\n", """uniform float waterAnimationTime;
 uniform vec4 extrasEfeito; // Projetor-LAOB: efeito do tema (0 = água normal)
+float ruidoA(vec2 p) // Projetor-LAOB (23/11/2026): ruído de valor barato (o brilho que anda com a correnteza)
+	{
+	vec2 i=floor(p);
+	vec2 f=fract(p);
+	f=f*f*(3.0-2.0*f);
+	vec4 h=fract(sin(vec4(dot(i,vec2(127.1,311.7)),dot(i+vec2(1.0,0.0),vec2(127.1,311.7)),
+	                      dot(i+vec2(0.0,1.0),vec2(127.1,311.7)),dot(i+vec2(1.0,1.0),vec2(127.1,311.7))))*43758.5453);
+	return mix(mix(h.x,h.y,f.x),mix(h.z,h.w,f.x),f.y);
+	}
 """)
     s = rep(s, "\t\tvec4 waterColor=vec4(colorW,colorW,1.0,1.0); // Water\n", """\t\tvec4 waterColor=vec4(colorW,colorW,1.0,1.0); // Water
 		/* Projetor-LAOB: a água da chuva tem o mesmo jeito do lago dos peixes (clara no raso, escura no
 		   fundo, ondinhas e brilho) e a cor combina com o tema: lava, água gelada, lama, oásis... */
 		float efA=extrasEfeito.x;
-		float fundoA=clamp(waterLevel/2.0,0.0,1.0);
+		float fundoA=smoothstep(0.0,2.0,waterLevel);
 		float ondaA=0.5+0.5*sin(waterAnimationTime*2.0+fragCoord.x*0.045+fragCoord.y*0.03);
 		vec3 rasoA=vec3(0.14,0.56,0.93);   // azul firme (17/11: a água estava transparente e difícil de ver)
-		vec3 profA=vec3(0.02,0.11,0.42);
+		vec3 profA=vec3(0.04,0.22,0.64);   // fundo firme (23/11: o azul quase preto de antes sumia no projetor)
 		float brilhoA=0.5;
 		/* com bichos da água (lago ligado: extrasInfo.w = nível do mar) a água é água em todo tema: peixe não nada em lava */
 		bool lagoA=extrasInfo.w>-999.0;
@@ -41,17 +50,41 @@ uniform vec4 extrasEfeito; // Projetor-LAOB: efeito do tema (0 = água normal)
 				rasoA=vec3(1.0,0.8,0.3);                                             // jogo do vulcão: bem clara
 			}
 		else if(efA>1.5&&efA<2.5)
-			{ rasoA=vec3(0.20,0.65,0.96); profA=vec3(0.05,0.28,0.65); brilhoA=0.85; } // inverno: azul glacial (destaca da neve)
+			{ rasoA=vec3(0.20,0.65,0.96); profA=vec3(0.07,0.33,0.74); brilhoA=0.85; } // inverno: azul glacial (destaca da neve)
 		else if(efA>2.5&&efA<3.5)
-			{ rasoA=vec3(0.18,0.72,0.82); profA=vec3(0.05,0.35,0.48); brilhoA=0.65; } // marte: água mineral ciano (destaca do vermelho)
+			{ rasoA=vec3(0.18,0.72,0.82); profA=vec3(0.05,0.42,0.58); brilhoA=0.65; } // marte: água mineral ciano (destaca do vermelho)
 		else if(efA>3.5&&efA<4.5)
-			{ rasoA=vec3(0.16,0.78,0.90); profA=vec3(0.02,0.40,0.52); brilhoA=0.70; } // deserto: oásis nítido (destaca da areia)
+			{ rasoA=vec3(0.16,0.78,0.90); profA=vec3(0.03,0.46,0.62); brilhoA=0.70; } // deserto: oásis nítido (destaca da areia)
 		else if(efA>5.5&&efA<6.5&&!lagoA&&extrasLab2.w<0.5) // 23/11/2026: só a chuva solta; jogo, labirinto e lago dos bichos ficam azuis
 			{
 			rasoA=vec3(0.6)+0.4*cos(6.2832*(vec3(fragCoord.x*0.004+waterAnimationTime*0.15)+vec3(0.0,0.33,0.67)));
 			profA=rasoA*0.55;                                                        // arco-íris
 			}
 		waterColor=vec4(mix(rasoA,profA,fundoA)+vec3(0.06*ondaA)+vec3(colorW*brilhoA*0.5),1.0);
+		/* 23/11/2026 (direção de arte V3): margem clara e contínua na beira (só onde a lâmina é bem fina; sem
+		   anéis, sem piscar) e um brilho sutil que ANDA COM A CORRENTEZA: ruído levado pela velocidade da água
+		   (momento / altura, da grade da água para a tela), em duas camadas defasadas que se revezam aos poucos
+		   (o desenho nunca estica nem pula). Na água parada o brilho quase some. A lava não tem nada disso. */
+		if(!(extrasEfeito.w>0.5||(efA>0.5&&efA<1.5&&!lagoA)))
+			{
+			float espA=smoothstep(0.012,0.035,waterLevel)*(1.0-smoothstep(0.05,0.12,waterLevel));
+			vec2 velA=texture2DRect(quantitySampler,waterTexCoord).gb/max(waterLevel,0.08)/waterCellSize; // células/s
+			float detA=wJx.x*wJy.y-wJy.x*wJx.y;
+			vec2 pxA=abs(detA)>1.0e-6?vec2(wJy.y*velA.x-wJy.x*velA.y,-wJx.y*velA.x+wJx.x*velA.y)/detA:vec2(0.0); // pixels/s
+			float rapA=length(pxA);
+			pxA*=min(1.0,70.0/max(rapA,1.0e-3));
+			float brA=0.0;
+			if(rapA>6.0) // água parada: sem brilho (e sem a conta: o ruído é o mais caro da água)
+				{
+				float f0=fract(waterAnimationTime*0.5);
+				float f1=fract(waterAnimationTime*0.5+0.5);
+				float n0=ruidoA((fragCoord-pxA*f0*2.0)*0.05);
+				float n1=ruidoA((fragCoord-pxA*f1*2.0)*0.05+vec2(17.3,5.1));
+				float w0=1.0-abs(1.0-2.0*f0);
+				brA=smoothstep(0.62,0.9,n0*w0+n1*(1.0-w0))*mix(0.05,0.2,smoothstep(8.0,40.0,rapA))*(1.0-0.5*espA);
+				}
+			waterColor.rgb=mix(waterColor.rgb,vec3(0.62,0.88,1.0),0.4*espA)+vec3(brA);
+			}
 """)
     # a lâmina fina já aparece com cor viva e nítida, e os animais continuam à vista dentro da água
     s = rep(s, "\t\tbaseColor=mix(baseColor,waterColor,min(waterLevel*waterOpacity,1.0));\n", """\t\t/* Projetor-LAOB: cobertura nítida e água vibrante mesmo em lâmina fina (escorrendo):
@@ -71,6 +104,10 @@ uniform vec4 extrasLab2;   // .w = 1 nos jogos de água e no labirinto (a água 
 float extrasMarca;         // posta em 1 pelo shader dos extras onde há um animal marinho
 float extrasAguaSombra;    // sombra na água em volta dos bichos (shader dos extras)
 """)
+    # (23/11/2026) a grade da água por pixel da tela, fora do if (derivada em controle uniforme)
+    s = rep(s, "\tfloat waterLevel=texture2DRect(quantitySampler,waterTexCoord).r-b;\n",
+            "\tfloat waterLevel=texture2DRect(quantitySampler,waterTexCoord).r-b;\n"
+            "\tvec2 wJx=dFdx(waterTexCoord),wJy=dFdy(waterTexCoord); // Projetor-LAOB: grade da água por pixel (correnteza na tela)\n")
     open(ARQ, "w").write(s)
 
 # Lençol do lago dos bichos (17/11/2026): no passo que soma a água da chuva, em toda célula da área iluminada
